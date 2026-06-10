@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unregister Service Worker - CampusCuts</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #708d81;
+      margin-bottom: 20px;
+    }
+    .status {
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 8px;
+      font-weight: 500;
+    }
+    .loading {
+      background: #e0e0e0;
+      color: #666;
+    }
+    .success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .info {
+      background: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+    button {
+      background: #708d81;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      margin-right: 10px;
+    }
+    button:hover {
+      background: #5a7166;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .details {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: 'Courier New', monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧹 Service Worker Cleanup</h1>
+    
+    <div id="status" class="status loading">
+      Checking service worker status...
+    </div>
+    
+    <div id="details" class="details" style="display: none;"></div>
+    
+    <div style="margin-top: 20px;">
+      <button id="unregisterBtn" onclick="unregisterAll()" disabled>
+        Unregister All Service Workers
+      </button>
+      <button onclick="clearCaches()">
+        Clear All Caches
+      </button>
+      <button onclick="location.href='/'">
+        Go to App
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const detailsEl = document.getElementById('details');
+    const unregisterBtn = document.getElementById('unregisterBtn');
+
+    async function checkServiceWorkers() {
+      try {
+        if (!('serviceWorker' in navigator)) {
+          statusEl.className = 'status info';
+          statusEl.textContent = '✅ Service workers not supported in this browser';
+          return;
+        }
+
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        
+        if (registrations.length === 0) {
+          statusEl.className = 'status success';
+          statusEl.textContent = '✅ No service workers registered - All clean!';
+          detailsEl.style.display = 'none';
+        } else {
+          statusEl.className = 'status error';
+          statusEl.textContent = `⚠️ Found ${registrations.length} active service worker(s)`;
+          
+          let details = `Found ${registrations.length} registration(s):\n\n`;
+          registrations.forEach((reg, i) => {
+            details += `${i + 1}. Scope: ${reg.scope}\n`;
+            if (reg.active) details += `   State: ACTIVE\n`;
+            if (reg.installing) details += `   State: INSTALLING\n`;
+            if (reg.waiting) details += `   State: WAITING\n`;
+            details += '\n';
+          });
+          
+          detailsEl.textContent = details;
+          detailsEl.style.display = 'block';
+          unregisterBtn.disabled = false;
+        }
+      } catch (error) {
+        statusEl.className = 'status error';
+        statusEl.textContent = `❌ Error checking: ${error.message}`;
+      }
+    }
+
+    async function unregisterAll() {
+      try {
+        unregisterBtn.disabled = true;
+        statusEl.className = 'status loading';
+        statusEl.textContent = 'Unregistering service workers...';
+
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        
+        if (registrations.length === 0) {
+          statusEl.className = 'status info';
+          statusEl.textContent = 'No service workers to unregister';
+          return;
+        }
+
+        let unregistered = 0;
+        for (const registration of registrations) {
+          const success = await registration.unregister();
+          if (success) unregistered++;
+        }
+
+        statusEl.className = 'status success';
+        statusEl.textContent = `✅ Successfully unregistered ${unregistered} service worker(s)!`;
+        detailsEl.style.display = 'none';
+        
+        setTimeout(() => checkServiceWorkers(), 1000);
+      } catch (error) {
+        statusEl.className = 'status error';
+        statusEl.textContent = `❌ Error unregistering: ${error.message}`;
+        unregisterBtn.disabled = false;
+      }
+    }
+
+    async function clearCaches() {
+      try {
+        statusEl.className = 'status loading';
+        statusEl.textContent = 'Clearing caches...';
+
+        if ('caches' in window) {
+          const cacheNames = await caches.keys();
+          
+          if (cacheNames.length === 0) {
+            statusEl.className = 'status info';
+            statusEl.textContent = 'No caches to clear';
+            return;
+          }
+
+          let deleted = 0;
+          for (const cacheName of cacheNames) {
+            const success = await caches.delete(cacheName);
+            if (success) deleted++;
+          }
+
+          statusEl.className = 'status success';
+          statusEl.textContent = `✅ Cleared ${deleted} cache(s)!`;
+          
+          setTimeout(() => checkServiceWorkers(), 1000);
+        } else {
+          statusEl.className = 'status info';
+          statusEl.textContent = 'Cache API not supported';
+        }
+      } catch (error) {
+        statusEl.className = 'status error';
+        statusEl.textContent = `❌ Error clearing caches: ${error.message}`;
+      }
+    }
+
+    // Check on load
+    checkServiceWorkers();
+  </script>
+</body>
+</html>
+

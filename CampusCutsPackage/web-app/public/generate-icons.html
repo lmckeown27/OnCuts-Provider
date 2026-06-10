@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generate CampusCuts Icons</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .icon-preview {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      margin: 20px 0;
+    }
+    .icon-item {
+      text-align: center;
+    }
+    canvas {
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      background: white;
+    }
+    button {
+      background: #7C3AED;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 10px 5px;
+    }
+    button:hover {
+      background: #6D28D9;
+    }
+    .info {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 20px 0;
+    }
+    h1 {
+      color: #7C3AED;
+    }
+  </style>
+</head>
+<body>
+  <h1>CampusCuts Icon Generator</h1>
+  
+  <div class="info">
+    <h3>Instructions:</h3>
+    <ol>
+      <li>Click "Generate Icons" button below</li>
+      <li>Right-click each icon and "Save image as..."</li>
+      <li>Save with the exact filename shown (e.g., icon-72x72.png)</li>
+      <li>Save all icons to the /public/ folder</li>
+      <li>Refresh your app to see the icons</li>
+    </ol>
+  </div>
+
+  <button onclick="generateAllIcons()">Generate All Icons</button>
+  <button onclick="downloadAllIcons()">Download All (Automatic)</button>
+
+  <div class="icon-preview" id="preview"></div>
+
+  <script>
+    const sizes = [72, 96, 128, 144, 152, 192, 384, 512];
+    const canvases = {};
+
+    function drawIcon(canvas, size) {
+      const ctx = canvas.getContext('2d');
+      const scale = size / 512; // Base everything on 512px size
+      
+      // Clear canvas
+      ctx.clearRect(0, 0, size, size);
+      
+      // Background
+      ctx.fillStyle = '#7C3AED'; // Primary purple
+      ctx.fillRect(0, 0, size, size);
+      
+      // White circle background
+      ctx.fillStyle = 'white';
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, size * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Scissors icon (simplified)
+      ctx.strokeStyle = '#7C3AED';
+      ctx.lineWidth = size * 0.04;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      
+      // Left handle circle
+      ctx.beginPath();
+      ctx.arc(size * 0.35, size * 0.35, size * 0.08, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // Right handle circle
+      ctx.beginPath();
+      ctx.arc(size * 0.35, size * 0.65, size * 0.08, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // Left blade
+      ctx.beginPath();
+      ctx.moveTo(size * 0.4, size * 0.4);
+      ctx.lineTo(size * 0.65, size * 0.5);
+      ctx.stroke();
+      
+      // Right blade
+      ctx.beginPath();
+      ctx.moveTo(size * 0.4, size * 0.6);
+      ctx.lineTo(size * 0.65, size * 0.5);
+      ctx.stroke();
+      
+      // CC text at bottom
+      ctx.fillStyle = 'white';
+      ctx.font = `bold ${size * 0.12}px system-ui`;
+      ctx.textAlign = 'center';
+      ctx.fillText('CC', size / 2, size * 0.85);
+    }
+
+    function generateAllIcons() {
+      const preview = document.getElementById('preview');
+      preview.innerHTML = '';
+      
+      sizes.forEach(size => {
+        const container = document.createElement('div');
+        container.className = 'icon-item';
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        canvas.id = `icon-${size}`;
+        canvases[size] = canvas;
+        
+        drawIcon(canvas, size);
+        
+        const label = document.createElement('div');
+        label.textContent = `icon-${size}x${size}.png`;
+        label.style.marginTop = '10px';
+        label.style.fontSize = '12px';
+        
+        container.appendChild(canvas);
+        container.appendChild(label);
+        preview.appendChild(container);
+      });
+    }
+
+    function downloadAllIcons() {
+      if (Object.keys(canvases).length === 0) {
+        generateAllIcons();
+        setTimeout(downloadAllIcons, 100);
+        return;
+      }
+      
+      sizes.forEach(size => {
+        const canvas = canvases[size];
+        canvas.toBlob(blob => {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `icon-${size}x${size}.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        });
+      });
+      
+      alert('Downloading all icons! Check your Downloads folder.');
+    }
+
+    // Generate on page load
+    window.addEventListener('load', generateAllIcons);
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,102 @@
+version: '3.8'
+
+# Production Docker Compose Configuration
+# Usage: docker-compose -f docker-compose.production.yml up -d
+
+services:
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: campuscuts-api-prod
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      
+      # Database
+      DATABASE_URL: ${DATABASE_URL}
+      
+      # Redis
+      REDIS_URL: ${REDIS_URL}
+      
+      # Aptos Blockchain
+      APTOS_NETWORK: ${APTOS_NETWORK:-devnet}
+      APTOS_NODE_URL: ${APTOS_NODE_URL}
+      PETRA_PRIVATE_KEY: ${PETRA_PRIVATE_KEY}
+      APTOS_PLATFORM_ADDRESS: ${APTOS_PLATFORM_ADDRESS}
+      APTOS_MODULE_ADDRESS: ${APTOS_MODULE_ADDRESS}
+      
+      # Security
+      CUSTODIAL_ENCRYPTION_SECRET: ${CUSTODIAL_ENCRYPTION_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: 7d
+      
+      # Stripe
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      
+      # IPFS/Pinata
+      PINATA_API_KEY: ${PINATA_API_KEY}
+      PINATA_SECRET_API_KEY: ${PINATA_SECRET_API_KEY}
+      PINATA_JWT: ${PINATA_JWT}
+      
+      # AWS (optional)
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION:-us-west-1}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Frontend
+  frontend:
+    build:
+      context: ./web-app
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=${FRONTEND_API_URL:-https://api.campuscuts.com/api/v1}
+        - VITE_API_BASE_URL=${FRONTEND_API_BASE_URL:-https://api.campuscuts.com}
+        - VITE_WS_URL=${FRONTEND_WS_URL:-wss://api.campuscuts.com}
+        - VITE_APTOS_NETWORK=${APTOS_NETWORK:-devnet}
+        - VITE_APTOS_NODE_URL=${APTOS_NODE_URL}
+        - VITE_APTOS_MODULE_ADDRESS=${APTOS_MODULE_ADDRESS}
+        - VITE_STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
+        - VITE_APP_NAME=CampusCuts
+        - VITE_APP_VERSION=${APP_VERSION:-1.0.0}
+    container_name: campuscuts-frontend-prod
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  default:
+    name: campuscuts-network
+

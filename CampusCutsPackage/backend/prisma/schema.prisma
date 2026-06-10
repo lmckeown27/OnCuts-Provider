@@ -1,0 +1,706 @@
+// CampusCuts Production Database Schema
+// PostgreSQL as Coordination + Intelligence Layer
+// Sui settlement via Bridge + zkLogin; Postgres = coordination
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  // Prisma 7: url removed, pass to PrismaClient constructor instead
+  extensions = [pgcrypto, pg_trgm]
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ENUMS
+// ═══════════════════════════════════════════════════════════════
+
+enum UserRole {
+  CONSUMER
+  BARBER
+  CAMPUS_MANAGER
+  ADMIN
+}
+
+enum LocationType {
+  DORM
+  APARTMENT
+  OFF_CAMPUS
+  LIBRARY
+  COMMONS
+  GYM
+  PARKING_LOT
+  GREEK_HOUSE
+  OTHER
+}
+
+enum LocationCohort {
+  FRESHMAN_HOUSING
+  UPPERCLASS_HOUSING
+  GRADUATE_HOUSING
+  OFF_CAMPUS_POPULAR
+  CAMPUS_CENTER
+  ATHLETIC_FACILITY
+  GREEK_ROW
+  COMMUTER_LOT
+  UNKNOWN
+}
+
+enum AvailabilityStatus {
+  OPEN           // Available for booking
+  LOCKED         // Temporarily held during booking flow
+  BOOKED         // Confirmed booking exists
+  COMPLETED      // Service completed
+  CANCELLED      // Cancelled by either party
+}
+
+enum BookingStatus {
+  PENDING        // Awaiting barber approval
+  ACCEPTED       // Barber accepted, awaiting payment
+  PAID           // Payment confirmed on-chain
+  IN_PROGRESS    // Service started
+  COMPLETED      // Service completed
+  DISPUTED       // Dispute opened
+  CANCELLED      // Cancelled before completion
+  REFUNDED       // Refund processed on-chain
+}
+
+enum ServiceType {
+  HAIRCUT
+  FADE
+  BEARD_TRIM
+  FULL_SERVICE
+  HOT_TOWEL_SHAVE
+  COLOR
+  STYLING
+  LINEUP
+  BUZZ_CUT
+  SHAPE_UP
+  PERM
+  BRAIDS
+  LOCS
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  ESCALATED
+  CLOSED
+}
+
+enum AIModelType {
+  LOCATION_NORMALIZATION
+  FRAUD_DETECTION
+  DISPUTE_RESOLUTION
+  SENTIMENT_ANALYSIS
+  QUALITY_ASSESSMENT
+  DEMAND_PREDICTION
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CORE ENTITIES
+// ═══════════════════════════════════════════════════════════════
+
+model Campus {
+  id          String   @id @default(uuid()) @db.Uuid
+  slug        String   @unique @db.VarChar(50)
+  name        String   @db.VarChar(200)
+  city        String   @db.VarChar(100)
+  state       String   @db.VarChar(2)
+  country     String   @default("US") @db.VarChar(2)
+  timezone    String   @db.VarChar(50)
+  
+  // Market configuration
+  basePriceUsdCents      Int     @default(2200)  // $22.00
+  averagePriceUsdCents   Int     @default(3500)  // $35.00
+  premiumCeilingUsdCents Int     @default(4500)  // $45.00
+  platformFeePercent     Decimal @default(5.00) @db.Decimal(5,2)
+  
+  // Metadata
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+  
+  // Relations
+  users       User[]
+  barbers     Barber[]
+  locations   Location[]
+  marketFactors MarketFactors?
+  rankings    BarberRanking[]
+  
+  @@index([slug])
+  @@index([city, state])
+  @@index([isActive])
+  @@map("campuses")
+}
+
+model User {
+  id              String   @id @default(uuid()) @db.Uuid
+  walletAddress   String?  @unique @map("legacy_wallet_address") @db.VarChar(66) // Pre-Sui hex; prefer suiAddress
+  suiAddress      String?  @unique @map("sui_address") @db.VarChar(66)
+  zkLoginSalt     String?  @map("zk_login_salt") @db.Text
+  /// Sign in with Apple subject (`sub`); used when the Apple JWT no longer includes `email`.
+  appleSub        String?  @unique @map("apple_sub") @db.VarChar(255)
+  role            UserRole
+  campusId        String   @db.Uuid
+  
+  // Profile (optional)
+  displayName     String?  @db.VarChar(100)
+  avatarUrl       String?  @db.Text
+  instagramHandle String?  @db.VarChar(50)
+  
+  // Status flags (admin-controlled)
+  isVerified      Boolean  @default(false)
+  isBlocked       Boolean  @default(false)
+  isBanned        Boolean  @default(false)
+  
+  // Metadata
+  createdAt       DateTime @default(now()) @db.Timestamptz
+  updatedAt       DateTime @updatedAt @db.Timestamptz
+  lastActiveAt    DateTime @default(now()) @db.Timestamptz
+  
+  // Relations
+  campus          Campus   @relation(fields: [campusId], references: [id], onDelete: Restrict)
+  barberProfile   Barber?
+  consumerBookings Booking[] @relation("ConsumerBookings")
+  consumerReviews  Review[]  @relation("ConsumerReviews")
+  locationSubmissions Location[] @relation("LocationSubmitter")
+  adminNotes      AdminNote[]
+  fraudFlags      FraudFlag[]
+  
+  @@index([walletAddress])
+  @@index([campusId, role])
+  @@index([isVerified])
+  @@index([isBlocked])
+  @@map("users")
+}
+
+model Barber {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @unique @db.Uuid
+  campusId    String   @db.Uuid
+  
+  // Identity
+  bio         String?  @db.Text
+  
+  // Service offerings
+  specialties ServiceType[]
+  
+  // Pricing boundaries (enforced by backend)
+  currentMinPriceUsdCents Int
+  currentMaxPriceUsdCents Int
+  
+  // Cached reputation (derived from blockchain)
+  // These are NEVER manually edited
+  totalBookings        Int      @default(0)
+  completedBookings    Int      @default(0)
+  cancelledBookings    Int      @default(0)
+  avgRating            Decimal? @db.Decimal(3,2)
+  totalReviews         Int      @default(0)
+  reliabilityScore     Decimal? @db.Decimal(5,2)  // 0-100
+  
+  // Dynamic pricing multiplier (computed nightly)
+  bqsScore             Decimal? @db.Decimal(5,2)  // Barber Quality Score
+  pricingMultiplier    Decimal  @default(1.00) @db.Decimal(4,2)
+  
+  // Campus Manager role (exactly one per campus)
+  isCampusManager      Boolean  @default(false)
+  campusManagerSince   DateTime? @db.Timestamptz
+  
+  // Status
+  isActive    Boolean  @default(true)
+  isOnboarded Boolean  @default(false)
+  
+  // Timestamps
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+  
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campus      Campus   @relation(fields: [campusId], references: [id], onDelete: Restrict)
+  availability Availability[]
+  bookings    Booking[]
+  reviews     Review[]
+  reputationSnapshots ReputationSnapshot[]
+  rankings    BarberRanking[]
+  qualityScores BarberQualityScore[]
+  pricingMultipliers BarberPricingMultiplier[]
+  
+  @@index([userId])
+  @@index([campusId, isActive])
+  @@index([bqsScore])
+  @@index([avgRating])
+  @@index([campusId, isCampusManager])
+  @@map("barbers")
+}
+
+model Location {
+  id              String       @id @default(uuid()) @db.Uuid
+  campusId        String       @db.Uuid
+  
+  // Canonical name (AI-normalized)
+  name            String       @db.VarChar(200)
+  normalizedName  String       @db.VarChar(200)  // Lowercase, stripped
+  
+  // Classification
+  type            LocationType
+  cohort          LocationCohort @default(UNKNOWN)
+  
+  // Crowd-sourced metadata
+  usageCount      Int          @default(1)
+  confidence      Decimal      @default(0.50) @db.Decimal(4,2)  // 0.00 to 1.00
+  isVerified      Boolean      @default(false)  // Admin or AI-verified
+  
+  // Optional enrichment
+  address         String?      @db.Text
+  buildingCode    String?      @db.VarChar(20)
+  notes           String?      @db.Text
+  
+  // Attribution
+  createdByUserId String?      @db.Uuid
+  
+  // Timestamps
+  createdAt       DateTime     @default(now()) @db.Timestamptz
+  updatedAt       DateTime     @updatedAt @db.Timestamptz
+  
+  // Relations
+  campus          Campus       @relation(fields: [campusId], references: [id], onDelete: Restrict)
+  createdBy       User?        @relation("LocationSubmitter", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  aliases         LocationAlias[]
+  availability    Availability[]
+  aiAnnotations   AIAnnotation[]
+  
+  @@unique([campusId, normalizedName])
+  @@index([campusId, isVerified])
+  @@index([campusId, type])
+  @@index([usageCount])
+  @@index([confidence])
+  @@map("locations")
+}
+
+model LocationAlias {
+  id          String   @id @default(uuid()) @db.Uuid
+  locationId  String   @db.Uuid
+  
+  alias       String   @db.VarChar(200)
+  normalizedAlias String @db.VarChar(200)
+  
+  // Source tracking
+  isAiGenerated Boolean @default(false)
+  usageCount    Int     @default(0)
+  
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  
+  // Relations
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  
+  @@unique([locationId, normalizedAlias])
+  @@index([normalizedAlias])
+  @@map("location_aliases")
+}
+
+model Availability {
+  id          String   @id @default(uuid()) @db.Uuid
+  barberId    String   @db.Uuid
+  locationId  String   @db.Uuid
+  
+  // Time slot
+  startTime   DateTime @db.Timestamptz
+  endTime     DateTime @db.Timestamptz
+  
+  // Pricing for this slot
+  priceUsdCents Int
+  serviceTypes  ServiceType[]
+  
+  // State machine
+  status      AvailabilityStatus @default(OPEN)
+  
+  // Lock mechanism (prevents double-booking)
+  lockedAt    DateTime? @db.Timestamptz
+  lockedBy    String?   @db.Uuid  // Consumer user ID
+  lockExpiresAt DateTime? @db.Timestamptz
+  
+  // Metadata
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+  
+  // Relations
+  barber      Barber   @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  booking     Booking?
+  
+  @@index([barberId, status])
+  @@index([startTime, endTime])
+  @@index([status])
+  @@index([lockedBy, lockExpiresAt])
+  @@map("availability")
+}
+
+model Booking {
+  id              String   @id @default(uuid()) @db.Uuid
+  availabilityId  String   @unique @db.Uuid
+  barberId        String   @db.Uuid
+  consumerId      String   @db.Uuid
+  
+  // Service details
+  serviceType     ServiceType
+  priceUsdCents   Int
+  platformFeeUsdCents Int
+  barberEarningsUsdCents Int
+  
+  // Blockchain anchoring (legacy column names in DB may still be aptos_*)
+  aptosTxHash     String?  @db.VarChar(66)
+  aptosEventIndex BigInt?
+  
+  // Status
+  status          BookingStatus @default(PENDING)
+  
+  // Timeline
+  requestedAt     DateTime @default(now()) @db.Timestamptz
+  acceptedAt      DateTime? @db.Timestamptz
+  paymentRequestedAt DateTime? @db.Timestamptz
+  paidAt          DateTime? @db.Timestamptz
+  startedAt       DateTime? @db.Timestamptz
+  completedAt     DateTime? @db.Timestamptz
+  cancelledAt     DateTime? @db.Timestamptz
+  
+  // Cancellation tracking
+  cancelledBy     String?  @db.Uuid
+  cancellationReason String? @db.Text
+  
+  // Metadata
+  createdAt       DateTime @default(now()) @db.Timestamptz
+  updatedAt       DateTime @updatedAt @db.Timestamptz
+  
+  // Relations
+  availability    Availability @relation(fields: [availabilityId], references: [id], onDelete: Restrict)
+  barber          Barber   @relation(fields: [barberId], references: [id], onDelete: Restrict)
+  consumer        User     @relation("ConsumerBookings", fields: [consumerId], references: [id], onDelete: Restrict)
+  review          Review?
+  dispute         Dispute?
+  
+  @@index([barberId, status])
+  @@index([consumerId, status])
+  @@index([aptosTxHash])
+  @@index([status])
+  @@index([requestedAt])
+  @@map("bookings")
+}
+
+model Review {
+  id          String   @id @default(uuid()) @db.Uuid
+  bookingId   String   @unique @db.Uuid
+  barberId    String   @db.Uuid
+  consumerId  String   @db.Uuid
+  
+  // Review content
+  rating      Int      @db.SmallInt  // 1-5
+  comment     String?  @db.Text
+  
+  // AI analysis (advisory only)
+  sentimentScore Decimal? @db.Decimal(4,2)  // -1.00 to 1.00
+  
+  // Blockchain anchoring
+  aptosTxHash String?  @db.VarChar(66)
+  
+  // Timestamps
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+  
+  // Relations
+  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  barber      Barber   @relation(fields: [barberId], references: [id], onDelete: Restrict)
+  consumer    User     @relation("ConsumerReviews", fields: [consumerId], references: [id], onDelete: Restrict)
+  aiAnnotations AIAnnotation[]
+  
+  @@index([barberId, rating])
+  @@index([consumerId])
+  @@index([createdAt])
+  @@map("reviews")
+}
+
+model Dispute {
+  id          String   @id @default(uuid()) @db.Uuid
+  bookingId   String   @unique @db.Uuid
+  
+  // Dispute details
+  openedBy    String   @db.Uuid  // User ID
+  reason      String   @db.Text
+  evidence    Json?    @db.JsonB
+  
+  // Status
+  status      DisputeStatus @default(OPEN)
+  
+  // Resolution
+  resolvedBy  String?  @db.Uuid  // Admin user ID
+  resolution  String?  @db.Text
+  refundAmountUsdCents Int?
+  
+  // Timestamps
+  openedAt    DateTime @default(now()) @db.Timestamptz
+  resolvedAt  DateTime? @db.Timestamptz
+  
+  // Relations
+  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  aiAnnotations AIAnnotation[]
+  
+  @@index([status])
+  @@index([openedAt])
+  @@map("disputes")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// REPUTATION & RANKING LAYER
+// ═══════════════════════════════════════════════════════════════
+
+model ReputationSnapshot {
+  id          String   @id @default(uuid()) @db.Uuid
+  barberId    String   @db.Uuid
+  
+  // Snapshot data (derived from blockchain)
+  totalBookings     Int
+  completedBookings Int
+  cancelledBookings Int
+  avgRating         Decimal @db.Decimal(3,2)
+  totalReviews      Int
+  repeatCustomerRate Decimal @db.Decimal(5,2)
+  
+  // Snapshot metadata
+  snapshotDate DateTime @db.Date
+  computedAt   DateTime @default(now()) @db.Timestamptz
+  
+  // Relations
+  barber      Barber   @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  
+  @@unique([barberId, snapshotDate])
+  @@index([barberId, snapshotDate])
+  @@map("reputation_snapshots")
+}
+
+model BarberRanking {
+  id          String   @id @default(uuid()) @db.Uuid
+  barberId    String   @db.Uuid
+  campusId    String   @db.Uuid
+  
+  // Composite ranking score
+  rankScore   Decimal  @db.Decimal(7,2)
+  
+  // Score breakdown (for transparency)
+  breakdown   Json     @db.JsonB
+  // Example: { bqs: 85.5, availability: 0.8, proximity: 0.9, surge: 1.0 }
+  
+  // Ranking metadata
+  rankPosition Int
+  totalBarbers Int
+  
+  // Timestamps
+  computedAt  DateTime @default(now()) @db.Timestamptz
+  validUntil  DateTime @db.Timestamptz
+  
+  // Relations
+  barber      Barber   @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  campus      Campus   @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  
+  @@unique([barberId, campusId, computedAt])
+  @@index([campusId, rankScore])
+  @@index([validUntil])
+  @@map("barber_rankings")
+}
+
+model BarberQualityScore {
+  id          String   @id @default(uuid()) @db.Uuid
+  barberId    String   @db.Uuid
+  
+  // BQS components
+  reviewScoreWeighted    Decimal @db.Decimal(5,2)
+  demandScore            Decimal @db.Decimal(5,2)
+  priceJustificationScore Decimal @db.Decimal(5,2)
+  loyaltyScore           Decimal @db.Decimal(5,2)
+  
+  // Final BQS
+  bqsScore    Decimal  @db.Decimal(5,2)  // 0-100
+  
+  // Computation metadata
+  computedAt  DateTime @default(now()) @db.Timestamptz
+  dataWindow  String   @db.VarChar(50)  // e.g., "last_30_days"
+  
+  // Relations
+  barber      Barber   @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  
+  @@index([barberId, computedAt])
+  @@map("barber_quality_scores")
+}
+
+model BarberPricingMultiplier {
+  id          String   @id @default(uuid()) @db.Uuid
+  barberId    String   @db.Uuid
+  
+  // Multiplier (1.0 to 1.5)
+  multiplier  Decimal  @db.Decimal(4,2)
+  
+  // Reasoning
+  bqsScore    Decimal  @db.Decimal(5,2)
+  reason      String   @db.VarChar(200)
+  
+  // Validity period
+  validFrom   DateTime @db.Timestamptz
+  validUntil  DateTime @db.Timestamptz
+  
+  // Relations
+  barber      Barber   @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  
+  @@index([barberId, validFrom, validUntil])
+  @@map("barber_pricing_multipliers")
+}
+
+model MarketFactors {
+  id          String   @id @default(uuid()) @db.Uuid
+  campusId    String   @unique @db.Uuid
+  
+  // Market calibration factors
+  demandNormalizationFactor   Decimal @default(1.00) @db.Decimal(4,2)
+  reviewWeightAdjustment      Decimal @default(1.00) @db.Decimal(4,2)
+  competitionIntensityScore   Decimal @default(1.00) @db.Decimal(4,2)
+  surgeThreshold              Decimal @default(2.00) @db.Decimal(4,2)  // demand/supply ratio
+  
+  // Timestamps
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+  
+  // Relations
+  campus      Campus   @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  
+  @@map("market_factors")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AI & INTELLIGENCE LAYER
+// ═══════════════════════════════════════════════════════════════
+
+model AIAnnotation {
+  id          String   @id @default(uuid()) @db.Uuid
+  
+  // Entity reference (polymorphic)
+  entityType  String   @db.VarChar(50)  // location | review | dispute | booking
+  entityId    String   @db.Uuid
+  
+  // AI metadata
+  modelType   AIModelType
+  modelName   String   @db.VarChar(100)  // e.g., "gpt-4-turbo"
+  
+  // AI output
+  output      Json     @db.JsonB
+  confidence  Decimal? @db.Decimal(4,2)  // 0.00 to 1.00
+  
+  // Timestamps
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  
+  // Optional relations (for convenience)
+  location    Location? @relation(fields: [entityId], references: [id], onDelete: Cascade, map: "ai_annotations_location_fkey")
+  review      Review?   @relation(fields: [entityId], references: [id], onDelete: Cascade, map: "ai_annotations_review_fkey")
+  dispute     Dispute?  @relation(fields: [entityId], references: [id], onDelete: Cascade, map: "ai_annotations_dispute_fkey")
+  
+  @@index([entityType, entityId])
+  @@index([modelType, createdAt])
+  @@map("ai_annotations")
+}
+
+model AIEventsLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  
+  eventType   String   @db.VarChar(100)
+  entityType  String   @db.VarChar(50)
+  entityId    String   @db.Uuid
+  
+  payload     Json     @db.JsonB
+  processingStatus String @db.VarChar(50)  // pending | processing | completed | failed
+  
+  error       String?  @db.Text
+  
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  processedAt DateTime? @db.Timestamptz
+  
+  @@index([processingStatus, createdAt])
+  @@index([eventType])
+  @@map("ai_events_log")
+}
+
+model FraudFlag {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  
+  flagType    String   @db.VarChar(100)  // multi_account | fake_review | payment_fraud
+  riskScore   Decimal  @db.Decimal(4,2)  // 0.00 to 1.00
+  evidence    Json     @db.JsonB
+  
+  status      String   @db.VarChar(50)  // open | reviewed | false_positive | confirmed
+  reviewedBy  String?  @db.Uuid
+  
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  reviewedAt  DateTime? @db.Timestamptz
+  
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, status])
+  @@index([riskScore])
+  @@map("fraud_flags")
+}
+
+model MarketStats {
+  id          String   @id @default(uuid()) @db.Uuid
+  campusId    String   @db.Uuid
+  
+  statType    String   @db.VarChar(100)  // demand | supply | pricing | surge
+  value       Decimal  @db.Decimal(10,2)
+  metadata    Json?    @db.JsonB
+  
+  timestamp   DateTime @db.Timestamptz
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  
+  @@index([campusId, statType, timestamp])
+  @@map("market_stats")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ADMIN & MODERATION
+// ═══════════════════════════════════════════════════════════════
+
+model AdminNote {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  adminId     String   @db.Uuid
+  
+  note        String   @db.Text
+  isInternal  Boolean  @default(true)
+  
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@map("admin_notes")
+}
+
+model CronHistory {
+  id          String   @id @default(uuid()) @db.Uuid
+  
+  jobName     String   @db.VarChar(100)
+  status      String   @db.VarChar(50)  // success | failed | partial
+  
+  duration    Int?     // milliseconds
+  recordsProcessed Int?
+  error       String?  @db.Text
+  metadata    Json?    @db.JsonB
+  
+  executedAt  DateTime @default(now()) @db.Timestamptz
+  
+  @@index([jobName, executedAt])
+  @@index([status])
+  @@map("cron_history")
+}
+

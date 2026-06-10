@@ -1,0 +1,11 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Barber pole icon -->
+  <rect x="9" y="2" width="6" height="20" rx="3" stroke="currentColor" stroke-width="2"/>
+  <path d="M9 5 L15 9" stroke="currentColor" stroke-width="2"/>
+  <path d="M9 9 L15 13" stroke="currentColor" stroke-width="2"/>
+  <path d="M9 13 L15 17" stroke="currentColor" stroke-width="2"/>
+  <path d="M9 17 L15 21" stroke="currentColor" stroke-width="2"/>
+  <circle cx="12" cy="2" r="2" fill="currentColor"/>
+  <circle cx="12" cy="22" r="2" fill="currentColor"/>
+</svg>
+

@@ -1,0 +1,207 @@
+# CampusCuts Docker Deployment Makefile
+# Simple commands for managing Docker deployment
+
+.PHONY: help setup dev prod build start stop restart logs clean
+
+# Default target
+help:
+	@echo "════════════════════════════════════════════════════════"
+	@echo "  🏆 CampusCuts Docker Commands"
+	@echo "════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "  Setup:"
+	@echo "    make setup          - Initial setup (copy .env files)"
+	@echo ""
+	@echo "  Development:"
+	@echo "    make dev            - Start development environment"
+	@echo "    make dev-logs       - View development logs"
+	@echo "    make dev-stop       - Stop development environment"
+	@echo ""
+	@echo "  Production:"
+	@echo "    make prod           - Start production environment"
+	@echo "    make prod-logs      - View production logs"
+	@echo "    make prod-stop      - Stop production environment"
+	@echo ""
+	@echo "  Individual Services:"
+	@echo "    make backend        - Build & run backend only"
+	@echo "    make frontend       - Build & run frontend only"
+	@echo ""
+	@echo "  Utilities:"
+	@echo "    make logs           - View all logs"
+	@echo "    make restart        - Restart all services"
+	@echo "    make status         - Show service status"
+	@echo "    make clean          - Clean up everything"
+	@echo "    make reset          - Reset database (WARNING: deletes data)"
+	@echo ""
+	@echo "════════════════════════════════════════════════════════"
+
+# Initial setup
+setup:
+	@echo "🔧 Setting up environment files..."
+	@test -f backend/.env || cp backend/env.example backend/.env
+	@test -f web-app/.env || cp web-app/env.example web-app/.env
+	@echo "✅ Environment files created"
+	@echo ""
+	@echo "📝 Next steps:"
+	@echo "  1. Edit backend/.env with your values"
+	@echo "  2. Edit web-app/.env with your values"
+	@echo "  3. Run 'make dev' to start development"
+
+# Development environment
+dev:
+	@echo "🚀 Starting development environment..."
+	docker-compose up -d
+	@echo "✅ Development environment started"
+	@echo ""
+	@echo "📊 Services:"
+	@echo "  Frontend:  http://localhost"
+	@echo "  Backend:   http://localhost:3001"
+	@echo "  Postgres:  localhost:5432"
+	@echo "  Redis:     localhost:6379"
+
+dev-logs:
+	docker-compose logs -f
+
+dev-stop:
+	@echo "🛑 Stopping development environment..."
+	docker-compose down
+	@echo "✅ Stopped"
+
+# Production environment
+prod:
+	@echo "🚀 Starting production environment..."
+	docker-compose -f docker-compose.production.yml up -d
+	@echo "✅ Production environment started"
+
+prod-logs:
+	docker-compose -f docker-compose.production.yml logs -f
+
+prod-stop:
+	@echo "🛑 Stopping production environment..."
+	docker-compose -f docker-compose.production.yml down
+	@echo "✅ Stopped"
+
+# Build services
+build:
+	@echo "🔨 Building all services..."
+	docker-compose build
+	@echo "✅ Build complete"
+
+build-backend:
+	@echo "🔨 Building backend..."
+	cd backend && docker build -t campuscuts-backend .
+	@echo "✅ Backend built"
+
+build-frontend:
+	@echo "🔨 Building frontend..."
+	cd web-app && ./build-docker.sh
+	@echo "✅ Frontend built"
+
+# Individual services
+backend: build-backend
+	@echo "🚀 Starting backend..."
+	docker-compose up -d backend postgres redis
+	@echo "✅ Backend running at http://localhost:3001"
+
+frontend: build-frontend
+	@echo "🚀 Starting frontend..."
+	cd web-app && ./run-docker.sh
+	@echo "✅ Frontend running at http://localhost"
+
+# Service management
+start:
+	@echo "▶️  Starting all services..."
+	docker-compose start
+	@echo "✅ Started"
+
+stop:
+	@echo "⏸️  Stopping all services..."
+	docker-compose stop
+	@echo "✅ Stopped"
+
+restart:
+	@echo "🔄 Restarting all services..."
+	docker-compose restart
+	@echo "✅ Restarted"
+
+status:
+	@echo "📊 Service Status:"
+	@docker-compose ps
+
+# Database management
+migrate:
+	@echo "🔄 Running database migrations..."
+	docker-compose exec backend npx prisma migrate deploy
+	@echo "✅ Migrations complete"
+
+seed:
+	@echo "🌱 Seeding database..."
+	docker-compose exec backend npm run seed
+	@echo "✅ Database seeded"
+
+# Logs
+logs:
+	docker-compose logs -f
+
+logs-backend:
+	docker-compose logs -f backend
+
+logs-frontend:
+	docker-compose logs -f frontend
+
+logs-db:
+	docker-compose logs -f postgres
+
+# Health checks
+health:
+	@echo "🏥 Health Checks:"
+	@echo -n "  Backend:  "
+	@curl -s http://localhost:3001/health || echo "❌ Down"
+	@echo -n "  Frontend: "
+	@curl -s http://localhost/health || echo "❌ Down"
+
+# Cleanup
+clean:
+	@echo "🧹 Cleaning up..."
+	docker-compose down
+	docker system prune -f
+	@echo "✅ Cleaned up"
+
+clean-all: clean
+	@echo "🧹 Removing volumes (deletes data)..."
+	docker-compose down -v
+	docker system prune -af --volumes
+	@echo "✅ Everything cleaned"
+
+reset:
+	@echo "⚠️  WARNING: This will delete all data!"
+	@read -p "Are you sure? (yes/no): " confirm && [ "$$confirm" = "yes" ]
+	docker-compose down -v
+	docker-compose up -d postgres redis
+	@sleep 5
+	docker-compose exec backend npx prisma migrate deploy
+	docker-compose up -d
+	@echo "✅ Reset complete"
+
+# Testing
+test:
+	@echo "🧪 Running tests..."
+	docker-compose exec backend npm test
+
+test-e2e:
+	@echo "🧪 Running E2E tests..."
+	docker-compose exec backend npm run test:e2e
+
+# Backup
+backup:
+	@echo "💾 Creating database backup..."
+	@mkdir -p backups
+	docker-compose exec postgres pg_dump -U postgres campuscuts > backups/backup_$(shell date +%Y%m%d_%H%M%S).sql
+	@echo "✅ Backup created in backups/"
+
+restore:
+	@echo "📥 Restoring database from backup..."
+	@test -f $(file) || (echo "❌ Usage: make restore file=backups/backup_XXXXXXXX_XXXXXX.sql" && exit 1)
+	cat $(file) | docker-compose exec -T postgres psql -U postgres campuscuts
+	@echo "✅ Database restored"
+

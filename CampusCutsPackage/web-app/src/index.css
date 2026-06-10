@@ -1,0 +1,214 @@
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    font-family: 'Source Serif 4', Georgia, Cambria, 'Times New Roman', serif;
+    font-weight: 500;
+    background-color: #f9fafb; /* gray-50 - matches main content background */
+    overscroll-behavior: none; /* Disable bounce/rubber-band effect on scroll edges */
+  }
+
+  :root {
+    /* CampusKinect Color System */
+    /* Primary Olive Green */
+    --color-primary: #708d81;
+    --color-primary-50: #f2f5f4;
+    --color-primary-100: #e6ebea;
+    --color-primary-200: #bfcdc8;
+    --color-primary-300: #99afa7;
+    --color-primary-400: #708d81;
+    --color-primary-500: #5a7268;
+    --color-primary-600: #445750;
+    --color-primary-700: #2e3c38;
+    --color-primary-800: #172120;
+    --color-primary-900: #0b1110;
+    
+    /* Neutral Greys */
+    --color-neutral-50: #fafafa;
+    --color-neutral-100: #f5f5f5;
+    --color-neutral-200: #e5e5e5;
+    --color-neutral-300: #d4d4d4;
+    --color-neutral-400: #a3a3a3;
+    --color-neutral-500: #737373;
+    --color-neutral-600: #525252;
+    --color-neutral-700: #404040;
+    --color-neutral-800: #262626;
+    --color-neutral-900: #171717;
+    
+    /* Semantic Colors */
+    --color-success: #22c55e;
+    --color-warning: #f59e0b;
+    --color-error: #ef4444;
+    --color-info: #3b82f6;
+  }
+
+  /* Global cursor pointer for interactive elements in date/time pickers */
+  *::-webkit-calendar-picker-indicator {
+    cursor: pointer !important;
+  }
+
+  /* Ensure all interactive date/time picker elements have pointer cursor */
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="time"]::-webkit-calendar-picker-indicator,
+  input[type="date"]::-webkit-inner-spin-button,
+  input[type="time"]::-webkit-inner-spin-button {
+    cursor: pointer !important;
+  }
+}
+
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-in;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slide-down {
+    animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      max-height: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      max-height: 500px;
+      transform: translateY(0);
+    }
+  }
+
+  /* Mobile Touch Feedback */
+  .active\:scale-98:active {
+    transform: scale(0.98);
+  }
+
+  .active\:scale-95:active {
+    transform: scale(0.95);
+  }
+
+  /* Safe Area for iOS Notch/Home Indicator */
+  .safe-area-bottom {
+    padding-bottom: max(env(safe-area-inset-bottom), 16px);
+  }
+
+  .safe-area-top {
+    padding-top: max(env(safe-area-inset-top), 16px);
+  }
+
+  .safe-area-inset-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Prevent content from being hidden by notch/status bar */
+  .mobile-container {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Hide scrollbar but allow scrolling */
+  .scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari, Opera */
+  }
+
+  /* Custom Date & Time Picker Styling */
+  /* Change accent color from blue to platform green */
+  input[type="date"],
+  input[type="time"] {
+    accent-color: var(--color-primary-400);
+    color-scheme: light;
+  }
+
+  /* Calendar picker indicator (icon) */
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="time"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    filter: invert(48%) sepia(11%) saturate(852%) hue-rotate(117deg) brightness(93%) contrast(88%);
+    opacity: 0.7;
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator:hover,
+  input[type="time"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+  }
+
+  /* Firefox date/time picker styling */
+  input[type="date"]::-moz-calendar-picker-indicator,
+  input[type="time"]::-moz-calendar-picker-indicator {
+    cursor: pointer;
+  }
+
+  /* Webkit date/time inner spin button */
+  input[type="date"]::-webkit-inner-spin-button,
+  input[type="time"]::-webkit-inner-spin-button {
+    cursor: pointer;
+  }
+
+  /* Custom styles for the calendar popup (limited browser support) */
+  input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+  input[type="time"]::-webkit-datetime-edit-fields-wrapper {
+    cursor: text;
+  }
+
+  input[type="date"]::-webkit-datetime-edit-text,
+  input[type="time"]::-webkit-datetime-edit-text {
+    color: var(--color-primary-400);
+  }
+
+  input[type="date"]::-webkit-datetime-edit-month-field,
+  input[type="date"]::-webkit-datetime-edit-day-field,
+  input[type="date"]::-webkit-datetime-edit-year-field,
+  input[type="time"]::-webkit-datetime-edit-hour-field,
+  input[type="time"]::-webkit-datetime-edit-minute-field,
+  input[type="time"]::-webkit-datetime-edit-ampm-field {
+    cursor: pointer;
+  }
+
+  input[type="date"]::-webkit-datetime-edit-month-field:hover,
+  input[type="date"]::-webkit-datetime-edit-day-field:hover,
+  input[type="date"]::-webkit-datetime-edit-year-field:hover,
+  input[type="time"]::-webkit-datetime-edit-hour-field:hover,
+  input[type="time"]::-webkit-datetime-edit-minute-field:hover,
+  input[type="time"]::-webkit-datetime-edit-ampm-field:hover {
+    background-color: var(--color-primary-100);
+    color: var(--color-primary-600);
+  }
+}

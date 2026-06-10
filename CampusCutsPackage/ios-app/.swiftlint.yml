@@ -1,0 +1,48 @@
+# SwiftLint Configuration for CampusCuts
+
+disabled_rules:
+  - trailing_whitespace
+  - line_length
+
+opt_in_rules:
+  - empty_count
+  - empty_string
+  - explicit_init
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+
+excluded:
+  - Pods
+  - DerivedData
+  - .build
+
+line_length:
+  warning: 120
+  error: 150
+  ignores_comments: true
+
+file_length:
+  warning: 500
+  error: 1000
+
+function_body_length:
+  warning: 50
+  error: 100
+
+type_body_length:
+  warning: 300
+  error: 500
+
+identifier_name:
+  min_length:
+    warning: 2
+  max_length:
+    warning: 40
+    error: 50
+  excluded:
+    - id
+    - URL
+    - url
+
+reporter: "xcode"
+

@@ -1,0 +1,805 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		9227ECA72FA5BC180084502B /* CampusCutsModule in Frameworks */ = {isa = PBXBuildFile; productRef = 92ABCD022FA6000100000002 /* CampusCutsModule */; };
+		9227ECA82FA5BC180084502B /* Core in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC00112FA6000100000111 /* Core */; };
+		9227ECA92FA5BC180084502B /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC00122FA6000100000112 /* GoogleSignIn */; };
+		9227ECAA2FA5BC180084502B /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC00132FA6000100000113 /* GoogleSignInSwift */; };
+		9227ECAB2FA5BC180084502B /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC00142FA6000100000114 /* FirebaseCore */; };
+		9227ECAC2FA5BC180084502B /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC00152FA6000100000115 /* FirebaseAuth */; };
+		9227ECAD2FA5BC180084502B /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC00162FA6000100000116 /* FirebaseMessaging */; };
+		9227ECAE2FA5BC180084502B /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC00172FA6000100000117 /* FirebaseAnalytics */; };
+		9227ECAF2FA5BC180084502B /* FirebaseAnalyticsCore in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC00182FA6000100000118 /* FirebaseAnalyticsCore */; };
+		9227ECB02FA5BC180084502B /* FirebaseAnalyticsIdentitySupport in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC00192FA6000100000119 /* FirebaseAnalyticsIdentitySupport */; };
+		9227ECB12FA5BC180084502B /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC001A2FA600010000011A /* FirebaseCrashlytics */; };
+		9227ECB22FA5BC180084502B /* FirebaseAI in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC001B2FA600010000011B /* FirebaseAI */; };
+		9227ECB32FA5BC180084502B /* FirebaseAILogic in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC001C2FA600010000011C /* FirebaseAILogic */; };
+		9227ECB42FA5BC180084502B /* StripePaymentSheet in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC001D2FA600010000011D /* StripePaymentSheet */; };
+		9227ECB52FA5BC180084502B /* SocketIO in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC001E2FA600010000011E /* SocketIO */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		9219357E2FA5AA1800D50175 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 921935662FA5AA1600D50175 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9219356D2FA5AA1600D50175;
+			remoteInfo = "Intera - Provider";
+		};
+		921935882FA5AA1800D50175 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 921935662FA5AA1600D50175 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9219356D2FA5AA1600D50175;
+			remoteInfo = "Intera - Provider";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		9219356E2FA5AA1600D50175 /* Intera - Provider.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Intera - Provider.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		9219357D2FA5AA1800D50175 /* Intera - ProviderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Intera - ProviderTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		921935872FA5AA1800D50175 /* Intera - ProviderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Intera - ProviderUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		921935702FA5AA1600D50175 /* Intera - Provider */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Intera - Provider";
+			sourceTree = "<group>";
+		};
+		921935802FA5AA1800D50175 /* Intera - ProviderTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Intera - ProviderTests";
+			sourceTree = "<group>";
+		};
+		9219358A2FA5AA1800D50175 /* Intera - ProviderUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Intera - ProviderUITests";
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		9219356B2FA5AA1600D50175 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9227ECB52FA5BC180084502B /* SocketIO in Frameworks */,
+				9227ECB42FA5BC180084502B /* StripePaymentSheet in Frameworks */,
+				9227ECB32FA5BC180084502B /* FirebaseAILogic in Frameworks */,
+				9227ECB22FA5BC180084502B /* FirebaseAI in Frameworks */,
+				9227ECB12FA5BC180084502B /* FirebaseCrashlytics in Frameworks */,
+				9227ECB02FA5BC180084502B /* FirebaseAnalyticsIdentitySupport in Frameworks */,
+				9227ECAF2FA5BC180084502B /* FirebaseAnalyticsCore in Frameworks */,
+				9227ECAE2FA5BC180084502B /* FirebaseAnalytics in Frameworks */,
+				9227ECAD2FA5BC180084502B /* FirebaseMessaging in Frameworks */,
+				9227ECAC2FA5BC180084502B /* FirebaseAuth in Frameworks */,
+				9227ECAB2FA5BC180084502B /* FirebaseCore in Frameworks */,
+				9227ECAA2FA5BC180084502B /* GoogleSignInSwift in Frameworks */,
+				9227ECA92FA5BC180084502B /* GoogleSignIn in Frameworks */,
+				9227ECA82FA5BC180084502B /* Core in Frameworks */,
+				9227ECA72FA5BC180084502B /* CampusCutsModule in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9219357A2FA5AA1800D50175 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		921935842FA5AA1800D50175 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		921935652FA5AA1600D50175 = {
+			isa = PBXGroup;
+			children = (
+				921935702FA5AA1600D50175 /* Intera - Provider */,
+				921935802FA5AA1800D50175 /* Intera - ProviderTests */,
+				9219358A2FA5AA1800D50175 /* Intera - ProviderUITests */,
+				9219356F2FA5AA1600D50175 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		9219356F2FA5AA1600D50175 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				9219356E2FA5AA1600D50175 /* Intera - Provider.app */,
+				9219357D2FA5AA1800D50175 /* Intera - ProviderTests.xctest */,
+				921935872FA5AA1800D50175 /* Intera - ProviderUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		9219356D2FA5AA1600D50175 /* Intera - Provider */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 921935912FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "Intera - Provider" */;
+			buildPhases = (
+				9219356A2FA5AA1600D50175 /* Sources */,
+				9219356B2FA5AA1600D50175 /* Frameworks */,
+				9219356C2FA5AA1600D50175 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				921935702FA5AA1600D50175 /* Intera - Provider */,
+			);
+			name = "Intera - Provider";
+			packageProductDependencies = (
+				92ABCD022FA6000100000002 /* CampusCutsModule */,
+				92CC00112FA6000100000111 /* Core */,
+				92CC00122FA6000100000112 /* GoogleSignIn */,
+				92CC00132FA6000100000113 /* GoogleSignInSwift */,
+				92CC00142FA6000100000114 /* FirebaseCore */,
+				92CC00152FA6000100000115 /* FirebaseAuth */,
+				92CC00162FA6000100000116 /* FirebaseMessaging */,
+				92CC00172FA6000100000117 /* FirebaseAnalytics */,
+				92CC00182FA6000100000118 /* FirebaseAnalyticsCore */,
+				92CC00192FA6000100000119 /* FirebaseAnalyticsIdentitySupport */,
+				92CC001A2FA600010000011A /* FirebaseCrashlytics */,
+				92CC001B2FA600010000011B /* FirebaseAI */,
+				92CC001C2FA600010000011C /* FirebaseAILogic */,
+				92CC001D2FA600010000011D /* StripePaymentSheet */,
+				92CC001E2FA600010000011E /* SocketIO */,
+			);
+			productName = "Intera - Provider";
+			productReference = 9219356E2FA5AA1600D50175 /* Intera - Provider.app */;
+			productType = "com.apple.product-type.application";
+		};
+		9219357C2FA5AA1800D50175 /* Intera - ProviderTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 921935942FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "Intera - ProviderTests" */;
+			buildPhases = (
+				921935792FA5AA1800D50175 /* Sources */,
+				9219357A2FA5AA1800D50175 /* Frameworks */,
+				9219357B2FA5AA1800D50175 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				9219357F2FA5AA1800D50175 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				921935802FA5AA1800D50175 /* Intera - ProviderTests */,
+			);
+			name = "Intera - ProviderTests";
+			packageProductDependencies = (
+			);
+			productName = "Intera - ProviderTests";
+			productReference = 9219357D2FA5AA1800D50175 /* Intera - ProviderTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		921935862FA5AA1800D50175 /* Intera - ProviderUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 921935972FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "Intera - ProviderUITests" */;
+			buildPhases = (
+				921935832FA5AA1800D50175 /* Sources */,
+				921935842FA5AA1800D50175 /* Frameworks */,
+				921935852FA5AA1800D50175 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				921935892FA5AA1800D50175 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				9219358A2FA5AA1800D50175 /* Intera - ProviderUITests */,
+			);
+			name = "Intera - ProviderUITests";
+			packageProductDependencies = (
+			);
+			productName = "Intera - ProviderUITests";
+			productReference = 921935872FA5AA1800D50175 /* Intera - ProviderUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		921935662FA5AA1600D50175 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2630;
+				LastUpgradeCheck = 2630;
+				TargetAttributes = {
+					9219356D2FA5AA1600D50175 = {
+						CreatedOnToolsVersion = 26.3;
+					};
+					9219357C2FA5AA1800D50175 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 9219356D2FA5AA1600D50175;
+					};
+					921935862FA5AA1800D50175 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 9219356D2FA5AA1600D50175;
+					};
+				};
+			};
+			buildConfigurationList = 921935692FA5AA1600D50175 /* Build configuration list for PBXProject "Intera - Provider" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 921935652FA5AA1600D50175;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				92ABCD012FA6000100000001 /* XCLocalSwiftPackageReference "../CampusCutsPackage" */,
+				92CC00012FA6000100000101 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				92CC00022FA6000100000102 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				92CC00032FA6000100000103 /* XCRemoteSwiftPackageReference "stripe-ios" */,
+				92CC00042FA6000100000104 /* XCRemoteSwiftPackageReference "socket.io-client-swift" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 9219356F2FA5AA1600D50175 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				9219356D2FA5AA1600D50175 /* Intera - Provider */,
+				9219357C2FA5AA1800D50175 /* Intera - ProviderTests */,
+				921935862FA5AA1800D50175 /* Intera - ProviderUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		9219356C2FA5AA1600D50175 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9219357B2FA5AA1800D50175 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		921935852FA5AA1800D50175 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		9219356A2FA5AA1600D50175 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		921935792FA5AA1800D50175 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		921935832FA5AA1800D50175 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		9219357F2FA5AA1800D50175 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9219356D2FA5AA1600D50175 /* Intera - Provider */;
+			targetProxy = 9219357E2FA5AA1800D50175 /* PBXContainerItemProxy */;
+		};
+		921935892FA5AA1800D50175 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9219356D2FA5AA1600D50175 /* Intera - Provider */;
+			targetProxy = 921935882FA5AA1800D50175 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		9219358F2FA5AA1800D50175 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 2MAGWNY7VS;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		921935902FA5AA1800D50175 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 2MAGWNY7VS;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		921935922FA5AA1800D50175 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Intera - Provider/InteraProvider.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2MAGWNY7VS;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "InteraProvider-Info.plist";
+				INFOPLIST_KEY_NSCameraUsageDescription = "CampusCuts uses the camera so barbers can take photos for their profile and client messages.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "CampusCuts uses Face ID to confirm your identity before deleting your account.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "CampusCuts uses your location so nearby customers can find and book you.";
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.1.4;
+				PRODUCT_BUNDLE_IDENTIFIER = "Liam.Intera---Provider";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Debug;
+		};
+		921935932FA5AA1800D50175 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Intera - Provider/InteraProvider.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2MAGWNY7VS;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "InteraProvider-Info.plist";
+				INFOPLIST_KEY_NSCameraUsageDescription = "CampusCuts uses the camera so barbers can take photos for their profile and client messages.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "CampusCuts uses Face ID to confirm your identity before deleting your account.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "CampusCuts uses your location so nearby customers can find and book you.";
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.1.4;
+				PRODUCT_BUNDLE_IDENTIFIER = "Liam.Intera---Provider";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Release;
+		};
+		921935952FA5AA1800D50175 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2MAGWNY7VS;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "Liam.Intera---ProviderTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Intera - Provider.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Intera - Provider";
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Debug;
+		};
+		921935962FA5AA1800D50175 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2MAGWNY7VS;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "Liam.Intera---ProviderTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Intera - Provider.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Intera - Provider";
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Release;
+		};
+		921935982FA5AA1800D50175 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2MAGWNY7VS;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "Liam.Intera---ProviderUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_TARGET_NAME = "Intera - Provider";
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Debug;
+		};
+		921935992FA5AA1800D50175 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2MAGWNY7VS;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "Liam.Intera---ProviderUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_TARGET_NAME = "Intera - Provider";
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		921935692FA5AA1600D50175 /* Build configuration list for PBXProject "Intera - Provider" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9219358F2FA5AA1800D50175 /* Debug */,
+				921935902FA5AA1800D50175 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		921935912FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "Intera - Provider" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				921935922FA5AA1800D50175 /* Debug */,
+				921935932FA5AA1800D50175 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		921935942FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "Intera - ProviderTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				921935952FA5AA1800D50175 /* Debug */,
+				921935962FA5AA1800D50175 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		921935972FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "Intera - ProviderUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				921935982FA5AA1800D50175 /* Debug */,
+				921935992FA5AA1800D50175 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		92ABCD012FA6000100000001 /* XCLocalSwiftPackageReference "../CampusCutsPackage" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../CampusCutsPackage;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		92CC00012FA6000100000101 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.0.0;
+			};
+		};
+		92CC00022FA6000100000102 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.11.0;
+			};
+		};
+		92CC00032FA6000100000103 /* XCRemoteSwiftPackageReference "stripe-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stripe/stripe-ios.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 24.0.0;
+			};
+		};
+		92CC00042FA6000100000104 /* XCRemoteSwiftPackageReference "socket.io-client-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/socketio/socket.io-client-swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 16.1.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		92ABCD022FA6000100000002 /* CampusCutsModule */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92ABCD012FA6000100000001 /* XCLocalSwiftPackageReference "../CampusCutsPackage" */;
+			productName = CampusCutsModule;
+		};
+		92CC00112FA6000100000111 /* Core */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92ABCD012FA6000100000001 /* XCLocalSwiftPackageReference "../CampusCutsPackage" */;
+			productName = Core;
+		};
+		92CC00122FA6000100000112 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92CC00012FA6000100000101 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		92CC00132FA6000100000113 /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92CC00012FA6000100000101 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
+		92CC00142FA6000100000114 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92CC00022FA6000100000102 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		92CC00152FA6000100000115 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92CC00022FA6000100000102 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		92CC00162FA6000100000116 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92CC00022FA6000100000102 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
+		};
+		92CC00172FA6000100000117 /* FirebaseAnalytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92CC00022FA6000100000102 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalytics;
+		};
+		92CC00182FA6000100000118 /* FirebaseAnalyticsCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92CC00022FA6000100000102 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalyticsCore;
+		};
+		92CC00192FA6000100000119 /* FirebaseAnalyticsIdentitySupport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92CC00022FA6000100000102 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalyticsIdentitySupport;
+		};
+		92CC001A2FA600010000011A /* FirebaseCrashlytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92CC00022FA6000100000102 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCrashlytics;
+		};
+		92CC001B2FA600010000011B /* FirebaseAI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92CC00022FA6000100000102 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAI;
+		};
+		92CC001C2FA600010000011C /* FirebaseAILogic */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92CC00022FA6000100000102 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAILogic;
+		};
+		92CC001D2FA600010000011D /* StripePaymentSheet */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92CC00032FA6000100000103 /* XCRemoteSwiftPackageReference "stripe-ios" */;
+			productName = StripePaymentSheet;
+		};
+		92CC001E2FA600010000011E /* SocketIO */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92CC00042FA6000100000104 /* XCRemoteSwiftPackageReference "socket.io-client-swift" */;
+			productName = SocketIO;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 921935662FA5AA1600D50175 /* Project object */;
+}

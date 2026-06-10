@@ -1,0 +1,125 @@
+version: '3.8'
+
+services:
+  # Backend API (Hybrid Architecture: Blockchain + PostgreSQL Cache)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: campuscuts-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      
+      # PostgreSQL (CACHE LAYER - Not source of truth!)
+      # Blockchain is source of truth, PostgreSQL caches for fast queries
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/campuscuts
+      
+      # Redis for caching blockchain queries (optional but recommended)
+      REDIS_URL: redis://redis:6379
+      
+      # Aptos Blockchain Configuration
+      APTOS_NETWORK: devnet
+      APTOS_NODE_URL: https://fullnode.devnet.aptoslabs.com/v1
+      APTOS_PLATFORM_ADDRESS: ${APTOS_PLATFORM_ADDRESS}
+      APTOS_PLATFORM_PRIVATE_KEY: ${APTOS_PLATFORM_PRIVATE_KEY}
+      APTOS_MODULE_ADDRESS: ${APTOS_MODULE_ADDRESS}
+      
+      # Custodial Wallet Encryption
+      CUSTODIAL_ENCRYPTION_SECRET: ${CUSTODIAL_ENCRYPTION_SECRET}
+      
+      # IPFS Configuration (Pinata)
+      PINATA_API_KEY: ${PINATA_API_KEY}
+      PINATA_SECRET_API_KEY: ${PINATA_SECRET_API_KEY}
+      PINATA_JWT: ${PINATA_JWT}
+      IPFS_GATEWAY_URL: https://gateway.pinata.cloud/ipfs
+      
+      # Stripe Configuration
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      
+      # JWT Configuration
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: 7d
+      
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - ./uploads:/app/uploads
+    command: npm run dev
+    restart: unless-stopped
+
+  # PostgreSQL (CACHE LAYER for fast queries)
+  # NOTE: Blockchain is source of truth, PostgreSQL is just a cache
+  postgres:
+    image: postgis/postgis:15-3.4
+    container_name: campuscuts-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: campuscuts
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis (OPTIONAL - for caching blockchain queries)
+  redis:
+    image: redis:7-alpine
+    container_name: campuscuts-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Frontend (React + Vite)
+  frontend:
+    build:
+      context: ./web-app
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=http://localhost:3001/api/v1
+        - VITE_API_BASE_URL=http://localhost:3001
+        - VITE_WS_URL=ws://localhost:3001
+        - VITE_APTOS_NETWORK=devnet
+        - VITE_APTOS_NODE_URL=https://fullnode.devnet.aptoslabs.com/v1
+        - VITE_APTOS_MODULE_ADDRESS=${APTOS_MODULE_ADDRESS}
+        - VITE_STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
+    container_name: campuscuts-frontend
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  # PostgreSQL cache + Redis cache
+  postgres_data:
+  redis_data:

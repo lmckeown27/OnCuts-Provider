@@ -1,0 +1,519 @@
+// CampusCuts Hybrid Blockchain + Postgres Schema
+// 
+// CRITICAL RULES:
+// 1. All payment-related models must reference blockchain (paymentId, txHash)
+// 2. NO balances are stored in Postgres (blockchain is truth)
+// 3. NO settlement logic exists in Postgres
+// 4. Status fields are CACHED, not authoritative
+// 5. All financial data can be overwritten by blockchain sync
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CORE IDENTITY MODELS (Postgres is authoritative)
+// ═══════════════════════════════════════════════════════════════════
+
+model User {
+  id                String   @id @default(uuid())
+  
+  suiAddress         String?  @unique @map("sui_address")
+  legacyWalletAddress String? @unique @map("legacy_wallet_address") // was aptos_address
+  
+  // Profile data (Postgres authoritative)
+  email             String?  @unique
+  username          String?  @unique
+  displayName       String?
+  bio               String?
+  avatarUrl         String?
+  
+  // Role flags
+  isBarber          Boolean  @default(false)
+  isConsumer        Boolean  @default(true)
+  isAdmin           Boolean  @default(false)
+  
+  // Campus affiliation
+  campusId          String?
+  campus            Campus?  @relation(fields: [campusId], references: [id], onDelete: SetNull)
+  
+  // Verification
+  emailVerified     Boolean  @default(false)
+  identityVerified  Boolean  @default(false)
+  
+  // Session management (Postgres authoritative)
+  lastLoginAt       DateTime?
+  refreshToken      String?  @unique
+  
+  // Timestamps
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  barberProfile     Barber?
+  consumerBookings  Booking[] @relation("ConsumerBookings")
+  barberBookings    Booking[] @relation("BarberBookings")
+  
+  @@index([legacyWalletAddress])
+  @@index([suiAddress])
+  @@index([campusId])
+  @@index([email])
+  @@map("users")
+}
+
+model Campus {
+  id                String   @id @default(uuid())
+  
+  // Campus data (Postgres authoritative)
+  name              String   @unique
+  shortName         String   @unique
+  domain            String   @unique // e.g., "calpoly.edu"
+  city              String
+  state             String
+  country           String   @default("USA")
+  timezone          String   @default("America/Los_Angeles")
+  
+  // Location
+  latitude          Float?
+  longitude         Float?
+  
+  // Settings
+  active            Boolean  @default(true)
+  
+  // Timestamps
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  users             User[]
+  barbers           Barber[]
+  locations         Location[]
+  
+  @@index([domain])
+  @@map("campuses")
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BARBER MODELS (Postgres authoritative for profile, cached for earnings)
+// ═══════════════════════════════════════════════════════════════════
+
+model Barber {
+  id                String   @id @default(uuid())
+  
+  // User relation (1-to-1)
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Campus relation (Required)
+  campusId          String
+  campus            Campus   @relation(fields: [campusId], references: [id], onDelete: Restrict)
+  
+  // Campus Manager role (Optional)
+  isCampusManager   Boolean  @default(false)
+  campusManagerSince DateTime?
+  
+  // Profile (Postgres authoritative)
+  bio               String?
+  instagramHandle   String?
+  portfolioImages   String[] @default([]) // IPFS CIDs
+  yearsExperience   Int      @default(0)
+  
+  // Services (Postgres authoritative)
+  services          String[] @default([]) // e.g., ["haircut", "fade", "beard_trim"]
+  
+  // Availability (Postgres authoritative)
+  acceptingBookings Boolean  @default(true)
+  
+  // CACHED FINANCIAL DATA (Synced from blockchain, NOT authoritative)
+  // These fields can be overwritten by blockchain sync
+  totalEarningsCache    Decimal  @default(0) @db.Decimal(10, 2) // CACHED from blockchain
+  pendingPayoutCache    Decimal  @default(0) @db.Decimal(10, 2) // CACHED from blockchain
+  completedBookingsCache Int     @default(0)                    // CACHED from blockchain
+  earningsSyncedAt      DateTime?                               // Last sync timestamp
+  
+  // QUALITY METRICS (Postgres authoritative - derived from reviews)
+  averageRating     Float?
+  totalReviews      Int      @default(0)
+  barberQualityScore Float?   // BQS from AI worker
+  
+  // PRICING (Postgres authoritative - set by algorithm)
+  minPrice          Decimal? @db.Decimal(10, 2)
+  maxPrice          Decimal? @db.Decimal(10, 2)
+  pricingMultiplier Float?   @default(1.0)
+  
+  // Status
+  active            Boolean  @default(true)
+  verifiedByAdmin   Boolean  @default(false)
+  
+  // Timestamps
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  availability      Availability[]
+  bookings          Booking[] @relation("BarberBookings")
+  
+  @@unique([campusId, isCampusManager], name: "one_cm_per_campus") // Only one CM per campus
+  @@index([campusId])
+  @@index([userId])
+  @@index([isCampusManager])
+  @@index([averageRating])
+  @@map("barbers")
+}
+
+model Availability {
+  id                String   @id @default(uuid())
+  
+  // Barber relation
+  barberId          String
+  barber            Barber   @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  
+  // Time slot (Postgres authoritative)
+  date              DateTime @db.Date
+  startTime         String   // HH:MM format
+  endTime           String   // HH:MM format
+  
+  // Location (campus-scoped reusable location)
+  locationId        String?
+  location          Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  
+  // Pricing for this slot (Postgres authoritative)
+  price             Decimal  @db.Decimal(10, 2)
+  
+  // Status (Postgres authoritative)
+  status            AvailabilityStatus @default(AVAILABLE)
+  
+  // Booking reference (when booked)
+  bookingId         String?  @unique
+  booking           Booking? @relation("AvailabilityBooking")
+  
+  // Timestamps
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@unique([barberId, date, startTime])
+  @@index([barberId])
+  @@index([date])
+  @@index([status])
+  @@map("availability")
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  BOOKED
+  BLOCKED
+  COMPLETED
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// LOCATION MODELS (Postgres authoritative - crowd-sourced)
+// ═══════════════════════════════════════════════════════════════════
+
+model Location {
+  id                String   @id @default(uuid())
+  
+  // Campus-scoped
+  campusId          String
+  campus            Campus   @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  
+  // Location data (Postgres authoritative)
+  name              String   // Display name (e.g., "North Mountain Dorms")
+  normalizedName    String   // Lowercase, stripped (for matching)
+  type              LocationType
+  
+  // Crowd-sourced verification
+  usageCount        Int      @default(0)  // How many times used
+  confidence        Float    @default(0)  // 0.0 to 1.0
+  isVerified        Boolean  @default(false)
+  
+  // Cohort classification (AI-generated)
+  cohort            LocationCohort @default(UNKNOWN)
+  
+  // Audit
+  createdByUserId   String?
+  createdByUser     User?    @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  
+  // Timestamps
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  aliases           LocationAlias[]
+  availability      Availability[]
+  
+  @@unique([campusId, normalizedName])
+  @@index([campusId])
+  @@index([usageCount])
+  @@index([isVerified])
+  @@map("locations")
+}
+
+model LocationAlias {
+  id                String   @id @default(uuid())
+  
+  // Location relation
+  locationId        String
+  location          Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  
+  // Alias data
+  alias             String
+  normalizedAlias   String
+  
+  // Timestamps
+  createdAt         DateTime @default(now())
+  
+  @@unique([locationId, normalizedAlias])
+  @@index([normalizedAlias])
+  @@map("location_aliases")
+}
+
+enum LocationType {
+  DORM
+  APARTMENT
+  LIBRARY
+  STUDENT_CENTER
+  BARBER_SHOP
+  OTHER
+}
+
+enum LocationCohort {
+  FRESHMAN_HOUSING
+  UPPERCLASSMAN_HOUSING
+  OFF_CAMPUS
+  CAMPUS_FACILITY
+  UNKNOWN
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BOOKING & PAYMENT MODELS (Hybrid: Postgres for state, Blockchain for truth)
+// ═══════════════════════════════════════════════════════════════════
+
+model Booking {
+  id                String   @id @default(uuid())
+  
+  // User relations
+  consumerId        String
+  consumer          User     @relation("ConsumerBookings", fields: [consumerId], references: [id], onDelete: Restrict)
+  
+  barberId          String
+  barber            Barber   @relation("BarberBookings", fields: [barberId], references: [id], onDelete: Restrict)
+  
+  // Availability relation
+  availabilityId    String   @unique
+  availability      Availability @relation("AvailabilityBooking", fields: [availabilityId], references: [id], onDelete: Restrict)
+  
+  // Service details (Postgres authoritative)
+  serviceType       String
+  notes             String?
+  
+  // CRITICAL: Blockchain references (IMMUTABLE once set)
+  // These link this booking to blockchain truth
+  blockchainPaymentId String?  @unique // On-chain payment ID
+  txHashCreated     String?  // Transaction that created escrow
+  txHashReleased    String?  // Transaction that released payment
+  txHashRefunded    String?  // Transaction that refunded payment
+  
+  // CACHED FINANCIAL DATA (Synced from blockchain, NOT authoritative)
+  // Postgres stores these for display, blockchain is truth
+  amountCents       Int      // Total amount in cents
+  platformFeeCents  Int      // 5% platform fee
+  barberPayoutCents Int      // 95% to barber
+  tipCents          Int      @default(0)
+  
+  // CACHED STATUS (Synced from blockchain, NOT authoritative)
+  // This can be overwritten by blockchain sync
+  paymentStatus     PaymentStatus @default(PENDING)
+  paymentStatusSyncedAt DateTime?  // Last sync from blockchain
+  
+  // Booking lifecycle (Postgres authoritative for pre-payment stages)
+  bookingStatus     BookingStatus @default(REQUESTED)
+  
+  // Timestamps
+  scheduledAt       DateTime
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  completedAt       DateTime?
+  cancelledAt       DateTime?
+  
+  // Relations
+  paymentCache      PaymentCache?
+  
+  @@index([consumerId])
+  @@index([barberId])
+  @@index([paymentStatus])
+  @@index([bookingStatus])
+  @@index([blockchainPaymentId]) // CRITICAL: For blockchain lookups
+  @@map("bookings")
+}
+
+// PAYMENT CACHE MODEL
+// This is a MIRROR of on-chain payment state
+// It exists ONLY for fast queries and MUST be kept in sync
+// Blockchain is the ONLY source of truth
+model PaymentCache {
+  id                String   @id @default(uuid())
+  
+  // Booking relation (1-to-1)
+  bookingId         String   @unique
+  booking           Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  
+  // CRITICAL: Blockchain reference (IMMUTABLE)
+  blockchainPaymentId String @unique // Links to on-chain payment
+  
+  // CACHED PAYMENT DATA (Synced from blockchain)
+  // ⚠️  THESE VALUES CAN BE OVERWRITTEN BY BLOCKCHAIN SYNC
+  // ⚠️  DO NOT TRUST THESE FOR FINANCIAL DECISIONS
+  status            PaymentStatus
+  amountUSDC        Decimal  @db.Decimal(10, 6) // USDC amount (6 decimals)
+  barberPayoutUSDC  Decimal  @db.Decimal(10, 6)
+  platformFeeUSDC   Decimal  @db.Decimal(10, 6)
+  
+  // Blockchain transaction hashes (audit trail)
+  txHashEscrowCreated String?
+  txHashPaymentReleased String?
+  txHashRefunded    String?
+  
+  // Stripe references (for fiat bridge)
+  stripePaymentIntentId String? @unique
+  stripeChargeId    String?
+  
+  // Circle references (for USDC conversion)
+  circleTransferId  String? // USD → USDC transfer
+  circlePayoutId    String? // USDC → USD payout
+  
+  // Sync metadata
+  lastSyncedAt      DateTime @default(now())
+  syncSource        SyncSource @default(WRITE_THROUGH)
+  discrepancyCount  Int      @default(0) // Times blockchain differed
+  
+  // Timestamps
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([blockchainPaymentId]) // CRITICAL: For blockchain verification
+  @@index([status])
+  @@index([lastSyncedAt])
+  @@map("payment_cache")
+}
+
+enum PaymentStatus {
+  PENDING         // Stripe payment intent created
+  PROCESSING      // Converting USD → USDC
+  ESCROWED        // USDC locked on blockchain
+  RELEASED        // USDC split to barber + platform
+  REFUNDED        // USDC returned to consumer
+  FAILED          // Payment failed
+}
+
+enum BookingStatus {
+  REQUESTED       // Consumer sent request
+  ACCEPTED        // Barber accepted
+  DECLINED        // Barber declined
+  CONFIRMED       // Payment escrowed
+  IN_PROGRESS     // Service happening
+  COMPLETED       // Service done
+  CANCELLED       // Cancelled before payment
+  DISPUTED        // Issue raised
+}
+
+enum SyncSource {
+  WRITE_THROUGH   // Synced immediately after blockchain tx
+  PERIODIC_RECON  // Synced by reconciliation job
+  MANUAL_REPAIR   // Manually corrected by admin
+  INITIAL_LOAD    // First-time sync from blockchain
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RECONCILIATION & AUDIT MODELS
+// ═══════════════════════════════════════════════════════════════════
+
+model BlockchainSyncLog {
+  id                String   @id @default(uuid())
+  
+  // Sync job metadata
+  jobType           SyncJobType
+  startedAt         DateTime @default(now())
+  completedAt       DateTime?
+  status            SyncJobStatus @default(RUNNING)
+  
+  // Results
+  recordsScanned    Int      @default(0)
+  recordsUpdated    Int      @default(0)
+  discrepanciesFound Int     @default(0)
+  errorsEncountered Int      @default(0)
+  
+  // Details
+  errorLog          Json?
+  discrepancyLog    Json?
+  
+  @@index([startedAt])
+  @@index([status])
+  @@map("blockchain_sync_logs")
+}
+
+enum SyncJobType {
+  WRITE_THROUGH
+  PERIODIC_RECON
+  FULL_REINDEX
+  MANUAL_VERIFY
+}
+
+enum SyncJobStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  PARTIAL
+}
+
+model DataDiscrepancy {
+  id                String   @id @default(uuid())
+  
+  // Affected record
+  entityType        String   // "payment", "booking", "barber_earnings"
+  entityId          String
+  
+  // Discrepancy details
+  field             String   // Which field differed
+  postgresValue     String   // What Postgres had
+  blockchainValue   String   // What blockchain had
+  
+  // Resolution
+  resolved          Boolean  @default(false)
+  resolvedAt        DateTime?
+  resolvedBy        String?  // Admin user ID
+  resolutionAction  String?  // "auto_repaired", "manual_fix", "ignored"
+  
+  // Audit
+  detectedAt        DateTime @default(now())
+  detectedBy        String   // "reconciliation_job", "admin_verify", "user_report"
+  
+  @@index([resolved])
+  @@index([detectedAt])
+  @@index([entityType, entityId])
+  @@map("data_discrepancies")
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// INDEXES FOR PERFORMANCE
+// ═══════════════════════════════════════════════════════════════════
+
+// Additional indexes are defined above in models
+// Key indexes for common queries:
+// - User by suiAddress / legacyWalletAddress
+// - Barber by campus (search)
+// - Booking by payment status (dashboard)
+// - PaymentCache by blockchainPaymentId (verification)
+// - Availability by date (scheduling)
+
+// NEVER index:
+// - Cached balance fields (not trustworthy)
+// - Cached status without sync timestamp (stale)
+// - Any field that changes on every sync (wasteful)
+
+
+

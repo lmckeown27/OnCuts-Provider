@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Google Sign-In only: CLIENT_ID + REVERSED_CLIENT_ID (no Firebase API key / GCM metadata).
+  Bundle is Liam.Intera---Provider. If Google rejects the token for this bundle, add this bundle ID
+  to this OAuth client in Google Cloud Console or create a dedicated iOS OAuth client for Provider.
+-->
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>580972649195-j17ovaq2aj2iu6m6f1o2c8g83ac9idml.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.580972649195-j17ovaq2aj2iu6m6f1o2c8g83ac9idml</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>Liam.Intera---Provider</string>
+</dict>
+</plist>
