@@ -10,16 +10,10 @@ private func providerIsBenignRequestCancellation(_ error: Error) -> Bool {
     return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
 }
 
-// MARK: - Schedule modes (BarberPage-style)
+// MARK: - Schedule zoom (pinch-to-zoom timeline)
 
-private enum ProviderScheduleMode: String, CaseIterable, Identifiable {
-    case daily = "Daily"
-    case weekly = "Weekly"
-    case monthly = "Monthly"
-    var id: String { rawValue }
-}
-
-/// Main **dashboard** after sign-in: schedule card with Daily / Weekly / Monthly (web `DashboardView` analogue).
+/// Replaces the legacy Daily / Weekly / Monthly mode picker with a continuous zoom scale.
+/// Main **dashboard** after sign-in: pinch-to-zoom schedule (minute → month).
 struct ProviderScheduleDashboardView: View {
     @Environment(ProviderSession.self) private var session
     @Environment(ProviderShellNavigator.self) private var shellNavigator
@@ -40,7 +34,7 @@ struct ProviderScheduleDashboardView: View {
     /// but the actual integer value is otherwise unused.
     @State private var awaitingPaymentRefreshTick: Int = 0
 
-    @State private var mode: ProviderScheduleMode = .daily
+    @State private var zoomScale: CGFloat = ProviderScheduleZoom.defaultScale
     @State private var dayOffset = 0
     @State private var weekOffset = 0
     @State private var monthOffset = 0
@@ -74,7 +68,15 @@ struct ProviderScheduleDashboardView: View {
         return c
     }
 
-    /// Shared track behind the **Daily / Weekly / Monthly** rail and date navigation row.
+    private var effectiveZoomTier: ProviderScheduleZoomTier {
+        ProviderScheduleZoomTier(effectiveScale: zoomScale)
+    }
+
+    private var isDayZoomTier: Bool {
+        effectiveZoomTier == .day || effectiveZoomTier == .minute
+    }
+
+    /// Shared track behind the zoom preset rail and date navigation row.
     private var scheduleChromeTrackBackground: some View {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
             .fill(Color.providerScheduleTrackFill)
@@ -223,23 +225,18 @@ struct ProviderScheduleDashboardView: View {
             awaitingPaymentBanner
             jumpChip
             summaryLine
-            modePicker
+            zoomPresetBar
             dateNavigationRow
-            if session.hasProviderProfile, mode == .daily {
+            if session.hasProviderProfile, isDayZoomTier {
                 manageAvailabilityOrEditControls
             }
-            // Swipe-to-change-mode only on this region so it never steals taps from the picker / chevrons.
-            // `highPriorityGesture` (vs `simultaneousGesture`) is critical: the Weekly rows and Monthly cells
-            // are `Button`s that reset `mode = .daily` on tap. With a *simultaneous* drag, a horizontal swipe
-            // could fail the dominance check and still register as a child tap — sending the user from Weekly
-            // (or Monthly) back to Daily instead of advancing to Monthly. High-priority swipes claim the touch
-            // once movement crosses `minimumDistance`, cancelling those child taps cleanly.
             VStack(alignment: .leading, spacing: 12) {
-                modeContent
+                zoomScheduleCanvas
+                if isDayZoomTier {
+                    dayScheduleSupplement
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .highPriorityGesture(scheduleSwipeGesture)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -326,10 +323,10 @@ struct ProviderScheduleDashboardView: View {
         Group {
             if jumpChipVisible {
                 Button(jumpChipTitle) {
-                    switch mode {
-                    case .daily: dayOffset = 0
-                    case .weekly: weekOffset = 0
-                    case .monthly: monthOffset = 0
+                    switch effectiveZoomTier {
+                    case .minute, .day: dayOffset = 0
+                    case .week: weekOffset = 0
+                    case .month: monthOffset = 0
                     }
                 }
                 .font(.subheadline.weight(.semibold))
@@ -352,18 +349,18 @@ struct ProviderScheduleDashboardView: View {
     }
 
     private var jumpChipVisible: Bool {
-        switch mode {
-        case .daily: dayOffset != 0
-        case .weekly: weekOffset != 0
-        case .monthly: monthOffset != 0
+        switch effectiveZoomTier {
+        case .minute, .day: dayOffset != 0
+        case .week: weekOffset != 0
+        case .month: monthOffset != 0
         }
     }
 
     private var jumpChipTitle: String {
-        switch mode {
-        case .daily: "Today"
-        case .weekly: "This week"
-        case .monthly: "This month"
+        switch effectiveZoomTier {
+        case .minute, .day: "Today"
+        case .week: "This week"
+        case .month: "This month"
         }
     }
 
@@ -467,35 +464,37 @@ struct ProviderScheduleDashboardView: View {
     }
 
     private var summaryText: String {
-        let n = visibleBookingsForCurrentMode().count
+        let n = visibleBookingsForCurrentZoom().count
         let noun = n == 1 ? "appointment" : "appointments"
-        switch mode {
-        case .daily:
+        switch effectiveZoomTier {
+        case .minute, .day:
             return "\(n) \(noun) · \(dayTitleLabel)"
-        case .weekly:
+        case .week:
             let that = weekOffset != 0 ? "that week" : "this week"
             return "\(n) \(noun) \(that)"
-        case .monthly:
+        case .month:
             let that = monthOffset != 0 ? "that month" : "this month"
             return "\(n) \(noun) \(that)"
         }
     }
 
-    private var modePicker: some View {
+    private var zoomPresetBar: some View {
         HStack(spacing: 4) {
-            ForEach(ProviderScheduleMode.allCases) { m in
+            ForEach(ProviderScheduleZoom.Preset.allCases) { preset in
                 Button {
-                    withAnimation(.easeInOut(duration: 0.18)) { mode = m }
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                        zoomScale = preset.targetScale
+                    }
                 } label: {
-                    Text(m.rawValue)
+                    Text(preset.rawValue)
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 9)
                         .foregroundStyle(
-                            mode == m ? Color.lavaShellCream : Color.lavaShellCream.opacity(0.88)
+                            isPresetActive(preset) ? Color.lavaShellCream : Color.lavaShellCream.opacity(0.88)
                         )
                         .background {
-                            if mode == m {
+                            if isPresetActive(preset) {
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                                     .fill(Color.providerOlive.opacity(0.62))
                             }
@@ -503,14 +502,154 @@ struct ProviderScheduleDashboardView: View {
                         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .accessibilityAddTraits(mode == m ? .isSelected : [])
+                .accessibilityAddTraits(isPresetActive(preset) ? .isSelected : [])
             }
         }
         .padding(4)
         .background { scheduleChromeTrackBackground }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Schedule view")
+        .accessibilityLabel("Schedule zoom")
     }
+
+    private func isPresetActive(_ preset: ProviderScheduleZoom.Preset) -> Bool {
+        let tier = ProviderScheduleZoomTier(effectiveScale: preset.targetScale)
+        return tier == effectiveZoomTier
+    }
+
+    private var zoomScheduleCanvas: some View {
+        Group {
+            if !session.hasProviderProfile {
+                Text("Link your CampusCuts barber profile on the web to load appointments here.")
+                    .font(.footnote)
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 8)
+            } else {
+                let display = displayForDailyScheduleBody()
+                let intervals = display?.intervals ?? []
+                let bounds = ProviderScheduleTimelineBounds.range(for: intervals)
+                ProviderZoomableScheduleCanvas(
+                    zoomScale: $zoomScale,
+                    calendar: mondayCalendar,
+                    selectedDay: selectedDay,
+                    weekStartMonday: weekStartMonday,
+                    monthAnchor: monthAnchor,
+                    bookings: visibleBookingsForCurrentZoom(),
+                    timelineStartMinute: bounds.start,
+                    timelineEndMinute: bounds.end,
+                    availabilityIntervals: intervals,
+                    timeBlocks: timeBlocksOnSelectedDay,
+                    blockTimeTapsEnabled: !isEditingAvailability && (display?.available ?? false),
+                    onBookingTap: { shellNavigator.pushBooking($0) },
+                    onAvailableMinuteTap: { minute in
+                        prepareBlockSheet(forMinute: minute)
+                        showingBlockTimeSheet = true
+                    },
+                    onWeekDayTap: { focusDay($0) },
+                    onMonthDayTap: { focusDay($0) }
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var dayScheduleSupplement: some View {
+        let dayBookings = visibleBookingsForCurrentZoom().sorted {
+            ($0.scheduledTime ?? .distantFuture) < ($1.scheduledTime ?? .distantFuture)
+        }
+        let display = displayForDailyScheduleBody()
+        let intervals = display?.intervals ?? []
+        let dayEnabled = (display?.available ?? false) && !intervals.isEmpty
+        let slots = dayEnabled ? generateHourlySlots(from: intervals) : []
+
+        VStack(alignment: .leading, spacing: 10) {
+            if isEditingAvailability {
+                if inlineWeeklyLoading {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading weekly schedule…")
+                            .font(.footnote)
+                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                    }
+                    .padding(.vertical, 4)
+                } else if let inlineWeeklyLoadError {
+                    Text(inlineWeeklyLoadError)
+                        .font(.footnote)
+                        .foregroundStyle(.red.opacity(0.9))
+                } else {
+                    inlineDayScheduleEditorCard
+                    if let inlineSaveError {
+                        Text(inlineSaveError)
+                            .font(.caption)
+                            .foregroundStyle(.red.opacity(0.9))
+                    }
+                }
+            }
+            if session.hasProviderProfile,
+               isLoadingAvailability,
+               displayForDailyScheduleBody() == nil,
+               !(isEditingAvailability && (inlineWeeklyLoading || inlineWeeklySchedule != nil))
+            {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading availability…")
+                        .font(.footnote)
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                }
+                .padding(.vertical, 4)
+            } else if let availabilityErrorText, isDayZoomTier {
+                Text(availabilityErrorText)
+                    .font(.caption)
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+            }
+            if dayEnabled {
+                let orphans = orphanTimeBlocks(slots: slots)
+                if !orphans.isEmpty {
+                    Text("Other blocked times")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                    ForEach(orphans) { block in
+                        blockedTimeRow(block: block)
+                    }
+                }
+                if isEditingAvailability {
+                    Text("Finish saving or cancel to block time on the calendar.")
+                        .font(.caption2)
+                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                } else if effectiveZoomTier == .day {
+                    Text("Pinch to zoom in for minute-level detail, or out for week and month views.")
+                        .font(.caption2)
+                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                }
+                if let trailing = bookingsOutsideAvailability(slots: slots, dayBookings: dayBookings), !trailing.isEmpty {
+                    Text("Outside your set availability")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .padding(.top, 4)
+                    ForEach(trailing) { b in
+                        Button { shellNavigator.pushBooking(b) } label: { outsideAvailabilityRow(b) }
+                            .buttonStyle(.plain)
+                    }
+                }
+            } else if display != nil {
+                dayOffMessage(dayBookings: dayBookings)
+            } else if let errorText, dayBookings.isEmpty {
+                Text(errorText)
+                    .font(.footnote)
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+            }
+        }
+    }
+
+    private func focusDay(_ day: Date) {
+        let anchor = mondayCalendar.startOfDay(for: .now)
+        dayOffset = mondayCalendar.dateComponents([.day], from: anchor, to: mondayCalendar.startOfDay(for: day)).day ?? 0
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+            zoomScale = ProviderScheduleZoom.defaultScale
+        }
+    }
+
+    // MARK: - Daily
 
     private var dateNavigationRow: some View {
         HStack(spacing: 10) {
@@ -547,34 +686,6 @@ struct ProviderScheduleDashboardView: View {
         .background { scheduleChromeTrackBackground }
     }
 
-    @ViewBuilder
-    private var modeContent: some View {
-        switch mode {
-        case .daily:
-            dailyBody
-        case .weekly:
-            weeklyBody
-        case .monthly:
-            monthlyBody
-        }
-    }
-
-    /// Lowered `minimumDistance` (30) so the gesture engages before a slow swipe gets misclassified as a tap
-    /// on a `weeklyRow` / `monthlyCell` / `dailySlotRow` button. The dominance check uses a proportional ratio
-    /// (`> abs(dy) * 1.3`) instead of the previous `+20` literal so honest, slightly-diagonal swipes still
-    /// register reliably — fixing the "Weekly → swipe → Daily" regression.
-    private var scheduleSwipeGesture: some Gesture {
-        DragGesture(minimumDistance: 30)
-            .onEnded { v in
-                let dx = v.translation.width
-                let dy = v.translation.height
-                guard abs(dx) > 50, abs(dx) > abs(dy) * 1.3 else { return }
-                advanceMode(dx > 0 ? -1 : 1)
-            }
-    }
-
-    // MARK: - Daily
-
     private var selectedDay: Date {
         mondayCalendar.date(byAdding: .day, value: dayOffset, to: mondayCalendar.startOfDay(for: .now)) ?? .now
     }
@@ -603,156 +714,14 @@ struct ProviderScheduleDashboardView: View {
     }
 
     private var periodTitle: String {
-        switch mode {
-        case .daily:
+        switch effectiveZoomTier {
+        case .minute, .day:
             return dayTitleLabel + " · " + selectedDay.formatted(.dateTime.month(.wide).day().year())
-        case .weekly:
+        case .week:
             let (a, b) = weekRangeTitles()
             return "\(a) – \(b)"
-        case .monthly:
+        case .month:
             return monthAnchor.formatted(.dateTime.month(.wide).year())
-        }
-    }
-
-    private var dailyBody: some View {
-        let dayBookings = visibleBookingsForCurrentMode().sorted {
-            ($0.scheduledTime ?? .distantFuture) < ($1.scheduledTime ?? .distantFuture)
-        }
-        let display = displayForDailyScheduleBody()
-        let intervals = display?.intervals ?? []
-        let dayEnabled = (display?.available ?? false) && !intervals.isEmpty
-        let slots = dayEnabled ? generateHourlySlots(from: intervals) : []
-        return VStack(alignment: .leading, spacing: 10) {
-            if !session.hasProviderProfile {
-                Text("Link your CampusCuts barber profile on the web to load appointments here.")
-                    .font(.footnote)
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-            } else if isEditingAvailability {
-                if inlineWeeklyLoading {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Loading weekly schedule…")
-                            .font(.footnote)
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
-                    }
-                    .padding(.vertical, 4)
-                } else if let inlineWeeklyLoadError {
-                    Text(inlineWeeklyLoadError)
-                        .font(.footnote)
-                        .foregroundStyle(.red.opacity(0.9))
-                } else {
-                    inlineDayScheduleEditorCard
-                    if let inlineSaveError {
-                        Text(inlineSaveError)
-                            .font(.caption)
-                            .foregroundStyle(.red.opacity(0.9))
-                    }
-                }
-            }
-            if session.hasProviderProfile,
-               isLoadingAvailability,
-               displayForDailyScheduleBody() == nil,
-               !(isEditingAvailability && (inlineWeeklyLoading || inlineWeeklySchedule != nil))
-            {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Loading availability…")
-                        .font(.footnote)
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
-                }
-                .padding(.vertical, 4)
-            } else if dayEnabled {
-                if let availabilityErrorText {
-                    Text(availabilityErrorText)
-                        .font(.caption)
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
-                }
-                ForEach(slots, id: \.start) { slot in
-                    dailySlotRow(slot: slot, booking: booking(for: slot, in: dayBookings), blockTimeTapsEnabled: !isEditingAvailability)
-                }
-                let orphans = orphanTimeBlocks(slots: slots)
-                if !orphans.isEmpty {
-                    Text("Other blocked times")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
-                        .padding(.top, 4)
-                    ForEach(orphans) { block in
-                        blockedTimeRow(block: block)
-                    }
-                }
-                if isEditingAvailability {
-                    Text("Finish saving or cancel to tap an hour and block time on the calendar.")
-                        .font(.caption2)
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
-                        .padding(.top, 2)
-                } else {
-                    Text("Tap an available hour to block it.")
-                        .font(.caption2)
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
-                        .padding(.top, 2)
-                }
-                if let trailing = bookingsOutsideAvailability(slots: slots, dayBookings: dayBookings), !trailing.isEmpty {
-                    Text("Outside your set availability")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
-                        .padding(.top, 6)
-                    ForEach(trailing) { b in
-                        Button {
-                            shellNavigator.pushBooking(b)
-                        } label: {
-                            outsideAvailabilityRow(b)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            } else if display != nil {
-                dayOffMessage(dayBookings: dayBookings)
-            } else if let availabilityErrorText {
-                Text(availabilityErrorText)
-                    .font(.footnote)
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-                if !dayBookings.isEmpty {
-                    ForEach(dayBookings) { b in
-                        Button {
-                            shellNavigator.pushBooking(b)
-                        } label: {
-                            outsideAvailabilityRow(b)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            } else if let errorText, dayBookings.isEmpty {
-                Text(errorText)
-                    .font(.footnote)
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func dailySlotRow(slot: HourlySlot, booking: SimpleBookingDTO?, blockTimeTapsEnabled: Bool) -> some View {
-        let overlaps = timeBlocksOverlappingSlot(slot)
-        if let booking {
-            Button {
-                shellNavigator.pushBooking(booking)
-            } label: {
-                bookedSlotCard(slot: slot, booking: booking)
-            }
-            .buttonStyle(.plain)
-        } else if !overlaps.isEmpty {
-            ForEach(overlaps) { block in
-                blockedTimeRow(block: block)
-            }
-        } else if blockTimeTapsEnabled {
-            Button {
-                prepareBlockSheet(for: slot)
-                showingBlockTimeSheet = true
-            } label: {
-                availableSlotCard(slot: slot)
-            }
-            .buttonStyle(.plain)
-        } else {
-            availableSlotCard(slot: slot)
         }
     }
 
@@ -792,56 +761,6 @@ struct ProviderScheduleDashboardView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background { scheduleCardBackground(cornerRadius: 12, chrome: .neutral) }
-    }
-
-    private func bookedSlotCard(slot: HourlySlot, booking: SimpleBookingDTO) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(slot.displayRange)
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Text(booking.scheduleSlotTitle)
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(booking.statusDisplayTint, in: Capsule())
-            }
-            Text(booking.consumerDisplayName)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(Color.lavaShellCream)
-            Text(booking.serviceDisplayName)
-                .font(.subheadline)
-                .foregroundStyle(Color.lavaShellCreamSecondary)
-            Text(booking.barberDisplayName)
-                .font(.caption)
-                .foregroundStyle(Color.lavaShellCreamTertiary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background { scheduleCardBackground(cornerRadius: 14, chrome: scheduleCardChrome(for: booking)) }
-    }
-
-    private func availableSlotCard(slot: HourlySlot) -> some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(Color.providerOlive)
-                .frame(width: 8, height: 8)
-            Text(slot.displayRange)
-                .font(.subheadline.weight(.medium))
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("Available")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-                Text("Tap to block")
-                    .font(.caption2)
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 10)
-        .padding(.horizontal, 12)
         .background { scheduleCardBackground(cornerRadius: 12, chrome: .neutral) }
     }
 
@@ -905,17 +824,6 @@ struct ProviderScheduleDashboardView: View {
         }
     }
 
-    private func weeklyDayAppointmentSummary(_ dayBookings: [SimpleBookingDTO]) -> String {
-        let booked = dayBookings.filter { ProviderBookingStatusDisplay.isScheduleBooked(status: $0.status) }.count
-        let completed = dayBookings.filter { ProviderBookingStatusDisplay.isScheduleCompleted(status: $0.status) }.count
-        var parts: [String] = []
-        if booked > 0 { parts.append("\(booked) booked") }
-        if completed > 0 { parts.append("\(completed) completed") }
-        if !parts.isEmpty { return parts.joined(separator: " · ") }
-        let other = dayBookings.count
-        return other == 1 ? "1 appointment" : "\(other) appointments"
-    }
-
     // MARK: - Daily slot helpers
 
     /// Whole-hour bookable slot derived from the provider's availability intervals.
@@ -966,18 +874,6 @@ struct ProviderScheduleDashboardView: View {
         let parts = hhmm.split(separator: ":")
         guard let first = parts.first, let h = Int(first), (0 ... 24).contains(h) else { return nil }
         return h
-    }
-
-    /// Hour-bucketed lookup mirroring the web Daily view: a booking belongs to a slot when its
-    /// `scheduledTime` minute-of-day lies in `[startMinutes, endMinutes)`.
-    private func booking(for slot: HourlySlot, in dayBookings: [SimpleBookingDTO]) -> SimpleBookingDTO? {
-        let cal = mondayCalendar
-        return dayBookings.first { b in
-            guard let st = b.scheduledTime else { return false }
-            let comps = cal.dateComponents([.hour, .minute], from: st)
-            let mins = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
-            return mins >= slot.startMinutes && mins < slot.endMinutes
-        }
     }
 
     private func bookingsOutsideAvailability(
@@ -1414,13 +1310,12 @@ struct ProviderScheduleDashboardView: View {
             .sorted { $0.startTime < $1.startTime }
     }
 
-    private func prepareBlockSheet(for slot: HourlySlot) {
+    private func prepareBlockSheet(forMinute minute: Int) {
         let cal = mondayCalendar
         let day = selectedDay
         blockSheetDayStart = cal.startOfDay(for: day)
-        blockSheetStart = cal.date(bySettingHour: slot.startHour, minute: 0, second: 0, of: day) ?? day
-        let endHour = min(slot.startHour + 1, 23)
-        blockSheetEnd = cal.date(bySettingHour: endHour, minute: 0, second: 0, of: day) ?? day
+        blockSheetStart = cal.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: day) ?? day
+        blockSheetEnd = cal.date(byAdding: .minute, value: 60, to: blockSheetStart) ?? blockSheetStart
     }
 
     private func refreshDayScheduleFromNetwork() async {
@@ -1618,117 +1513,8 @@ struct ProviderScheduleDashboardView: View {
         )
     }
 
-    private var weeklyBody: some View {
-        VStack(spacing: 10) {
-            ForEach(0 ..< 7, id: \.self) { i in
-                let day = mondayCalendar.date(byAdding: .day, value: i, to: weekStartMonday) ?? weekStartMonday
-                weeklyRow(day: day)
-            }
-        }
-    }
-
-    private func weeklyRow(day: Date) -> some View {
-        let dayBookings = scheduleBookings.filter { $0.isSameCalendarDay(as: day, calendar: mondayCalendar) }
-        let isToday = mondayCalendar.isDateInToday(day)
-        return Button {
-            dayOffset = mondayCalendar.dateComponents([.day], from: mondayCalendar.startOfDay(for: .now), to: day).day ?? 0
-            mode = .daily
-        } label: {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(day.formatted(.dateTime.weekday(.wide)))
-                        .font(.subheadline.weight(isToday ? .bold : .medium))
-                    Text(day.formatted(.dateTime.month(.abbreviated).day()))
-                        .font(.caption)
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
-                }
-                .frame(width: 120, alignment: .leading)
-                VStack(alignment: .leading, spacing: 4) {
-                    if dayBookings.isEmpty {
-                        Text("No appointments")
-                            .font(.caption)
-                            .foregroundStyle(Color.lavaShellCreamTertiary)
-                    } else {
-                        Text(weeklyDayAppointmentSummary(dayBookings))
-                            .font(.caption.weight(.semibold))
-                    }
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 12)
-            .background { scheduleCardBackground(cornerRadius: 14, chrome: isToday ? .today : .neutral) }
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - Monthly (compact grid)
-
     private var monthAnchor: Date {
         mondayCalendar.date(byAdding: .month, value: monthOffset, to: mondayCalendar.startOfDay(for: .now)) ?? .now
-    }
-
-    private var monthlyBody: some View {
-        let grid = monthGridDays()
-        return VStack(alignment: .leading, spacing: 10) {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7), spacing: 6) {
-                ForEach(Array(["M", "T", "W", "T", "F", "S", "S"].enumerated()), id: \.offset) { _, w in
-                    Text(w)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
-                        .frame(maxWidth: .infinity)
-                }
-                ForEach(grid.indices, id: \.self) { idx in
-                    if let d = grid[idx] {
-                        monthlyCell(date: d)
-                    } else {
-                        Color.clear.frame(height: 36)
-                    }
-                }
-            }
-        }
-    }
-
-    private func monthGridDays() -> [Date?] {
-        let range = mondayCalendar.range(of: .day, in: .month, for: monthAnchor) ?? 1 ..< 29
-        let first = mondayCalendar.date(from: mondayCalendar.dateComponents([.year, .month], from: monthAnchor)) ?? monthAnchor
-        let weekday = mondayCalendar.component(.weekday, from: first)
-        let pad = (weekday + 5) % 7
-        var cells: [Date?] = Array(repeating: nil, count: pad)
-        for d in range {
-            if let date = mondayCalendar.date(byAdding: .day, value: d - 1, to: first) {
-                cells.append(date)
-            }
-        }
-        while cells.count % 7 != 0 { cells.append(nil) }
-        return cells
-    }
-
-    private func monthlyCell(date: Date) -> some View {
-        let count = scheduleBookings.filter { $0.isSameCalendarDay(as: date, calendar: mondayCalendar) }.count
-        let isToday = mondayCalendar.isDateInToday(date)
-        return Button {
-            dayOffset = mondayCalendar.dateComponents([.day], from: mondayCalendar.startOfDay(for: .now), to: date).day ?? 0
-            mode = .daily
-        } label: {
-            ZStack {
-                scheduleCardBackground(cornerRadius: 8, chrome: isToday ? .today : .neutral)
-                VStack(spacing: 2) {
-                    Text("\(mondayCalendar.component(.day, from: date))")
-                        .font(.caption.weight(isToday ? .bold : .medium))
-                    if count > 0 {
-                        Text("\(count)")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
-                    }
-                }
-            }
-            .frame(height: 36)
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Data
@@ -1738,13 +1524,13 @@ struct ProviderScheduleDashboardView: View {
         bookings.filter(\.isVisibleOnMainSchedule)
     }
 
-    private func visibleBookingsForCurrentMode() -> [SimpleBookingDTO] {
-        switch mode {
-        case .daily:
+    private func visibleBookingsForCurrentZoom() -> [SimpleBookingDTO] {
+        switch effectiveZoomTier {
+        case .minute, .day:
             return scheduleBookings.filter { $0.isSameCalendarDay(as: selectedDay, calendar: mondayCalendar) }
-        case .weekly:
+        case .week:
             return scheduleBookings.filter { $0.isInWeek(containing: weekStartMonday, calendar: mondayCalendar) }
-        case .monthly:
+        case .month:
             return scheduleBookings.filter { $0.isInMonth(containing: monthAnchor, calendar: mondayCalendar) }
         }
     }
@@ -1782,17 +1568,10 @@ struct ProviderScheduleDashboardView: View {
     }
 
     private func stepDate(_ delta: Int) {
-        switch mode {
-        case .daily: dayOffset += delta
-        case .weekly: weekOffset += delta
-        case .monthly: monthOffset += delta
+        switch effectiveZoomTier {
+        case .minute, .day: dayOffset += delta
+        case .week: weekOffset += delta
+        case .month: monthOffset += delta
         }
-    }
-
-    private func advanceMode(_ delta: Int) {
-        let all = ProviderScheduleMode.allCases
-        guard let i = all.firstIndex(of: mode) else { return }
-        let next = (i + delta + all.count) % all.count
-        mode = all[next]
     }
 }
