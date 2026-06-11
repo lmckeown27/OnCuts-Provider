@@ -173,12 +173,8 @@ struct ProviderZoomableScheduleCanvas: View {
                 .overlay(Color.providerScheduleTrackStroke)
 
             GeometryReader { proxy in
-                ScrollView([.vertical, .horizontal], showsIndicators: false) {
-                    canvasContent(in: proxy.size)
-                        .frame(minWidth: proxy.size.width, alignment: .topLeading)
-                }
-                .contentShape(Rectangle())
-                .simultaneousGesture(magnificationGesture)
+                weekAwareScrollView(viewportSize: proxy.size)
+                    .simultaneousGesture(magnificationGesture)
             }
             .frame(minHeight: 360)
         }
@@ -205,6 +201,31 @@ struct ProviderZoomableScheduleCanvas: View {
     }
 
     @ViewBuilder
+    private func weekAwareScrollView(viewportSize: CGSize) -> some View {
+        switch tier {
+        case .week:
+            ScrollView(.horizontal, showsIndicators: false) {
+                canvasContent(in: viewportSize)
+                    .frame(width: viewportSize.width, height: viewportSize.height, alignment: .topLeading)
+            }
+            .scrollBounceBehavior(.basedOnSize, axes: .vertical)
+            .contentShape(Rectangle())
+        case .month:
+            ScrollView([.vertical, .horizontal], showsIndicators: false) {
+                canvasContent(in: viewportSize)
+                    .frame(minWidth: viewportSize.width, alignment: .topLeading)
+            }
+            .contentShape(Rectangle())
+        default:
+            ScrollView([.vertical, .horizontal], showsIndicators: false) {
+                canvasContent(in: viewportSize)
+                    .frame(minWidth: viewportSize.width, alignment: .topLeading)
+            }
+            .contentShape(Rectangle())
+        }
+    }
+
+    @ViewBuilder
     private func canvasContent(in size: CGSize) -> some View {
         Group {
             switch tier {
@@ -223,12 +244,13 @@ struct ProviderZoomableScheduleCanvas: View {
                     weekStart: weekStartMonday,
                     bookings: bookings,
                     tierProgress: tierProgress,
+                    viewportSize: size,
                     startMinute: timelineStartMinute,
                     endMinute: timelineEndMinute,
                     onDayTap: onWeekDayTap,
                     onBookingTap: onBookingTap
                 )
-                .frame(width: max(size.width, size.width))
+                .frame(width: size.width, height: size.height, alignment: .top)
             case .day, .minute:
                 SchedulePreciseTimelineCanvas(
                     calendar: calendar,
@@ -437,18 +459,31 @@ private struct ScheduleWeekColumnsCanvas: View {
     let weekStart: Date
     let bookings: [SimpleBookingDTO]
     let tierProgress: CGFloat
+    let viewportSize: CGSize
     let startMinute: Int
     let endMinute: Int
     let onDayTap: (Date) -> Void
     let onBookingTap: (SimpleBookingDTO) -> Void
 
-    /// Compresses / expands column timelines as the user pinches within the week tier.
-    private var columnScale: CGFloat {
-        0.26 + tierProgress * 1.05
-    }
-
     private var columnSpacing: CGFloat {
         4 + tierProgress * 6
+    }
+
+    /// Weekday + date labels and padding above the timeline track.
+    private var columnHeaderHeight: CGFloat { 36 }
+
+    /// Outer canvas padding (`.padding(10)`) plus per-column button padding.
+    private var verticalChrome: CGFloat { 32 }
+
+    /// Fits the full availability window into the viewer — no vertical scroll.
+    private var timelineHeight: CGFloat {
+        max(48, viewportSize.height - columnHeaderHeight - verticalChrome)
+    }
+
+    /// Points per minute so the day column ends at the bottom of the schedule viewer.
+    private var columnScale: CGFloat {
+        let minuteSpan = CGFloat(max(1, endMinute - startMinute))
+        return timelineHeight / minuteSpan
     }
 
     var body: some View {
@@ -484,9 +519,10 @@ private struct ScheduleWeekColumnsCanvas: View {
                                     .padding(.horizontal, 2)
                             }
                         }
-                        .frame(height: CGFloat(endMinute - startMinute) * columnScale)
+                        .frame(height: timelineHeight)
+                        .clipped()
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .padding(6)
                     .background {
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -496,6 +532,7 @@ private struct ScheduleWeekColumnsCanvas: View {
                 .buttonStyle(.plain)
             }
         }
+        .frame(height: viewportSize.height, alignment: .top)
         .padding(10)
     }
 }
