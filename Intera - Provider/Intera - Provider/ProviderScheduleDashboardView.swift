@@ -616,7 +616,7 @@ struct ProviderScheduleDashboardView: View {
                         .font(.caption2)
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 } else if effectiveZoomTier == .day {
-                    Text("Pinch to zoom in for minute-level detail, or out for week and month views.")
+                    Text("Pinch to zoom in for minute-level detail.")
                         .font(.caption2)
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }

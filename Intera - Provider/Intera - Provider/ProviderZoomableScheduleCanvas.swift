@@ -72,35 +72,19 @@ enum ProviderScheduleZoomTier: Equatable {
         }
     }
 
-    /// Inclusive scale span for pinch-to-zoom within this tier before the layout switches.
-    var scaleRange: ClosedRange<CGFloat> {
-        switch self {
-        case .month:
-            return ProviderScheduleZoom.scaleMin ... (ProviderScheduleZoom.weekLower - 0.001)
-        case .week:
-            return ProviderScheduleZoom.weekLower ... (ProviderScheduleZoom.dayLower - 0.001)
-        case .day:
-            return ProviderScheduleZoom.dayLower ... (ProviderScheduleZoom.minuteLower - 0.001)
-        case .minute:
-            return ProviderScheduleZoom.minuteLower ... ProviderScheduleZoom.scaleMax
-        }
-    }
-
-    /// 0…1 position of `scale` within this tier's pinch range (drives in-tier visual density).
-    static func normalizedProgress(for scale: CGFloat) -> CGFloat {
-        let tier = ProviderScheduleZoomTier(effectiveScale: scale)
-        let range = tier.scaleRange
-        guard range.upperBound > range.lowerBound else { return 0 }
-        let clamped = min(range.upperBound, max(range.lowerBound, scale))
-        return (clamped - range.lowerBound) / (range.upperBound - range.lowerBound)
-    }
-
     var headerLabel: String {
         switch self {
         case .minute: return "Minute-by-minute"
         case .day: return "Daily schedule"
         case .week: return "Weekly overview"
         case .month: return "Monthly overview"
+        }
+    }
+
+    var supportsPinchZoom: Bool {
+        switch self {
+        case .day, .minute: return true
+        case .week, .month: return false
         }
     }
 }
@@ -156,8 +140,9 @@ struct ProviderZoomableScheduleCanvas: View {
         ProviderScheduleZoomTier(effectiveScale: effectiveScale)
     }
 
-    private var tierProgress: CGFloat {
-        ProviderScheduleZoomTier.normalizedProgress(for: effectiveScale)
+    /// Pinch zoom is only available in day and minute tiers (preset buttons switch month/week).
+    private var pinchZoomEnabled: Bool {
+        ProviderScheduleZoomTier(effectiveScale: zoomScale).supportsPinchZoom
     }
 
     private var appointments: [ScheduleCanvasAppointment] {
@@ -174,7 +159,7 @@ struct ProviderZoomableScheduleCanvas: View {
 
             GeometryReader { proxy in
                 weekAwareScrollView(viewportSize: proxy.size)
-                    .simultaneousGesture(magnificationGesture)
+                    .modifier(PinchZoomGestureModifier(isEnabled: pinchZoomEnabled, gesture: magnificationGesture))
             }
             .frame(minHeight: 360)
         }
@@ -192,9 +177,11 @@ struct ProviderZoomableScheduleCanvas: View {
                 .font(.subheadline.weight(.bold))
                 .foregroundStyle(Color.lavaShellCream)
             Spacer()
-            Text(String(format: "%.1fx", effectiveScale))
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(Color.lavaShellCreamSecondary)
+            if tier.supportsPinchZoom {
+                Text(String(format: "%.1fx", effectiveScale))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -234,7 +221,6 @@ struct ProviderZoomableScheduleCanvas: View {
                     calendar: calendar,
                     monthAnchor: monthAnchor,
                     bookings: bookings,
-                    tierProgress: tierProgress,
                     onDayTap: onMonthDayTap
                 )
                 .frame(width: size.width)
@@ -243,7 +229,6 @@ struct ProviderZoomableScheduleCanvas: View {
                     calendar: calendar,
                     weekStart: weekStartMonday,
                     bookings: bookings,
-                    tierProgress: tierProgress,
                     viewportSize: size,
                     startMinute: timelineStartMinute,
                     endMinute: timelineEndMinute,
@@ -274,13 +259,36 @@ struct ProviderZoomableScheduleCanvas: View {
     private var magnificationGesture: some Gesture {
         MagnificationGesture()
             .updating($dynamicGestureScale) { value, state, _ in
-                state = value
+                guard pinchZoomEnabled else { return }
+                let clamped = Self.clampToPinchZoomRange(zoomScale * value)
+                state = clamped / zoomScale
             }
             .onEnded { value in
+                guard pinchZoomEnabled else { return }
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
-                    zoomScale = ProviderScheduleZoom.clamped(zoomScale * value)
+                    zoomScale = Self.clampToPinchZoomRange(zoomScale * value)
                 }
             }
+    }
+
+    /// Keeps pinch zoom within day and minute tiers only.
+    private static func clampToPinchZoomRange(_ scale: CGFloat) -> CGFloat {
+        ProviderScheduleZoom.clamped(
+            min(ProviderScheduleZoom.scaleMax, max(ProviderScheduleZoom.dayLower, scale))
+        )
+    }
+}
+
+private struct PinchZoomGestureModifier<G: Gesture>: ViewModifier {
+    let isEnabled: Bool
+    let gesture: G
+
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content.simultaneousGesture(gesture)
+        } else {
+            content
+        }
     }
 }
 
@@ -458,16 +466,13 @@ private struct ScheduleWeekColumnsCanvas: View {
     let calendar: Calendar
     let weekStart: Date
     let bookings: [SimpleBookingDTO]
-    let tierProgress: CGFloat
     let viewportSize: CGSize
     let startMinute: Int
     let endMinute: Int
     let onDayTap: (Date) -> Void
     let onBookingTap: (SimpleBookingDTO) -> Void
 
-    private var columnSpacing: CGFloat {
-        4 + tierProgress * 6
-    }
+    private let columnSpacing: CGFloat = 8
 
     /// Weekday + date labels and padding above the timeline track.
     private var columnHeaderHeight: CGFloat { 36 }
@@ -543,20 +548,11 @@ private struct ScheduleMonthHeatmapGrid: View {
     let calendar: Calendar
     let monthAnchor: Date
     let bookings: [SimpleBookingDTO]
-    let tierProgress: CGFloat
     let onDayTap: (Date) -> Void
 
-    private var cellHeight: CGFloat {
-        34 + tierProgress * 34
-    }
-
-    private var gridSpacing: CGFloat {
-        5 + tierProgress * 9
-    }
-
-    private var dayFontSize: CGFloat {
-        11 + tierProgress * 3
-    }
+    private let cellHeight: CGFloat = 34
+    private let gridSpacing: CGFloat = 5
+    private let dayFontSize: CGFloat = 11
 
     private var gridDays: [Date?] {
         let range = calendar.range(of: .day, in: .month, for: monthAnchor) ?? 1 ..< 29
