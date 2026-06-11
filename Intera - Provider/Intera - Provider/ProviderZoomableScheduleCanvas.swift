@@ -7,22 +7,22 @@ enum ProviderScheduleZoom {
     static let scaleMax: CGFloat = 5.0
     static let defaultScale: CGFloat = 1.5
 
-    /// Schedule viewer height for month/week (fixed minimum).
+    /// Fixed viewer height for month/week schedule boxes.
     static let canvasMinHeightDefault: CGFloat = 360
 
-    /// Approximate vertical space used by schedule chrome above the canvas, supplement below, and padding.
-    static let dayMinuteChromeAbove: CGFloat = 290
-    static let dayMinuteSupplementBelow: CGFloat = 130
-    static let dayMinuteLayoutPadding: CGFloat = 36
-    static let dayMinuteCanvasMinHeight: CGFloat = 240
+    /// Taller scrollable viewer for day/minute — timeline content may extend beyond and scroll inside.
+    static let timelineVerticalScaleBoost: CGFloat = 1.4
 
-    /// Fits the day/minute canvas within the dashboard area below the shell header.
-    static func dayMinuteCanvasHeight(availableHeight: CGFloat) -> CGFloat {
-        let fit = availableHeight
-            - dayMinuteChromeAbove
-            - dayMinuteSupplementBelow
-            - dayMinuteLayoutPadding
-        return max(dayMinuteCanvasMinHeight, fit)
+    /// Target height for the day/minute schedule viewer box (timeline scrolls inside).
+    static let dayMinuteViewerPreferredHeight: CGFloat = 440
+    static let dayMinuteViewerMinHeight: CGFloat = 360
+    static let dayMinuteViewerScreenMargin: CGFloat = 24
+
+    /// Height of the day/minute schedule **viewer** area inside the card (below the tier header).
+    /// Chrome above/below the card lives in the page `ScrollView` and is not subtracted here.
+    static func canvasViewerHeight(availableHeight: CGFloat) -> CGFloat {
+        let capped = max(dayMinuteViewerMinHeight, availableHeight - dayMinuteViewerScreenMargin)
+        return min(dayMinuteViewerPreferredHeight, capped)
     }
 
     /// Tier boundaries — pinch scale crosses these to change Month / Week / Day / Minute.
@@ -147,8 +147,8 @@ struct ProviderZoomableScheduleCanvas: View {
     let onAvailableMinuteTap: (Int) -> Void
     let onWeekDayTap: (Date) -> Void
     let onMonthDayTap: (Date) -> Void
-    /// When set, day/minute canvas height is capped to fit on screen (dashboard passes remaining height).
-    var maxCanvasHeight: CGFloat?
+    /// Height of the day/minute **viewer box**; timeline content scrolls vertically inside it.
+    var canvasViewerHeight: CGFloat?
 
     @GestureState private var dynamicGestureScale: CGFloat = 1.0
 
@@ -170,9 +170,9 @@ struct ProviderZoomableScheduleCanvas: View {
             .sorted { $0.startMinute < $1.startMinute }
     }
 
-    private var resolvedCanvasFrameHeight: CGFloat {
-        if tier.supportsPinchZoom, let maxCanvasHeight {
-            return maxCanvasHeight
+    private var resolvedViewerBoxHeight: CGFloat {
+        if tier.supportsPinchZoom {
+            return canvasViewerHeight ?? ProviderScheduleZoom.dayMinuteViewerPreferredHeight
         }
         return ProviderScheduleZoom.canvasMinHeightDefault
     }
@@ -188,7 +188,7 @@ struct ProviderZoomableScheduleCanvas: View {
                 weekAwareScrollView(viewportSize: proxy.size)
                     .modifier(PinchZoomGestureModifier(isEnabled: pinchZoomEnabled, gesture: magnificationGesture))
             }
-            .frame(height: resolvedCanvasFrameHeight)
+            .frame(height: resolvedViewerBoxHeight)
         }
         .background(Color.providerScheduleCardFill.opacity(0.35))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -231,11 +231,10 @@ struct ProviderZoomableScheduleCanvas: View {
             }
             .contentShape(Rectangle())
         case .day, .minute:
-            ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView([.vertical, .horizontal], showsIndicators: false) {
                 canvasContent(in: viewportSize)
-                    .frame(width: viewportSize.width, height: viewportSize.height, alignment: .topLeading)
+                    .frame(minWidth: viewportSize.width, alignment: .topLeading)
             }
-            .scrollBounceBehavior(.basedOnSize, axes: .vertical)
             .contentShape(Rectangle())
         }
     }
@@ -270,7 +269,6 @@ struct ProviderZoomableScheduleCanvas: View {
                     day: selectedDay,
                     appointments: appointments,
                     scale: effectiveScale,
-                    viewportSize: size,
                     startMinute: timelineStartMinute,
                     endMinute: timelineEndMinute,
                     availabilityIntervals: availabilityIntervals,
@@ -279,7 +277,7 @@ struct ProviderZoomableScheduleCanvas: View {
                     onBookingTap: onBookingTap,
                     onAvailableMinuteTap: onAvailableMinuteTap
                 )
-                .frame(width: size.width, height: size.height, alignment: .top)
+                .frame(width: size.width)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: tier)
@@ -328,7 +326,6 @@ private struct SchedulePreciseTimelineCanvas: View {
     let day: Date
     let appointments: [ScheduleCanvasAppointment]
     let scale: CGFloat
-    let viewportSize: CGSize
     let startMinute: Int
     let endMinute: Int
     let availabilityIntervals: [BarberAvailabilityIntervalDTO]
@@ -337,20 +334,17 @@ private struct SchedulePreciseTimelineCanvas: View {
     let onBookingTap: (SimpleBookingDTO) -> Void
     let onAvailableMinuteTap: (Int) -> Void
 
-    private static let verticalPadding: CGFloat = 16
-
     private var tickStep: Int {
         scale >= 3.5 ? 5 : (scale >= 2.0 ? 15 : 30)
     }
 
-    /// Fits the full day window into the viewer — pinch scale only changes detail density.
-    private var timelineHeight: CGFloat {
-        max(48, viewportSize.height - Self.verticalPadding)
+    /// Points per minute for timeline layout; grows with pinch zoom and may exceed the viewer box height.
+    private var verticalScale: CGFloat {
+        scale * ProviderScheduleZoom.timelineVerticalScaleBoost
     }
 
-    private var layoutScale: CGFloat {
-        let minuteSpan = CGFloat(max(1, endMinute - startMinute))
-        return timelineHeight / minuteSpan
+    private var timelineHeight: CGFloat {
+        CGFloat(endMinute - startMinute) * verticalScale
     }
 
     private var detailTextOpacity: Double {
@@ -367,7 +361,6 @@ private struct SchedulePreciseTimelineCanvas: View {
             appointmentBlocks
         }
         .frame(height: timelineHeight)
-        .clipped()
         .padding(.vertical, 8)
     }
 
@@ -379,8 +372,8 @@ private struct SchedulePreciseTimelineCanvas: View {
             if end > start {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(Color.providerOlive.opacity(0.08))
-                    .frame(height: CGFloat(end - start) * layoutScale)
-                    .offset(x: 52, y: CGFloat(start - startMinute) * layoutScale)
+                    .frame(height: CGFloat(end - start) * verticalScale)
+                    .offset(x: 52, y: CGFloat(start - startMinute) * verticalScale)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -408,9 +401,9 @@ private struct SchedulePreciseTimelineCanvas: View {
                                     .opacity(detailTextOpacity)
                             }
                         }
-                        .frame(height: max(4, CGFloat(end - start) * layoutScale))
+                        .frame(height: max(4, CGFloat(end - start) * verticalScale))
                 }
-                .offset(y: CGFloat(start - startMinute) * layoutScale)
+                .offset(y: CGFloat(start - startMinute) * verticalScale)
             }
         }
     }
@@ -427,49 +420,207 @@ private struct SchedulePreciseTimelineCanvas: View {
                         .fill(Color.lavaShellCreamTertiary.opacity(0.35))
                         .frame(height: 0.5)
                 }
-                .frame(height: CGFloat(tickStep) * layoutScale, alignment: .top)
+                .frame(height: CGFloat(tickStep) * verticalScale, alignment: .top)
             }
         }
     }
 
     private var appointmentBlocks: some View {
         ForEach(appointments) { app in
-            let top = CGFloat(app.startMinute - startMinute) * layoutScale
-            let height = max(4, CGFloat(app.durationMinutes) * layoutScale)
+            let top = CGFloat(app.startMinute - startMinute) * verticalScale
+            let height = max(4, CGFloat(app.durationMinutes) * verticalScale)
             Button {
                 onBookingTap(app.booking)
             } label: {
                 HStack(spacing: 0) {
                     Spacer().frame(width: 52)
-                    VStack(alignment: .leading, spacing: 2) {
-                        if detailTextOpacity > 0.05 {
-                            Text(app.booking.consumerDisplayName)
-                                .font(.system(size: min(13, 9 + scale), weight: .bold))
-                                .lineLimit(scale >= 3.5 ? 2 : 1)
-                                .opacity(detailTextOpacity)
-                            Text(app.booking.serviceDisplayName)
-                                .font(.system(size: min(11, 8 + scale * 0.5)))
-                                .foregroundStyle(Color.lavaShellCreamSecondary)
-                                .lineLimit(1)
-                                .opacity(detailTextOpacity * 0.9)
-                        }
-                        if scale >= 3.5 {
-                            Text(formatMinuteLabel(app.startMinute))
-                                .font(.system(size: 9))
-                                .foregroundStyle(Color.lavaShellCreamTertiary)
-                        }
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .background(appointmentColor(for: app.booking))
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    appointmentBlockContent(for: app, blockHeight: height)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        .background(appointmentColor(for: app.booking))
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
                 .frame(height: height)
             }
             .buttonStyle(.plain)
             .offset(y: top)
         }
+    }
+
+    @ViewBuilder
+    private func appointmentBlockContent(for app: ScheduleCanvasAppointment, blockHeight: CGFloat) -> some View {
+        let booking = app.booking
+        let detailLevel = appointmentDetailLevel(for: blockHeight)
+
+        VStack(alignment: .center, spacing: detailLineSpacing(for: detailLevel)) {
+            if detailTextOpacity > 0.05 {
+                Text(booking.consumerDisplayName)
+                    .font(.system(size: consumerFontSize(for: blockHeight, level: detailLevel), weight: .bold))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(lineLimit(for: detailLevel, primary: true))
+                    .minimumScaleFactor(0.85)
+                    .opacity(detailTextOpacity)
+
+                Text(booking.serviceDisplayName)
+                    .font(.system(size: serviceFontSize(for: blockHeight, level: detailLevel), weight: .semibold))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(lineLimit(for: detailLevel, primary: false))
+                    .minimumScaleFactor(0.85)
+                    .opacity(detailTextOpacity * 0.9)
+
+                if detailLevel >= .standard {
+                    Text(appointmentTimeRange(for: app))
+                        .font(.system(size: detailFontSize(for: blockHeight), weight: .medium))
+                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .multilineTextAlignment(.center)
+
+                    Text(ProviderBookingStatusDisplay.title(for: booking.status))
+                        .font(.system(size: detailFontSize(for: blockHeight) - 1, weight: .semibold))
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                if detailLevel >= .detailed {
+                    if let price = formattedPrice(for: booking) {
+                        Text(price)
+                            .font(.system(size: detailFontSize(for: blockHeight), weight: .semibold))
+                            .foregroundStyle(Color.lavaShellCream)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    if let duration = formattedDuration(minutes: app.durationMinutes) {
+                        Text(duration)
+                            .font(.system(size: detailFontSize(for: blockHeight) - 1, weight: .medium))
+                            .foregroundStyle(Color.lavaShellCreamTertiary)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    if booking.hasPendingRescheduleRequest {
+                        Text("Reschedule requested")
+                            .font(.system(size: detailFontSize(for: blockHeight) - 1, weight: .semibold))
+                            .foregroundStyle(Color.orange.opacity(0.95))
+                            .multilineTextAlignment(.center)
+                    }
+
+                    if let location = trimmedNonEmpty(booking.location) {
+                        HStack(alignment: .top, spacing: 4) {
+                            Image(systemName: "mappin.and.ellipse")
+                                .font(.system(size: detailFontSize(for: blockHeight) - 2))
+                            Text(location)
+                                .multilineTextAlignment(.leading)
+                                .lineLimit(2)
+                        }
+                        .font(.system(size: detailFontSize(for: blockHeight) - 1, weight: .medium))
+                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    }
+
+                    if let notes = trimmedNonEmpty(booking.notes) {
+                        Text(notes)
+                            .font(.system(size: detailFontSize(for: blockHeight) - 1, weight: .regular))
+                            .italic()
+                            .foregroundStyle(Color.lavaShellCreamTertiary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+                    }
+                }
+            }
+        }
+    }
+
+    private enum AppointmentDetailLevel: Comparable {
+        case compact
+        case standard
+        case detailed
+
+        static func < (lhs: Self, rhs: Self) -> Bool {
+            lhs.sortOrder < rhs.sortOrder
+        }
+
+        private var sortOrder: Int {
+            switch self {
+            case .compact: return 0
+            case .standard: return 1
+            case .detailed: return 2
+            }
+        }
+    }
+
+    private func appointmentDetailLevel(for blockHeight: CGFloat) -> AppointmentDetailLevel {
+        if scale >= ProviderScheduleZoom.minuteLower, blockHeight >= 96 {
+            return .detailed
+        }
+        if scale >= 2.0, blockHeight >= 72 {
+            return .standard
+        }
+        return .compact
+    }
+
+    private func detailLineSpacing(for level: AppointmentDetailLevel) -> CGFloat {
+        switch level {
+        case .compact: return 4
+        case .standard: return 3
+        case .detailed: return 2
+        }
+    }
+
+    private func lineLimit(for level: AppointmentDetailLevel, primary: Bool) -> Int {
+        switch level {
+        case .compact: return primary ? 2 : 2
+        case .standard: return primary ? 2 : 2
+        case .detailed: return primary ? 2 : 1
+        }
+    }
+
+    private func consumerFontSize(for blockHeight: CGFloat, level: AppointmentDetailLevel) -> CGFloat {
+        let base = min(18, max(14, blockHeight * 0.24))
+        switch level {
+        case .compact: return base
+        case .standard: return min(17, base)
+        case .detailed: return min(16, max(13, blockHeight * 0.16))
+        }
+    }
+
+    private func serviceFontSize(for blockHeight: CGFloat, level: AppointmentDetailLevel) -> CGFloat {
+        let base = min(15, max(12, blockHeight * 0.18))
+        switch level {
+        case .compact: return base
+        case .standard: return min(14, base)
+        case .detailed: return min(13, max(11, blockHeight * 0.12))
+        }
+    }
+
+    private func detailFontSize(for blockHeight: CGFloat) -> CGFloat {
+        min(12, max(10, blockHeight * 0.1))
+    }
+
+    private func appointmentTimeRange(for app: ScheduleCanvasAppointment) -> String {
+        let endMinute = app.startMinute + app.durationMinutes
+        return "\(formatMinuteLabel(app.startMinute)) – \(formatMinuteLabel(endMinute))"
+    }
+
+    private func formattedPrice(for booking: SimpleBookingDTO) -> String? {
+        guard let cents = booking.priceUsdCents else { return nil }
+        return (Double(cents) / 100).formatted(.currency(code: "USD"))
+    }
+
+    private func formattedDuration(minutes: Int) -> String? {
+        guard minutes > 0 else { return nil }
+        if minutes == 1 { return "1 min" }
+        if minutes < 60 { return "\(minutes) min" }
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        if remainder == 0 { return hours == 1 ? "1 hr" : "\(hours) hr" }
+        return "\(hours) hr \(remainder) min"
+    }
+
+    private func trimmedNonEmpty(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
     }
 
     private func appointmentColor(for booking: SimpleBookingDTO) -> Color {

@@ -148,11 +148,11 @@ struct ProviderScheduleDashboardView: View {
 
     var body: some View {
         GeometryReader { screenProxy in
-            let dayMinuteCanvasHeight = ProviderScheduleZoom.dayMinuteCanvasHeight(
+            let canvasViewerHeight = ProviderScheduleZoom.canvasViewerHeight(
                 availableHeight: screenProxy.size.height
             )
             ScrollView {
-                scheduleContent(dayMinuteCanvasHeight: dayMinuteCanvasHeight)
+                scheduleContent(canvasViewerHeight: canvasViewerHeight)
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
                     .padding(.bottom, 24)
@@ -221,7 +221,7 @@ struct ProviderScheduleDashboardView: View {
 
     /// Full-bleed schedule under the dashboard header. Replaces the prior "card" look so the
     /// Daily / Weekly / Monthly view fills the entire page below `dashboardHeaderBar`.
-    private func scheduleContent(dayMinuteCanvasHeight: CGFloat) -> some View {
+    private func scheduleContent(canvasViewerHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             // Sits between the shell's header bar (Chats / role chip / Requests tray /
             // profile menu) and the "[x] appointments" summary line. Renders one row
@@ -236,7 +236,7 @@ struct ProviderScheduleDashboardView: View {
                 manageAvailabilityOrEditControls
             }
             VStack(alignment: .leading, spacing: 12) {
-                zoomScheduleCanvas(dayMinuteCanvasHeight: dayMinuteCanvasHeight)
+                zoomScheduleCanvas(canvasViewerHeight: canvasViewerHeight)
                 if isDayZoomTier {
                     dayScheduleSupplement
                 }
@@ -520,7 +520,7 @@ struct ProviderScheduleDashboardView: View {
         effectiveZoomTier == preset.tier
     }
 
-    private func zoomScheduleCanvas(dayMinuteCanvasHeight: CGFloat) -> some View {
+    private func zoomScheduleCanvas(canvasViewerHeight: CGFloat) -> some View {
         Group {
             if !session.hasProviderProfile {
                 Text("Link your CampusCuts barber profile on the web to load appointments here.")
@@ -551,7 +551,7 @@ struct ProviderScheduleDashboardView: View {
                     },
                     onWeekDayTap: { focusDay($0) },
                     onMonthDayTap: { focusDay($0) },
-                    maxCanvasHeight: isDayZoomTier ? dayMinuteCanvasHeight : nil
+                    canvasViewerHeight: isDayZoomTier ? canvasViewerHeight : nil
                 )
             }
         }
