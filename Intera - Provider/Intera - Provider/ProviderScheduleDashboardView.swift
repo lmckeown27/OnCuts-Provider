@@ -62,6 +62,12 @@ struct ProviderScheduleDashboardView: View {
     @State private var savingInlineWeekly = false
     @State private var inlineSaveError: String?
 
+    @State private var timeChangeProposal: ScheduleAppointmentTimeChangeProposal?
+    @State private var isApplyingTimeChange = false
+    @State private var timeChangeErrorText: String?
+    @State private var movePromptBooking: SimpleBookingDTO?
+    @State private var editingMoveBookingID: String?
+
     private var mondayCalendar: Calendar {
         var c = Calendar(identifier: .gregorian)
         c.firstWeekday = 2
@@ -193,6 +199,18 @@ struct ProviderScheduleDashboardView: View {
         .onReceive(NotificationCenter.default.publisher(for: ProviderAwaitingPaymentTracker.didChangeNotification)) { _ in
             awaitingPaymentRefreshTick &+= 1
         }
+        .onChange(of: dayOffset) { _, _ in
+            editingMoveBookingID = nil
+            movePromptBooking = nil
+            timeChangeProposal = nil
+        }
+        .onChange(of: effectiveZoomTier) { _, tier in
+            if tier != .day && tier != .minute {
+                editingMoveBookingID = nil
+                movePromptBooking = nil
+                timeChangeProposal = nil
+            }
+        }
         .toolbar(.hidden, for: .navigationBar)
         /// With `providerLavaScreenChrome()` on the shell, a **material** nav bar background can still
         /// influence layout after popping UIKit chat destinations — hide the bar chrome entirely on root.
@@ -213,6 +231,21 @@ struct ProviderScheduleDashboardView: View {
                         NotificationCenter.default.post(name: .providerAvailabilityChanged, object: nil)
                     }
                 )
+            }
+        }
+        .alert(
+            "Couldn’t update appointment",
+            isPresented: Binding(
+                get: { timeChangeErrorText != nil },
+                set: { if !$0 { timeChangeErrorText = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                timeChangeErrorText = nil
+            }
+        } message: {
+            if let timeChangeErrorText {
+                Text(timeChangeErrorText)
             }
         }
     }
@@ -551,7 +584,24 @@ struct ProviderScheduleDashboardView: View {
                     },
                     onWeekDayTap: { focusDay($0) },
                     onMonthDayTap: { focusDay($0) },
-                    canvasViewerHeight: isDayZoomTier ? canvasViewerHeight : nil
+                    canvasViewerHeight: isDayZoomTier ? canvasViewerHeight : nil,
+                    appointmentDragEnabled: isDayZoomTier && !isEditingAvailability,
+                    editingMoveBookingID: $editingMoveBookingID,
+                    movePromptBooking: $movePromptBooking,
+                    timeChangeProposal: $timeChangeProposal,
+                    isApplyingTimeChange: isApplyingTimeChange,
+                    onConfirmTimeChange: {
+                        Task { await applyPendingTimeChange() }
+                    },
+                    onMoveBookingRequested: { movePromptBooking = $0 },
+                    onCancelMoveEditing: { editingMoveBookingID = nil },
+                    onBookingTimeChangeProposed: { booking, proposedTime in
+                        timeChangeProposal = ScheduleAppointmentTimeChangeProposal(
+                            booking: booking,
+                            originalTime: booking.scheduledTime ?? proposedTime,
+                            proposedTime: proposedTime
+                        )
+                    }
                 )
             }
         }
@@ -643,6 +693,29 @@ struct ProviderScheduleDashboardView: View {
                     .font(.footnote)
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             }
+        }
+    }
+
+    private func applyPendingTimeChange() async {
+        guard let pending = timeChangeProposal else { return }
+        isApplyingTimeChange = true
+        defer { isApplyingTimeChange = false }
+
+        do {
+            try await ProviderBookingsService.reschedule(
+                id: pending.booking.id,
+                scheduledTimeISO: pending.proposedTime.campusCutsISO8601String(),
+                location: pending.booking.location,
+                notes: pending.booking.notes
+            )
+            timeChangeProposal = nil
+            editingMoveBookingID = nil
+            NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
+            await loadBookings()
+            await refreshDayScheduleFromNetwork()
+        } catch {
+            if providerIsBenignRequestCancellation(error) { return }
+            timeChangeErrorText = error.localizedDescription
         }
     }
 

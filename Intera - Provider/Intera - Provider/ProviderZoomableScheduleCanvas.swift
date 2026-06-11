@@ -149,6 +149,15 @@ struct ProviderZoomableScheduleCanvas: View {
     let onMonthDayTap: (Date) -> Void
     /// Height of the day/minute **viewer box**; timeline content scrolls vertically inside it.
     var canvasViewerHeight: CGFloat?
+    var appointmentDragEnabled: Bool = false
+    @Binding var editingMoveBookingID: String?
+    @Binding var movePromptBooking: SimpleBookingDTO?
+    @Binding var timeChangeProposal: ScheduleAppointmentTimeChangeProposal?
+    var isApplyingTimeChange: Bool = false
+    var onConfirmTimeChange: () -> Void = {}
+    var onMoveBookingRequested: (SimpleBookingDTO) -> Void = { _ in }
+    var onCancelMoveEditing: () -> Void = {}
+    var onBookingTimeChangeProposed: (SimpleBookingDTO, Date) -> Void = { _, _ in }
 
     @GestureState private var dynamicGestureScale: CGFloat = 1.0
 
@@ -186,7 +195,10 @@ struct ProviderZoomableScheduleCanvas: View {
 
             GeometryReader { proxy in
                 weekAwareScrollView(viewportSize: proxy.size)
-                    .modifier(PinchZoomGestureModifier(isEnabled: pinchZoomEnabled, gesture: magnificationGesture))
+                    .modifier(PinchZoomGestureModifier(
+                        isEnabled: pinchZoomEnabled && editingMoveBookingID == nil,
+                        gesture: magnificationGesture
+                    ))
             }
             .frame(height: resolvedViewerBoxHeight)
         }
@@ -199,19 +211,50 @@ struct ProviderZoomableScheduleCanvas: View {
     }
 
     private var zoomContextHeader: some View {
-        HStack(spacing: 8) {
-            Text(tier.headerLabel)
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(Color.lavaShellCream)
-            Spacer()
-            if tier.supportsPinchZoom {
-                Text(String(format: "%.1fx", effectiveScale))
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
+        Group {
+            if let editingID = editingMoveBookingID,
+               let moving = appointments.first(where: { $0.id == editingID }) {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Moving appointment")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(Color.lavaShellCream)
+                        Text("Drag \(moving.booking.consumerDisplayName) to a new open slot")
+                            .font(.caption)
+                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    Button("Cancel") {
+                        onCancelMoveEditing()
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.lavaShellCream)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background {
+                        Capsule()
+                            .fill(Color.providerScheduleControlFill)
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else {
+                HStack(spacing: 8) {
+                    Text(tier.headerLabel)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(Color.lavaShellCream)
+                    Spacer()
+                    if tier.supportsPinchZoom {
+                        Text(String(format: "%.1fx", effectiveScale))
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                    }
+                }
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+        .animation(.easeInOut(duration: 0.2), value: editingMoveBookingID)
     }
 
     @ViewBuilder
@@ -235,6 +278,7 @@ struct ProviderZoomableScheduleCanvas: View {
                 canvasContent(in: viewportSize)
                     .frame(minWidth: viewportSize.width, alignment: .topLeading)
             }
+            .scrollDisabled(editingMoveBookingID != nil)
             .contentShape(Rectangle())
         }
     }
@@ -274,8 +318,16 @@ struct ProviderZoomableScheduleCanvas: View {
                     availabilityIntervals: availabilityIntervals,
                     timeBlocks: timeBlocks,
                     blockTimeTapsEnabled: blockTimeTapsEnabled,
+                    appointmentDragEnabled: appointmentDragEnabled,
+                    editingMoveBookingID: $editingMoveBookingID,
+                    movePromptBooking: $movePromptBooking,
+                    timeChangeProposal: $timeChangeProposal,
+                    isApplyingTimeChange: isApplyingTimeChange,
+                    onConfirmTimeChange: onConfirmTimeChange,
+                    onMoveBookingRequested: onMoveBookingRequested,
                     onBookingTap: onBookingTap,
-                    onAvailableMinuteTap: onAvailableMinuteTap
+                    onAvailableMinuteTap: onAvailableMinuteTap,
+                    onBookingTimeChangeProposed: onBookingTimeChangeProposed
                 )
                 .frame(width: size.width)
             }
@@ -319,6 +371,43 @@ private struct PinchZoomGestureModifier<G: Gesture>: ViewModifier {
     }
 }
 
+// MARK: - Appointment drag helpers
+
+struct ScheduleAppointmentTimeChangeProposal: Identifiable {
+    let id = UUID()
+    let booking: SimpleBookingDTO
+    let originalTime: Date
+    let proposedTime: Date
+}
+
+private enum ScheduleTimelineCoordinateSpace {
+    static let name = "scheduleTimelineCanvas"
+}
+
+private struct ScheduleAppointmentFrameKey: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
+    }
+}
+
+enum ScheduleAppointmentDrag {
+    static func isDraggable(_ booking: SimpleBookingDTO) -> Bool {
+        switch ProviderBookingStatusDisplay.normalized(booking.status) {
+        case "pending", "accepted":
+            return booking.scheduledTime != nil
+        default:
+            return false
+        }
+    }
+
+    static func snapMinute(_ minute: Int, step: Int) -> Int {
+        guard step > 1 else { return minute }
+        return ((minute + step / 2) / step) * step
+    }
+}
+
 // MARK: - Minute / day timeline
 
 private struct SchedulePreciseTimelineCanvas: View {
@@ -331,8 +420,16 @@ private struct SchedulePreciseTimelineCanvas: View {
     let availabilityIntervals: [BarberAvailabilityIntervalDTO]
     let timeBlocks: [BarberTimeBlockDTO]
     let blockTimeTapsEnabled: Bool
+    let appointmentDragEnabled: Bool
+    @Binding var editingMoveBookingID: String?
+    @Binding var movePromptBooking: SimpleBookingDTO?
+    @Binding var timeChangeProposal: ScheduleAppointmentTimeChangeProposal?
+    let isApplyingTimeChange: Bool
+    let onConfirmTimeChange: () -> Void
+    let onMoveBookingRequested: (SimpleBookingDTO) -> Void
     let onBookingTap: (SimpleBookingDTO) -> Void
     let onAvailableMinuteTap: (Int) -> Void
+    let onBookingTimeChangeProposed: (SimpleBookingDTO, Date) -> Void
 
     private var tickStep: Int {
         scale >= 3.5 ? 5 : (scale >= 2.0 ? 15 : 30)
@@ -341,6 +438,10 @@ private struct SchedulePreciseTimelineCanvas: View {
     /// Points per minute for timeline layout; grows with pinch zoom and may exceed the viewer box height.
     private var verticalScale: CGFloat {
         scale * ProviderScheduleZoom.timelineVerticalScaleBoost
+    }
+
+    private var dragSnapStep: Int {
+        scale >= ProviderScheduleZoom.minuteLower ? 5 : 15
     }
 
     private var timelineHeight: CGFloat {
@@ -360,8 +461,92 @@ private struct SchedulePreciseTimelineCanvas: View {
             tickMarks
             appointmentBlocks
         }
+        .coordinateSpace(name: ScheduleTimelineCoordinateSpace.name)
         .frame(height: timelineHeight)
         .padding(.vertical, 8)
+        .overlayPreferenceValue(ScheduleAppointmentFrameKey.self) { frames in
+            GeometryReader { proxy in
+                if let booking = movePromptBooking, let frame = frames[booking.id] {
+                    anchoredPrompt(
+                        title: "Move booking?",
+                        message: "Move \(booking.consumerDisplayName)'s \(booking.serviceDisplayName) to a different open time slot?",
+                        primaryTitle: "Move",
+                        secondaryTitle: "Cancel",
+                        isPrimaryDisabled: false,
+                        targetFrame: frame,
+                        in: proxy.size
+                    ) {
+                        editingMoveBookingID = booking.id
+                        movePromptBooking = nil
+                    } onSecondary: {
+                        movePromptBooking = nil
+                    }
+                }
+
+                if let proposal = timeChangeProposal, let frame = frames[proposal.booking.id] {
+                    let fromTime = proposal.originalTime.formatted(date: .omitted, time: .shortened)
+                    let toTime = proposal.proposedTime.formatted(date: .omitted, time: .shortened)
+                    anchoredPrompt(
+                        title: "Confirm time change",
+                        message: "Move \(proposal.booking.consumerDisplayName)'s \(proposal.booking.serviceDisplayName) from \(fromTime) to \(toTime)?",
+                        primaryTitle: isApplyingTimeChange ? "Saving…" : "Confirm",
+                        secondaryTitle: "Cancel",
+                        isPrimaryDisabled: isApplyingTimeChange,
+                        targetFrame: frame,
+                        in: proxy.size
+                    ) {
+                        onConfirmTimeChange()
+                    } onSecondary: {
+                        timeChangeProposal = nil
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func anchoredPrompt(
+        title: String,
+        message: String,
+        primaryTitle: String,
+        secondaryTitle: String,
+        isPrimaryDisabled: Bool,
+        targetFrame: CGRect,
+        in containerSize: CGSize,
+        onPrimary: @escaping () -> Void,
+        onSecondary: @escaping () -> Void
+    ) -> some View {
+        let cardWidth = min(280, max(180, containerSize.width - 72))
+        let showAbove = targetFrame.minY > 118
+        let anchorX = min(max(targetFrame.midX, cardWidth / 2 + 12), containerSize.width - cardWidth / 2 - 12)
+
+        VStack(spacing: 0) {
+            if !showAbove {
+                ScheduleAppointmentPromptArrow(pointingUp: true)
+            }
+
+            ScheduleAnchoredAppointmentPromptCard(
+                title: title,
+                message: message,
+                primaryTitle: primaryTitle,
+                secondaryTitle: secondaryTitle,
+                isPrimaryDisabled: isPrimaryDisabled,
+                onPrimary: onPrimary,
+                onSecondary: onSecondary
+            )
+            .frame(width: cardWidth)
+
+            if showAbove {
+                ScheduleAppointmentPromptArrow(pointingUp: false)
+            }
+        }
+        .position(
+            x: anchorX,
+            y: showAbove
+                ? targetFrame.minY - 58
+                : targetFrame.maxY + 58
+        )
+        .zIndex(20)
     }
 
     private var availabilityBackground: some View {
@@ -429,31 +614,124 @@ private struct SchedulePreciseTimelineCanvas: View {
         ForEach(appointments) { app in
             let top = CGFloat(app.startMinute - startMinute) * verticalScale
             let height = max(4, CGFloat(app.durationMinutes) * verticalScale)
-            Button {
-                onBookingTap(app.booking)
-            } label: {
+            let canMove = appointmentDragEnabled && ScheduleAppointmentDrag.isDraggable(app.booking)
+            let isEditing = editingMoveBookingID == app.id
+
+            ScheduleDraggableAppointmentBlock(
+                top: top,
+                height: height,
+                isEditing: isEditing,
+                canRequestMove: canMove && editingMoveBookingID == nil,
+                onTap: {
+                    guard editingMoveBookingID == nil else { return }
+                    onBookingTap(app.booking)
+                },
+                onMoveRequested: { onMoveBookingRequested(app.booking) },
+                onDragEnded: { translationY in
+                    handleAppointmentDragEnded(app: app, translationY: translationY)
+                }
+            ) {
                 HStack(spacing: 0) {
                     Spacer().frame(width: 52)
-                    appointmentBlockContent(for: app, blockHeight: height)
+                    appointmentBlockContent(for: app, blockHeight: height, isEditing: isEditing)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                        .background(appointmentColor(for: app.booking))
+                        .background(appointmentColor(for: app.booking, isEditing: isEditing))
                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay {
+                            if isEditing {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .strokeBorder(Color.providerOlive.opacity(0.95), lineWidth: 2)
+                            }
+                        }
+                        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .background {
+                            GeometryReader { geo in
+                                Color.clear.preference(
+                                    key: ScheduleAppointmentFrameKey.self,
+                                    value: [
+                                        app.id: geo.frame(in: .named(ScheduleTimelineCoordinateSpace.name))
+                                    ]
+                                )
+                            }
+                        }
                 }
-                .frame(height: height)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.plain)
-            .offset(y: top)
         }
     }
 
+    private func handleAppointmentDragEnded(app: ScheduleCanvasAppointment, translationY: CGFloat) {
+        guard abs(translationY) > 4 else { return }
+
+        let deltaMinutes = Int((translationY / verticalScale).rounded())
+        let rawProposed = app.startMinute + deltaMinutes
+        let snapped = ScheduleAppointmentDrag.snapMinute(rawProposed, step: dragSnapStep)
+        let clampedStart = min(
+            max(snapped, startMinute),
+            max(startMinute, endMinute - app.durationMinutes)
+        )
+
+        guard clampedStart != app.startMinute else { return }
+        guard isOpenSlot(
+            startMinute: clampedStart,
+            durationMinutes: app.durationMinutes,
+            excludingAppointmentID: app.id
+        ) else { return }
+        guard let proposedDate = scheduledDate(on: day, totalMinutes: clampedStart) else { return }
+
+        onBookingTimeChangeProposed(app.booking, proposedDate)
+    }
+
+    private func isOpenSlot(startMinute: Int, durationMinutes: Int, excludingAppointmentID: String) -> Bool {
+        let endMinute = startMinute + durationMinutes
+
+        for other in appointments where other.id != excludingAppointmentID {
+            let otherEnd = other.startMinute + other.durationMinutes
+            if startMinute < otherEnd && endMinute > other.startMinute {
+                return false
+            }
+        }
+
+        for block in timeBlocks {
+            let blockStart = minutesFromHHMM(block.startTime)
+            let blockEnd = minutesFromHHMM(block.endTime)
+            if startMinute < blockEnd && endMinute > blockStart {
+                return false
+            }
+        }
+
+        guard !availabilityIntervals.isEmpty else { return true }
+        return availabilityIntervals.contains { interval in
+            let intervalStart = minutesFromHHMM(interval.start)
+            let intervalEnd = minutesFromHHMM(interval.end)
+            return startMinute >= intervalStart && endMinute <= intervalEnd
+        }
+    }
+
+    private func scheduledDate(on day: Date, totalMinutes: Int) -> Date? {
+        let dayStart = calendar.startOfDay(for: day)
+        return calendar.date(byAdding: .minute, value: totalMinutes, to: dayStart)
+    }
+
     @ViewBuilder
-    private func appointmentBlockContent(for app: ScheduleCanvasAppointment, blockHeight: CGFloat) -> some View {
+    private func appointmentBlockContent(
+        for app: ScheduleCanvasAppointment,
+        blockHeight: CGFloat,
+        isEditing: Bool
+    ) -> some View {
         let booking = app.booking
         let detailLevel = appointmentDetailLevel(for: blockHeight)
 
         VStack(alignment: .center, spacing: detailLineSpacing(for: detailLevel)) {
+            if isEditing {
+                Label("Drag to move", systemImage: "arrow.up.and.down")
+                    .font(.system(size: min(12, detailFontSize(for: blockHeight) + 1), weight: .semibold))
+                    .foregroundStyle(Color.lavaShellCream)
+                    .allowsHitTesting(false)
+            }
+
             if detailTextOpacity > 0.05 {
                 Text(booking.consumerDisplayName)
                     .font(.system(size: consumerFontSize(for: blockHeight, level: detailLevel), weight: .bold))
@@ -461,6 +739,7 @@ private struct SchedulePreciseTimelineCanvas: View {
                     .lineLimit(lineLimit(for: detailLevel, primary: true))
                     .minimumScaleFactor(0.85)
                     .opacity(detailTextOpacity)
+                    .allowsHitTesting(false)
 
                 Text(booking.serviceDisplayName)
                     .font(.system(size: serviceFontSize(for: blockHeight, level: detailLevel), weight: .semibold))
@@ -469,17 +748,20 @@ private struct SchedulePreciseTimelineCanvas: View {
                     .lineLimit(lineLimit(for: detailLevel, primary: false))
                     .minimumScaleFactor(0.85)
                     .opacity(detailTextOpacity * 0.9)
+                    .allowsHitTesting(false)
 
                 if detailLevel >= .standard {
                     Text(appointmentTimeRange(for: app))
                         .font(.system(size: detailFontSize(for: blockHeight), weight: .medium))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                         .multilineTextAlignment(.center)
+                        .allowsHitTesting(false)
 
                     Text(ProviderBookingStatusDisplay.title(for: booking.status))
                         .font(.system(size: detailFontSize(for: blockHeight) - 1, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                         .multilineTextAlignment(.center)
+                        .allowsHitTesting(false)
                 }
 
                 if detailLevel >= .detailed {
@@ -488,6 +770,7 @@ private struct SchedulePreciseTimelineCanvas: View {
                             .font(.system(size: detailFontSize(for: blockHeight), weight: .semibold))
                             .foregroundStyle(Color.lavaShellCream)
                             .multilineTextAlignment(.center)
+                            .allowsHitTesting(false)
                     }
 
                     if let duration = formattedDuration(minutes: app.durationMinutes) {
@@ -495,6 +778,7 @@ private struct SchedulePreciseTimelineCanvas: View {
                             .font(.system(size: detailFontSize(for: blockHeight) - 1, weight: .medium))
                             .foregroundStyle(Color.lavaShellCreamTertiary)
                             .multilineTextAlignment(.center)
+                            .allowsHitTesting(false)
                     }
 
                     if booking.hasPendingRescheduleRequest {
@@ -502,6 +786,7 @@ private struct SchedulePreciseTimelineCanvas: View {
                             .font(.system(size: detailFontSize(for: blockHeight) - 1, weight: .semibold))
                             .foregroundStyle(Color.orange.opacity(0.95))
                             .multilineTextAlignment(.center)
+                            .allowsHitTesting(false)
                     }
 
                     if let location = trimmedNonEmpty(booking.location) {
@@ -515,6 +800,7 @@ private struct SchedulePreciseTimelineCanvas: View {
                         .font(.system(size: detailFontSize(for: blockHeight) - 1, weight: .medium))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                         .frame(maxWidth: .infinity, alignment: .center)
+                        .allowsHitTesting(false)
                     }
 
                     if let notes = trimmedNonEmpty(booking.notes) {
@@ -524,10 +810,13 @@ private struct SchedulePreciseTimelineCanvas: View {
                             .foregroundStyle(Color.lavaShellCreamTertiary)
                             .multilineTextAlignment(.center)
                             .lineLimit(3)
+                            .allowsHitTesting(false)
                     }
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .allowsHitTesting(false)
     }
 
     private enum AppointmentDetailLevel: Comparable {
@@ -623,14 +912,19 @@ private struct SchedulePreciseTimelineCanvas: View {
         return trimmed
     }
 
-    private func appointmentColor(for booking: SimpleBookingDTO) -> Color {
+    private func appointmentColor(for booking: SimpleBookingDTO, isEditing: Bool) -> Color {
+        let base: Color
         if ProviderBookingStatusDisplay.isScheduleCompleted(status: booking.status) {
-            return Color.green.opacity(0.32)
+            base = Color.green.opacity(0.32)
+        } else if ProviderBookingStatusDisplay.isScheduleBooked(status: booking.status) {
+            base = Color.providerOlive.opacity(0.44)
+        } else {
+            base = Color.providerScheduleCardFill
         }
-        if ProviderBookingStatusDisplay.isScheduleBooked(status: booking.status) {
-            return Color.providerOlive.opacity(0.44)
+        if isEditing {
+            return base.opacity(0.92)
         }
-        return Color.providerScheduleCardFill
+        return base
     }
 
     private func minutesFromHHMM(_ hhmm: String) -> Int {
@@ -647,6 +941,142 @@ private struct SchedulePreciseTimelineCanvas: View {
         let calendar = Calendar(identifier: .gregorian)
         let date = calendar.date(from: components) ?? .now
         return date.formatted(date: .omitted, time: .shortened)
+    }
+}
+
+// MARK: - Draggable appointment block
+
+private struct ScheduleAnchoredAppointmentPromptCard: View {
+    let title: String
+    let message: String
+    let primaryTitle: String
+    let secondaryTitle: String
+    let isPrimaryDisabled: Bool
+    let onPrimary: () -> Void
+    let onSecondary: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(Color.lavaShellCream)
+
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Button(action: onSecondary) {
+                    Text(secondaryTitle)
+                        .font(.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.lavaShellCream)
+                .background {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.providerScheduleControlFill)
+                }
+
+                Button(action: onPrimary) {
+                    Text(primaryTitle)
+                        .font(.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.lavaShellCream)
+                .background {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.providerOlive.opacity(isPrimaryDisabled ? 0.25 : 0.55))
+                }
+                .disabled(isPrimaryDisabled)
+            }
+        }
+        .padding(12)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.providerScheduleCardFill)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.providerOlive.opacity(0.55), lineWidth: 1)
+                }
+                .shadow(color: Color.black.opacity(0.28), radius: 10, y: 4)
+        }
+    }
+}
+
+private struct ScheduleAppointmentPromptArrow: View {
+    let pointingUp: Bool
+
+    var body: some View {
+        Image(systemName: pointingUp ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(Color.providerScheduleCardFill)
+            .shadow(color: Color.black.opacity(0.18), radius: 2, y: 1)
+    }
+}
+
+private struct ScheduleDraggableAppointmentBlock<Content: View>: View {
+    let top: CGFloat
+    let height: CGFloat
+    let isEditing: Bool
+    let canRequestMove: Bool
+    let onTap: () -> Void
+    let onMoveRequested: () -> Void
+    let onDragEnded: (CGFloat) -> Void
+    @ViewBuilder let content: () -> Content
+
+    @GestureState private var dragTranslationY: CGFloat = 0
+
+    private var displayTop: CGFloat {
+        top + (isEditing ? dragTranslationY : 0)
+    }
+
+    var body: some View {
+        content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: height)
+            .overlay {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        guard !isEditing else { return }
+                        onTap()
+                    }
+                    .gesture(isEditing ? editingDragGesture : nil)
+                    .simultaneousGesture(canRequestMove ? moveRequestGesture : nil)
+            }
+            .offset(y: displayTop)
+            .zIndex(isEditing ? 3 : 0)
+            .scaleEffect(isEditing ? 1.03 : 1)
+            .shadow(
+                color: Color.black.opacity(isEditing ? 0.32 : 0),
+                radius: isEditing ? 10 : 0,
+                y: isEditing ? 5 : 0
+            )
+            .animation(.spring(response: 0.28, dampingFraction: 0.82), value: isEditing)
+    }
+
+    /// Static mode: long-press anywhere on the box to ask whether to enter move mode.
+    private var moveRequestGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.45)
+            .onEnded { _ in
+                onMoveRequested()
+            }
+    }
+
+    /// Editing mode: simple vertical drag without fighting the scroll view.
+    private var editingDragGesture: some Gesture {
+        DragGesture(minimumDistance: 4)
+            .updating($dragTranslationY) { value, state, _ in
+                state = value.translation.height
+            }
+            .onEnded { value in
+                onDragEnded(value.translation.height)
+            }
     }
 }
 
