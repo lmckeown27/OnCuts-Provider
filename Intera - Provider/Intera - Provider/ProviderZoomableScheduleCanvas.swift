@@ -351,9 +351,9 @@ private struct SchedulePreciseTimelineCanvas: View {
             ForEach(Array(stride(from: startMinute, to: endMinute, by: tickStep)), id: \.self) { minute in
                 HStack(alignment: .top, spacing: 6) {
                     Text(formatMinuteLabel(minute))
-                        .font(.system(size: scale >= 3.5 ? 9 : 10, design: .monospaced))
+                        .font(.system(size: scale >= 3.5 ? 9 : 10))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
-                        .frame(width: 44, alignment: .trailing)
+                        .frame(width: 52, alignment: .trailing)
                     Rectangle()
                         .fill(Color.lavaShellCreamTertiary.opacity(0.35))
                         .frame(height: 0.5)
@@ -386,7 +386,7 @@ private struct SchedulePreciseTimelineCanvas: View {
                         }
                         if scale >= 3.5 {
                             Text(formatMinuteLabel(app.startMinute))
-                                .font(.system(size: 9, design: .monospaced))
+                                .font(.system(size: 9))
                                 .foregroundStyle(Color.lavaShellCreamTertiary)
                         }
                     }
@@ -421,7 +421,12 @@ private struct SchedulePreciseTimelineCanvas: View {
     }
 
     private func formatMinuteLabel(_ totalMinutes: Int) -> String {
-        String(format: "%d:%02d", totalMinutes / 60, totalMinutes % 60)
+        var components = DateComponents()
+        components.hour = totalMinutes / 60
+        components.minute = totalMinutes % 60
+        let calendar = Calendar(identifier: .gregorian)
+        let date = calendar.date(from: components) ?? .now
+        return date.formatted(date: .omitted, time: .shortened)
     }
 }
 
