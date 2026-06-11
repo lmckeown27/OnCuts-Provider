@@ -7,6 +7,13 @@ enum ProviderScheduleZoom {
     static let scaleMax: CGFloat = 5.0
     static let defaultScale: CGFloat = 1.5
 
+    /// Schedule viewer minimum height by tier.
+    static let canvasMinHeightDefault: CGFloat = 360
+    static let canvasMinHeightDayMinute: CGFloat = 520
+
+    /// Extra vertical spacing for day/minute timeline rows and appointment blocks.
+    static let timelineVerticalScaleBoost: CGFloat = 1.4
+
     /// Tier boundaries — pinch scale crosses these to change Month / Week / Day / Minute.
     static let weekLower: CGFloat = 0.4
     static let dayLower: CGFloat = 1.5
@@ -161,7 +168,7 @@ struct ProviderZoomableScheduleCanvas: View {
                 weekAwareScrollView(viewportSize: proxy.size)
                     .modifier(PinchZoomGestureModifier(isEnabled: pinchZoomEnabled, gesture: magnificationGesture))
             }
-            .frame(minHeight: 360)
+            .frame(minHeight: tier.supportsPinchZoom ? ProviderScheduleZoom.canvasMinHeightDayMinute : ProviderScheduleZoom.canvasMinHeightDefault)
         }
         .background(Color.providerScheduleCardFill.opacity(0.35))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -311,8 +318,13 @@ private struct SchedulePreciseTimelineCanvas: View {
         scale >= 3.5 ? 5 : (scale >= 2.0 ? 15 : 30)
     }
 
+    /// Pinch scale drives detail level; vertical boost makes day/minute blocks taller.
+    private var verticalScale: CGFloat {
+        scale * ProviderScheduleZoom.timelineVerticalScaleBoost
+    }
+
     private var timelineHeight: CGFloat {
-        CGFloat(endMinute - startMinute) * scale
+        CGFloat(endMinute - startMinute) * verticalScale
     }
 
     private var detailTextOpacity: Double {
@@ -340,8 +352,8 @@ private struct SchedulePreciseTimelineCanvas: View {
             if end > start {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(Color.providerOlive.opacity(0.08))
-                    .frame(height: CGFloat(end - start) * scale)
-                    .offset(x: 52, y: CGFloat(start - startMinute) * scale)
+                    .frame(height: CGFloat(end - start) * verticalScale)
+                    .offset(x: 52, y: CGFloat(start - startMinute) * verticalScale)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -369,9 +381,9 @@ private struct SchedulePreciseTimelineCanvas: View {
                                     .opacity(detailTextOpacity)
                             }
                         }
-                        .frame(height: max(4, CGFloat(end - start) * scale))
+                        .frame(height: max(4, CGFloat(end - start) * verticalScale))
                 }
-                .offset(y: CGFloat(start - startMinute) * scale)
+                .offset(y: CGFloat(start - startMinute) * verticalScale)
             }
         }
     }
@@ -388,15 +400,15 @@ private struct SchedulePreciseTimelineCanvas: View {
                         .fill(Color.lavaShellCreamTertiary.opacity(0.35))
                         .frame(height: 0.5)
                 }
-                .frame(height: CGFloat(tickStep) * scale, alignment: .top)
+                .frame(height: CGFloat(tickStep) * verticalScale, alignment: .top)
             }
         }
     }
 
     private var appointmentBlocks: some View {
         ForEach(appointments) { app in
-            let top = CGFloat(app.startMinute - startMinute) * scale
-            let height = max(4, CGFloat(app.durationMinutes) * scale)
+            let top = CGFloat(app.startMinute - startMinute) * verticalScale
+            let height = max(4, CGFloat(app.durationMinutes) * verticalScale)
             Button {
                 onBookingTap(app.booking)
             } label: {
