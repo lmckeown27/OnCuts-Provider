@@ -486,8 +486,8 @@ struct ProviderScheduleDashboardView: View {
                         zoomScale = preset.targetScale
                     }
                 } label: {
-                    Text(preset.rawValue)
-                        .font(.subheadline.weight(.semibold))
+                    Text(preset.title)
+                        .font(.caption.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 9)
                         .foregroundStyle(
@@ -512,8 +512,7 @@ struct ProviderScheduleDashboardView: View {
     }
 
     private func isPresetActive(_ preset: ProviderScheduleZoom.Preset) -> Bool {
-        let tier = ProviderScheduleZoomTier(effectiveScale: preset.targetScale)
-        return tier == effectiveZoomTier
+        effectiveZoomTier == preset.tier
     }
 
     private var zoomScheduleCanvas: some View {

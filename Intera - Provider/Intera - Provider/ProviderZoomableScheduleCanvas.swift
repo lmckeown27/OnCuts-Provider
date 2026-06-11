@@ -3,21 +3,35 @@ import SwiftUI
 // MARK: - Zoom tiers & presets
 
 enum ProviderScheduleZoom {
-    static let min: CGFloat = 0.15
-    static let max: CGFloat = 5.0
+    static let scaleMin: CGFloat = 0.15
+    static let scaleMax: CGFloat = 5.0
     static let defaultScale: CGFloat = 1.5
 
-    static let monthUpper: CGFloat = 0.4
-    static let weekUpper: CGFloat = 1.4
-    static let dayUpper: CGFloat = 3.4
+    /// Tier boundaries — pinch scale crosses these to change Month / Week / Day / Minute.
+    static let weekLower: CGFloat = 0.4
+    static let dayLower: CGFloat = 1.5
+    static let minuteLower: CGFloat = 3.5
 
-    enum Preset: String, CaseIterable, Identifiable {
-        case month = "1M"
-        case week = "1W"
-        case day = "1D"
-        case minute = "Min"
+    static func clamped(_ scale: CGFloat) -> CGFloat {
+        Swift.max(scaleMin, Swift.min(scaleMax, scale))
+    }
 
-        var id: String { rawValue }
+    enum Preset: CaseIterable, Identifiable {
+        case month
+        case week
+        case day
+        case minute
+
+        var id: String { title }
+
+        var title: String {
+            switch self {
+            case .month: return "Month"
+            case .week: return "Week"
+            case .day: return "Day"
+            case .minute: return "Minute"
+            }
+        }
 
         var targetScale: CGFloat {
             switch self {
@@ -25,6 +39,15 @@ enum ProviderScheduleZoom {
             case .week: return 0.9
             case .day: return 1.5
             case .minute: return 4.0
+            }
+        }
+
+        var tier: ProviderScheduleZoomTier {
+            switch self {
+            case .month: return .month
+            case .week: return .week
+            case .day: return .day
+            case .minute: return .minute
             }
         }
     }
@@ -37,15 +60,39 @@ enum ProviderScheduleZoomTier: Equatable {
     case month
 
     init(effectiveScale: CGFloat) {
-        if effectiveScale >= 3.5 {
+        let scale = ProviderScheduleZoom.clamped(effectiveScale)
+        if scale >= ProviderScheduleZoom.minuteLower {
             self = .minute
-        } else if effectiveScale >= 1.5 {
+        } else if scale >= ProviderScheduleZoom.dayLower {
             self = .day
-        } else if effectiveScale >= ProviderScheduleZoom.monthUpper {
+        } else if scale >= ProviderScheduleZoom.weekLower {
             self = .week
         } else {
             self = .month
         }
+    }
+
+    /// Inclusive scale span for pinch-to-zoom within this tier before the layout switches.
+    var scaleRange: ClosedRange<CGFloat> {
+        switch self {
+        case .month:
+            return ProviderScheduleZoom.scaleMin ... (ProviderScheduleZoom.weekLower - 0.001)
+        case .week:
+            return ProviderScheduleZoom.weekLower ... (ProviderScheduleZoom.dayLower - 0.001)
+        case .day:
+            return ProviderScheduleZoom.dayLower ... (ProviderScheduleZoom.minuteLower - 0.001)
+        case .minute:
+            return ProviderScheduleZoom.minuteLower ... ProviderScheduleZoom.scaleMax
+        }
+    }
+
+    /// 0…1 position of `scale` within this tier's pinch range (drives in-tier visual density).
+    static func normalizedProgress(for scale: CGFloat) -> CGFloat {
+        let tier = ProviderScheduleZoomTier(effectiveScale: scale)
+        let range = tier.scaleRange
+        guard range.upperBound > range.lowerBound else { return 0 }
+        let clamped = min(range.upperBound, max(range.lowerBound, scale))
+        return (clamped - range.lowerBound) / (range.upperBound - range.lowerBound)
     }
 
     var headerLabel: String {
@@ -102,11 +149,15 @@ struct ProviderZoomableScheduleCanvas: View {
     @GestureState private var dynamicGestureScale: CGFloat = 1.0
 
     private var effectiveScale: CGFloat {
-        max(ProviderScheduleZoom.min, min(ProviderScheduleZoom.max, zoomScale * dynamicGestureScale))
+        ProviderScheduleZoom.clamped(zoomScale * dynamicGestureScale)
     }
 
     private var tier: ProviderScheduleZoomTier {
         ProviderScheduleZoomTier(effectiveScale: effectiveScale)
+    }
+
+    private var tierProgress: CGFloat {
+        ProviderScheduleZoomTier.normalizedProgress(for: effectiveScale)
     }
 
     private var appointments: [ScheduleCanvasAppointment] {
@@ -127,9 +178,9 @@ struct ProviderZoomableScheduleCanvas: View {
                         .frame(minWidth: proxy.size.width, alignment: .topLeading)
                 }
                 .contentShape(Rectangle())
+                .simultaneousGesture(magnificationGesture)
             }
             .frame(minHeight: 360)
-            .gesture(magnificationGesture)
         }
         .background(Color.providerScheduleCardFill.opacity(0.35))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -155,46 +206,47 @@ struct ProviderZoomableScheduleCanvas: View {
 
     @ViewBuilder
     private func canvasContent(in size: CGSize) -> some View {
-        switch tier {
-        case .month:
-            ScheduleMonthHeatmapGrid(
-                calendar: calendar,
-                monthAnchor: monthAnchor,
-                bookings: bookings,
-                onDayTap: onMonthDayTap
-            )
-            .frame(width: size.width)
-            .transition(.opacity)
-        case .week:
-            ScheduleWeekColumnsCanvas(
-                calendar: calendar,
-                weekStart: weekStartMonday,
-                bookings: bookings,
-                scale: effectiveScale,
-                startMinute: timelineStartMinute,
-                endMinute: timelineEndMinute,
-                onDayTap: onWeekDayTap,
-                onBookingTap: onBookingTap
-            )
-            .frame(width: max(size.width, size.width))
-            .transition(.opacity)
-        case .day, .minute:
-            SchedulePreciseTimelineCanvas(
-                calendar: calendar,
-                day: selectedDay,
-                appointments: appointments,
-                scale: effectiveScale,
-                startMinute: timelineStartMinute,
-                endMinute: timelineEndMinute,
-                availabilityIntervals: availabilityIntervals,
-                timeBlocks: timeBlocks,
-                blockTimeTapsEnabled: blockTimeTapsEnabled,
-                onBookingTap: onBookingTap,
-                onAvailableMinuteTap: onAvailableMinuteTap
-            )
-            .frame(width: size.width)
-            .transition(.opacity)
+        Group {
+            switch tier {
+            case .month:
+                ScheduleMonthHeatmapGrid(
+                    calendar: calendar,
+                    monthAnchor: monthAnchor,
+                    bookings: bookings,
+                    tierProgress: tierProgress,
+                    onDayTap: onMonthDayTap
+                )
+                .frame(width: size.width)
+            case .week:
+                ScheduleWeekColumnsCanvas(
+                    calendar: calendar,
+                    weekStart: weekStartMonday,
+                    bookings: bookings,
+                    tierProgress: tierProgress,
+                    startMinute: timelineStartMinute,
+                    endMinute: timelineEndMinute,
+                    onDayTap: onWeekDayTap,
+                    onBookingTap: onBookingTap
+                )
+                .frame(width: max(size.width, size.width))
+            case .day, .minute:
+                SchedulePreciseTimelineCanvas(
+                    calendar: calendar,
+                    day: selectedDay,
+                    appointments: appointments,
+                    scale: effectiveScale,
+                    startMinute: timelineStartMinute,
+                    endMinute: timelineEndMinute,
+                    availabilityIntervals: availabilityIntervals,
+                    timeBlocks: timeBlocks,
+                    blockTimeTapsEnabled: blockTimeTapsEnabled,
+                    onBookingTap: onBookingTap,
+                    onAvailableMinuteTap: onAvailableMinuteTap
+                )
+                .frame(width: size.width)
+            }
         }
+        .animation(.easeInOut(duration: 0.2), value: tier)
     }
 
     private var magnificationGesture: some Gesture {
@@ -204,7 +256,7 @@ struct ProviderZoomableScheduleCanvas: View {
             }
             .onEnded { value in
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
-                    zoomScale = max(ProviderScheduleZoom.min, min(ProviderScheduleZoom.max, zoomScale * value))
+                    zoomScale = ProviderScheduleZoom.clamped(zoomScale * value)
                 }
             }
     }
@@ -379,18 +431,23 @@ private struct ScheduleWeekColumnsCanvas: View {
     let calendar: Calendar
     let weekStart: Date
     let bookings: [SimpleBookingDTO]
-    let scale: CGFloat
+    let tierProgress: CGFloat
     let startMinute: Int
     let endMinute: Int
     let onDayTap: (Date) -> Void
     let onBookingTap: (SimpleBookingDTO) -> Void
 
+    /// Compresses / expands column timelines as the user pinches within the week tier.
     private var columnScale: CGFloat {
-        max(0.35, scale * 0.55)
+        0.26 + tierProgress * 1.05
+    }
+
+    private var columnSpacing: CGFloat {
+        4 + tierProgress * 6
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
+        HStack(alignment: .top, spacing: columnSpacing) {
             ForEach(0 ..< 7, id: \.self) { offset in
                 let day = calendar.date(byAdding: .day, value: offset, to: weekStart) ?? weekStart
                 let dayBookings = bookings.filter { $0.isSameCalendarDay(as: day, calendar: calendar) }
@@ -444,7 +501,20 @@ private struct ScheduleMonthHeatmapGrid: View {
     let calendar: Calendar
     let monthAnchor: Date
     let bookings: [SimpleBookingDTO]
+    let tierProgress: CGFloat
     let onDayTap: (Date) -> Void
+
+    private var cellHeight: CGFloat {
+        34 + tierProgress * 34
+    }
+
+    private var gridSpacing: CGFloat {
+        5 + tierProgress * 9
+    }
+
+    private var dayFontSize: CGFloat {
+        11 + tierProgress * 3
+    }
 
     private var gridDays: [Date?] {
         let range = calendar.range(of: .day, in: .month, for: monthAnchor) ?? 1 ..< 29
@@ -463,7 +533,7 @@ private struct ScheduleMonthHeatmapGrid: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: gridSpacing), count: 7), spacing: gridSpacing) {
                 ForEach(Array(["M", "T", "W", "T", "F", "S", "S"].enumerated()), id: \.offset) { _, label in
                     Text(label)
                         .font(.caption2.weight(.bold))
@@ -473,7 +543,7 @@ private struct ScheduleMonthHeatmapGrid: View {
                     if let date = gridDays[index] {
                         monthDayCell(date: date)
                     } else {
-                        Color.clear.frame(height: 52)
+                        Color.clear.frame(height: cellHeight)
                     }
                 }
             }
@@ -494,7 +564,7 @@ private struct ScheduleMonthHeatmapGrid: View {
         } label: {
             VStack(spacing: 4) {
                 Text("\(calendar.component(.day, from: date))")
-                    .font(.system(size: 12, weight: isToday ? .bold : .semibold))
+                    .font(.system(size: dayFontSize, weight: isToday ? .bold : .semibold))
                     .foregroundStyle(Color.lavaShellCream)
                 HStack(spacing: 3) {
                     if booked > 0 {
@@ -515,7 +585,7 @@ private struct ScheduleMonthHeatmapGrid: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 52)
+            .frame(height: cellHeight)
             .background {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.providerOlive.opacity(intensity * 0.35 + (isToday ? 0.12 : 0)))
