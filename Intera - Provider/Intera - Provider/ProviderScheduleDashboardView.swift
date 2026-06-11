@@ -147,19 +147,24 @@ struct ProviderScheduleDashboardView: View {
     }
 
     var body: some View {
-        ScrollView {
-            scheduleContent
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 24)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        /// Default `ScrollView` content background is an opaque system fill — hide it so the root shell background shows through.
-        .scrollContentBackground(.hidden)
-        .scrollIndicators(.hidden)
-        .refreshable {
-            await loadBookings()
-            await refreshDayScheduleFromNetwork()
+        GeometryReader { screenProxy in
+            let dayMinuteCanvasHeight = ProviderScheduleZoom.dayMinuteCanvasHeight(
+                availableHeight: screenProxy.size.height
+            )
+            ScrollView {
+                scheduleContent(dayMinuteCanvasHeight: dayMinuteCanvasHeight)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            /// Default `ScrollView` content background is an opaque system fill — hide it so the root shell background shows through.
+            .scrollContentBackground(.hidden)
+            .scrollIndicators(.hidden)
+            .refreshable {
+                await loadBookings()
+                await refreshDayScheduleFromNetwork()
+            }
         }
         /// Stable `id` avoids cancelling in-flight `bookings-simple` on every unrelated `body` refresh (which surfaces as **-999 cancelled** and cleared the list).
         .task(id: session.barberProfile?.id) {
@@ -216,7 +221,7 @@ struct ProviderScheduleDashboardView: View {
 
     /// Full-bleed schedule under the dashboard header. Replaces the prior "card" look so the
     /// Daily / Weekly / Monthly view fills the entire page below `dashboardHeaderBar`.
-    private var scheduleContent: some View {
+    private func scheduleContent(dayMinuteCanvasHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             // Sits between the shell's header bar (Chats / role chip / Requests tray /
             // profile menu) and the "[x] appointments" summary line. Renders one row
@@ -231,7 +236,7 @@ struct ProviderScheduleDashboardView: View {
                 manageAvailabilityOrEditControls
             }
             VStack(alignment: .leading, spacing: 12) {
-                zoomScheduleCanvas
+                zoomScheduleCanvas(dayMinuteCanvasHeight: dayMinuteCanvasHeight)
                 if isDayZoomTier {
                     dayScheduleSupplement
                 }
@@ -515,7 +520,7 @@ struct ProviderScheduleDashboardView: View {
         effectiveZoomTier == preset.tier
     }
 
-    private var zoomScheduleCanvas: some View {
+    private func zoomScheduleCanvas(dayMinuteCanvasHeight: CGFloat) -> some View {
         Group {
             if !session.hasProviderProfile {
                 Text("Link your CampusCuts barber profile on the web to load appointments here.")
@@ -545,7 +550,8 @@ struct ProviderScheduleDashboardView: View {
                         showingBlockTimeSheet = true
                     },
                     onWeekDayTap: { focusDay($0) },
-                    onMonthDayTap: { focusDay($0) }
+                    onMonthDayTap: { focusDay($0) },
+                    maxCanvasHeight: isDayZoomTier ? dayMinuteCanvasHeight : nil
                 )
             }
         }
