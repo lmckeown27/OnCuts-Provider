@@ -18,6 +18,8 @@ enum ProviderRequestSheetMetrics {
     static let buttonRowSpacing: CGFloat = 12
     static let horizontalPadding: CGFloat = 20
     static let sheetSpring = Animation.spring(response: 0.35, dampingFraction: 0.82, blendDuration: 0)
+    /// Expand/collapse for booking-request triage cards — slower, heavily damped for a smooth reveal.
+    static let triageCardSpring = Animation.spring(response: 0.48, dampingFraction: 0.92, blendDuration: 0.12)
 }
 
 enum ProviderRequestSheetColors {

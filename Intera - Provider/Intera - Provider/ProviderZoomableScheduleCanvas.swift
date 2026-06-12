@@ -468,9 +468,9 @@ private struct SchedulePreciseTimelineCanvas: View {
             GeometryReader { proxy in
                 if let booking = movePromptBooking, let frame = frames[booking.id] {
                     anchoredPrompt(
-                        title: "Move booking?",
-                        message: "Move \(booking.consumerDisplayName)'s \(booking.serviceDisplayName) to a different open time slot?",
-                        primaryTitle: "Move",
+                        title: "Change appointment time?",
+                        message: "You held this booking to reschedule. Drag it to an open slot, then confirm the new time.",
+                        primaryTitle: "Change time",
                         secondaryTitle: "Cancel",
                         isPrimaryDisabled: false,
                         targetFrame: frame,
@@ -633,7 +633,12 @@ private struct SchedulePreciseTimelineCanvas: View {
             ) {
                 HStack(spacing: 0) {
                     Spacer().frame(width: 52)
-                    appointmentBlockContent(for: app, blockHeight: height, isEditing: isEditing)
+                    appointmentBlockContent(
+                        for: app,
+                        blockHeight: height,
+                        isEditing: isEditing,
+                        canRequestMove: canMove && editingMoveBookingID == nil
+                    )
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -719,7 +724,8 @@ private struct SchedulePreciseTimelineCanvas: View {
     private func appointmentBlockContent(
         for app: ScheduleCanvasAppointment,
         blockHeight: CGFloat,
-        isEditing: Bool
+        isEditing: Bool,
+        canRequestMove: Bool
     ) -> some View {
         let booking = app.booking
         let detailLevel = appointmentDetailLevel(for: blockHeight)
@@ -730,6 +736,8 @@ private struct SchedulePreciseTimelineCanvas: View {
                     .font(.system(size: min(12, detailFontSize(for: blockHeight) + 1), weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
                     .allowsHitTesting(false)
+            } else if canRequestMove, blockHeight >= 34 {
+                appointmentInteractionHint(blockHeight: blockHeight)
             }
 
             if detailTextOpacity > 0.05 {
@@ -816,6 +824,21 @@ private struct SchedulePreciseTimelineCanvas: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private func appointmentInteractionHint(blockHeight: CGFloat) -> some View {
+        let fontSize = max(8, detailFontSize(for: blockHeight) - 2)
+        HStack(spacing: 8) {
+            Label("Tap for details", systemImage: "hand.tap")
+            Label("Hold to move time", systemImage: "clock.arrow.circlepath")
+        }
+        .font(.system(size: fontSize, weight: .medium))
+        .foregroundStyle(Color.lavaShellCream.opacity(0.72))
+        .labelStyle(.titleAndIcon)
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
         .allowsHitTesting(false)
     }
 
@@ -1019,6 +1042,11 @@ private struct ScheduleAppointmentPromptArrow: View {
     }
 }
 
+private enum ScheduleAppointmentInteraction {
+    static let moveHoldDuration = 0.55
+    static let moveHoldMaxDistance: CGFloat = 10
+}
+
 private struct ScheduleDraggableAppointmentBlock<Content: View>: View {
     let top: CGFloat
     let height: CGFloat
@@ -1030,6 +1058,9 @@ private struct ScheduleDraggableAppointmentBlock<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     @GestureState private var dragTranslationY: CGFloat = 0
+    @State private var isPressingForMove = false
+    @State private var suppressNextTap = false
+    @State private var pressBeganAt: Date?
 
     private var displayTop: CGFloat {
         top + (isEditing ? dragTranslationY : 0)
@@ -1040,32 +1071,67 @@ private struct ScheduleDraggableAppointmentBlock<Content: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: height)
             .overlay {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        guard !isEditing else { return }
-                        onTap()
-                    }
-                    .gesture(isEditing ? editingDragGesture : nil)
-                    .simultaneousGesture(canRequestMove ? moveRequestGesture : nil)
+                interactionOverlay
+            }
+            .overlay {
+                if isPressingForMove {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Color.orange.opacity(0.92), lineWidth: 2.5)
+                        .allowsHitTesting(false)
+                }
             }
             .offset(y: displayTop)
-            .zIndex(isEditing ? 3 : 0)
-            .scaleEffect(isEditing ? 1.03 : 1)
+            .zIndex(isEditing ? 3 : (isPressingForMove ? 2 : 0))
+            .scaleEffect(scaleForInteractionState)
             .shadow(
-                color: Color.black.opacity(isEditing ? 0.32 : 0),
-                radius: isEditing ? 10 : 0,
-                y: isEditing ? 5 : 0
+                color: Color.black.opacity(isEditing ? 0.32 : (isPressingForMove ? 0.18 : 0)),
+                radius: isEditing ? 10 : (isPressingForMove ? 6 : 0),
+                y: isEditing ? 5 : (isPressingForMove ? 3 : 0)
             )
             .animation(.spring(response: 0.28, dampingFraction: 0.82), value: isEditing)
+            .animation(.easeInOut(duration: 0.12), value: isPressingForMove)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityHint(accessibilityHint)
+            .accessibilityAddTraits(isEditing ? .isSelected : .isButton)
     }
 
-    /// Static mode: long-press anywhere on the box to ask whether to enter move mode.
-    private var moveRequestGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.45)
-            .onEnded { _ in
-                onMoveRequested()
-            }
+    private var scaleForInteractionState: CGFloat {
+        if isEditing { return 1.03 }
+        if isPressingForMove { return 0.98 }
+        return 1
+    }
+
+    private var accessibilityLabel: String {
+        if isEditing { return "Moving appointment. Drag to a new time." }
+        return "Appointment"
+    }
+
+    private var accessibilityHint: String {
+        if isEditing { return "Drag vertically to choose a new time slot." }
+        if canRequestMove { return "Tap for booking details. Hold to change the appointment time." }
+        return "Tap for booking details."
+    }
+
+    @ViewBuilder
+    private var interactionOverlay: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .gesture(isEditing ? editingDragGesture : nil)
+            .modifier(StaticAppointmentInteractionModifier(
+                isEnabled: !isEditing,
+                canRequestMove: canRequestMove,
+                moveHoldDuration: ScheduleAppointmentInteraction.moveHoldDuration,
+                moveHoldMaxDistance: ScheduleAppointmentInteraction.moveHoldMaxDistance,
+                isPressingForMove: $isPressingForMove,
+                suppressNextTap: $suppressNextTap,
+                pressBeganAt: $pressBeganAt,
+                onTap: onTap,
+                onMoveRequested: {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    onMoveRequested()
+                }
+            ))
     }
 
     /// Editing mode: simple vertical drag without fighting the scroll view.
@@ -1077,6 +1143,71 @@ private struct ScheduleDraggableAppointmentBlock<Content: View>: View {
             .onEnded { value in
                 onDragEnded(value.translation.height)
             }
+    }
+}
+
+/// Separates tap (details) from hold (reschedule) so they never fire together.
+private struct StaticAppointmentInteractionModifier: ViewModifier {
+    let isEnabled: Bool
+    let canRequestMove: Bool
+    let moveHoldDuration: Double
+    let moveHoldMaxDistance: CGFloat
+    @Binding var isPressingForMove: Bool
+    @Binding var suppressNextTap: Bool
+    @Binding var pressBeganAt: Date?
+    let onTap: () -> Void
+    let onMoveRequested: () -> Void
+
+    func body(content: Content) -> some View {
+        if isEnabled, canRequestMove {
+            content
+                .onLongPressGesture(
+                    minimumDuration: moveHoldDuration,
+                    maximumDistance: moveHoldMaxDistance,
+                    pressing: handlePressingChanged,
+                    perform: handleMoveHoldRecognized
+                )
+                .onTapGesture(perform: handleTap)
+        } else if isEnabled {
+            content.onTapGesture(perform: onTap)
+        } else {
+            content
+        }
+    }
+
+    private func handlePressingChanged(_ pressing: Bool) {
+        withAnimation(.easeInOut(duration: 0.12)) {
+            isPressingForMove = pressing
+        }
+        if pressing {
+            pressBeganAt = Date()
+            return
+        }
+
+        guard let began = pressBeganAt else { return }
+        pressBeganAt = nil
+        let heldDuration = Date().timeIntervalSince(began)
+        // A partial hold should not open details when the user meant to reschedule.
+        if heldDuration >= moveHoldDuration * 0.45 {
+            suppressTapBriefly()
+        }
+    }
+
+    private func handleMoveHoldRecognized() {
+        suppressTapBriefly()
+        onMoveRequested()
+    }
+
+    private func handleTap() {
+        guard !suppressNextTap, !isPressingForMove else { return }
+        onTap()
+    }
+
+    private func suppressTapBriefly() {
+        suppressNextTap = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            suppressNextTap = false
+        }
     }
 }
 

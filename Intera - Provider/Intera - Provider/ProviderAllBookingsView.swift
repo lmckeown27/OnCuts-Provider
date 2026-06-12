@@ -12,6 +12,20 @@ func providerAllBookingsIsBenignCancellation(_ error: Error) -> Bool {
 
 // MARK: - Shared bookings dropdown list (Requests inbox)
 
+extension Array where Element == SimpleBookingDTO {
+    /// Bookings awaiting triage in **Booking Requests** should not also appear under **Pending**.
+    func excludingOpenBookingRequests(triageItems: [RequestTriageItem]) -> [SimpleBookingDTO] {
+        guard !triageItems.isEmpty else { return self }
+        let openRequestBookingIds = Set(
+            triageItems
+                .map(\.row.bookingId)
+                .filter { !$0.hasPrefix("conv-") }
+        )
+        guard !openRequestBookingIds.isEmpty else { return self }
+        return filter { !openRequestBookingIds.contains($0.id) }
+    }
+}
+
 struct ProviderBookingsSectionDropdownHeader: View {
     let title: String
     let count: Int
@@ -44,6 +58,26 @@ struct ProviderBookingsSectionDropdownHeader: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .animation(ProviderRequestSheetMetrics.triageCardSpring, value: isExpanded)
+    }
+}
+
+/// Clips expanding/collapsing sections and lets sibling rows slide with the spring animation.
+private struct ProviderAnimatedCollapseModifier: ViewModifier {
+    let isExpanded: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxHeight: isExpanded ? .infinity : 0, alignment: .top)
+            .clipped()
+            .allowsHitTesting(isExpanded)
+            .accessibilityHidden(!isExpanded)
+    }
+}
+
+extension View {
+    func providerAnimatedCollapse(isExpanded: Bool) -> some View {
+        modifier(ProviderAnimatedCollapseModifier(isExpanded: isExpanded))
     }
 }
 
@@ -104,7 +138,7 @@ struct ProviderBookingsDropdownListContent: View {
             count: bookingsWithPendingReschedule.count,
             isExpanded: isRequestedChangesExpanded
         ) {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(ProviderRequestSheetMetrics.triageCardSpring) {
                 isRequestedChangesExpanded.toggle()
             }
         }
@@ -114,7 +148,7 @@ struct ProviderBookingsDropdownListContent: View {
             leadingInset: Self.pageLeadingInset
         )
 
-        if isRequestedChangesExpanded {
+        VStack(spacing: 8) {
             ForEach(bookingsWithPendingReschedule) { booking in
                 bookingNavigationLink(booking) {
                     rescheduleRequestBookingRow(booking)
@@ -126,6 +160,7 @@ struct ProviderBookingsDropdownListContent: View {
                 )
             }
         }
+        .providerAnimatedCollapse(isExpanded: isRequestedChangesExpanded)
     }
 
     @ViewBuilder
@@ -138,7 +173,7 @@ struct ProviderBookingsDropdownListContent: View {
             count: bookings(for: filter).count,
             isExpanded: isExpanded
         ) {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(ProviderRequestSheetMetrics.triageCardSpring) {
                 if isExpanded {
                     expandedFilters.remove(filter)
                 } else {
@@ -152,7 +187,7 @@ struct ProviderBookingsDropdownListContent: View {
             leadingInset: Self.pageLeadingInset
         )
 
-        if isExpanded {
+        VStack(spacing: 8) {
             ForEach(bookings(for: filter)) { booking in
                 bookingNavigationLink(booking) {
                     bookingRow(booking)
@@ -164,6 +199,7 @@ struct ProviderBookingsDropdownListContent: View {
                 )
             }
         }
+        .providerAnimatedCollapse(isExpanded: isExpanded)
     }
 
     private var nestedBookingContentWidth: CGFloat {
@@ -276,18 +312,21 @@ private struct ProviderBookingsListCardRowModifier: ViewModifier {
     let contentWidth: CGFloat
     let verticalInset: CGFloat
     let leadingInset: CGFloat
+    var showsBackground: Bool = true
 
     func body(content: Content) -> some View {
         content
             .padding(.horizontal, 12)
             .padding(.vertical, verticalInset)
             .background {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.providerElevatedSurface)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(Color.providerElevatedSurfaceStroke, lineWidth: 0.5)
-                    }
+                if showsBackground {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.providerElevatedSurface)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Color.providerElevatedSurfaceStroke, lineWidth: 0.5)
+                        }
+                }
             }
             .frame(width: contentWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -302,13 +341,15 @@ extension View {
     func bookingsListCardRow(
         contentWidth: CGFloat,
         verticalInset: CGFloat,
-        leadingInset: CGFloat = 0
+        leadingInset: CGFloat = 0,
+        showsBackground: Bool = true
     ) -> some View {
         modifier(
             ProviderBookingsListCardRowModifier(
                 contentWidth: contentWidth,
                 verticalInset: verticalInset,
-                leadingInset: leadingInset
+                leadingInset: leadingInset,
+                showsBackground: showsBackground
             )
         )
     }

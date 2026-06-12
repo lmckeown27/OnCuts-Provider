@@ -9,6 +9,7 @@ struct ProviderDashboardShellView: View {
     @Environment(ProviderShellNavigationAppearance.self) private var shellNavigationAppearance
     @State private var navigator = ProviderShellNavigator()
     @State private var showingRequestsInbox = false
+    @State private var bookingsInboxPresentationID = UUID()
     @State private var pendingInboxBookingDetailId: String?
     /// Number of *conversations* that have ≥ 1 unread inbound message — not the running total of
     /// unread messages across the inbox. A single thread with five fresh messages still
@@ -87,7 +88,11 @@ struct ProviderDashboardShellView: View {
             pendingInboxBookingDetailId = nil
             Task { await refreshHeaderCounts() }
         }) {
-            ProviderRequestsInboxView(pendingBookingDetailId: $pendingInboxBookingDetailId)
+            ProviderRequestsInboxView(
+                presentationID: bookingsInboxPresentationID,
+                pendingBookingDetailId: $pendingInboxBookingDetailId
+            )
+                .id(bookingsInboxPresentationID)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Done") { showingRequestsInbox = false }
@@ -130,7 +135,7 @@ struct ProviderDashboardShellView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .interaOpenRequestsInbox)) { _ in
             navigator.popToHub()
-            showingRequestsInbox = true
+            presentBookingsInbox()
             Task { await refreshHeaderCounts() }
         }
         .onReceive(NotificationCenter.default.publisher(for: ProviderAwaitingPaymentTracker.didChangeNotification)) { _ in
@@ -139,7 +144,7 @@ struct ProviderDashboardShellView: View {
         .onReceive(NotificationCenter.default.publisher(for: .interaOpenBookingDetail)) { notification in
             navigator.popToHub()
             pendingInboxBookingDetailId = Self.bookingId(from: notification.userInfo)
-            showingRequestsInbox = true
+            presentBookingsInbox()
             Task { await refreshHeaderCounts() }
             NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
         }
@@ -209,9 +214,7 @@ struct ProviderDashboardShellView: View {
     }
 
     private var requestsTrayButton: some View {
-        Button {
-            showingRequestsInbox = true
-        } label: {
+        Button(action: presentBookingsInbox) {
             Image(systemName: "tray.full.fill")
                 .font(.body.weight(.semibold))
                 .foregroundStyle(Color.lavaShellCream)
@@ -502,5 +505,10 @@ struct ProviderDashboardShellView: View {
         case let value as String: return Int(value.trimmingCharacters(in: .whitespacesAndNewlines))
         default: return nil
         }
+    }
+
+    private func presentBookingsInbox() {
+        bookingsInboxPresentationID = UUID()
+        showingRequestsInbox = true
     }
 }

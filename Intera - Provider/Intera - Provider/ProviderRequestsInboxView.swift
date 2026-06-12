@@ -2,15 +2,21 @@ import SwiftUI
 
 /// Header tray **Requests** inbox: pending booking requests plus the full bookings list (filters, reschedule requests, detail navigation).
 struct ProviderRequestsInboxView: View {
+    let presentationID: UUID
     @Binding var pendingBookingDetailId: String?
 
-    init(pendingBookingDetailId: Binding<String?> = .constant(nil)) {
+    init(
+        presentationID: UUID = UUID(),
+        pendingBookingDetailId: Binding<String?> = .constant(nil)
+    ) {
+        self.presentationID = presentationID
         _pendingBookingDetailId = pendingBookingDetailId
     }
 
     var body: some View {
         ProviderRequestsInboxContent(
             mode: .full,
+            presentationID: presentationID,
             pendingBookingDetailId: $pendingBookingDetailId
         )
     }
@@ -24,10 +30,16 @@ struct ProviderRequestsInboxContent: View {
     }
 
     let mode: Mode
+    let presentationID: UUID
     @Binding var pendingBookingDetailId: String?
 
-    init(mode: Mode, pendingBookingDetailId: Binding<String?> = .constant(nil)) {
+    init(
+        mode: Mode,
+        presentationID: UUID = UUID(),
+        pendingBookingDetailId: Binding<String?> = .constant(nil)
+    ) {
         self.mode = mode
+        self.presentationID = presentationID
         _pendingBookingDetailId = pendingBookingDetailId
     }
 
@@ -52,6 +64,9 @@ struct ProviderRequestsInboxContent: View {
     @State private var declineReasonPickerItem: RequestTriageItem?
     @State private var selectedDeclineReason: ProviderDeclineReason?
     @State private var declineOtherReasonText = ""
+    @State private var openingMessageRequestId: String?
+    @State private var messageOpenErrorText: String?
+    @State private var showMessageOpenError = false
 
     // MARK: - All bookings
 
@@ -59,7 +74,8 @@ struct ProviderRequestsInboxContent: View {
     @State private var isBookingsLoading = false
     @State private var bookingsErrorText: String?
     @State private var hasLoadedBookings = false
-    @State private var expandedFilters: Set<ProviderBookingStatusDisplay.Filter> = [.accepted, .pending]
+    @State private var hasSettledInboxPresentation = false
+    @State private var expandedFilters: Set<ProviderBookingStatusDisplay.Filter> = [.accepted]
     @State private var isRequestedChangesExpanded = true
 
     private static let bookingsContentWidthRatio: CGFloat = 0.75
@@ -77,11 +93,21 @@ struct ProviderRequestsInboxContent: View {
                     bookingDetailDestination(bookingId: bookingId)
                 }
         }
-        .task(id: session.barberProfile?.id ?? "") {
+        .task(id: presentationID) {
             if mode == .requestsOnly {
-                await loadRequests()
+                await loadRequests(settlesPresentation: true)
             } else {
                 await loadAll(isUserPullToRefresh: false)
+            }
+        }
+        .onChange(of: session.barberProfile?.id) { _, newBarberId in
+            guard hasSettledInboxPresentation, !(newBarberId ?? "").isEmpty else { return }
+            Task {
+                if mode == .requestsOnly {
+                    await loadRequests(settlesPresentation: false)
+                } else {
+                    await loadAll(isUserPullToRefresh: true)
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .providerBookingsChanged)) { _ in
@@ -89,7 +115,9 @@ struct ProviderRequestsInboxContent: View {
             Task { await loadBookings(isUserPullToRefresh: false) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .providerRequestsListShouldRefresh)) { _ in
-            Task { await loadRequests() }
+            Task {
+                await loadRequests(settlesPresentation: false)
+            }
         }
         .onChange(of: pendingBookingDetailId) { _, bookingId in
             openPendingBookingDetailIfPossible(bookingId)
@@ -125,6 +153,11 @@ struct ProviderRequestsInboxContent: View {
                 }
             )
         }
+        .alert("Couldn’t open chat", isPresented: $showMessageOpenError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(messageOpenErrorText ?? "Try again in a moment.")
+        }
         .foregroundStyle(Color.lavaShellCream)
         .tint(.providerOlive)
     }
@@ -142,7 +175,7 @@ struct ProviderRequestsInboxContent: View {
             }
         } else if mode == .requestsOnly {
             requestsOnlyBody
-        } else if isInitialLoad && bookingItems.isEmpty && triageItems.isEmpty {
+        } else if shouldGateInboxContent {
             Color.clear
                 .overlay {
                     ProgressView()
@@ -160,27 +193,35 @@ struct ProviderRequestsInboxContent: View {
             }
         } else {
             GeometryReader { geo in
-                List {
-                    if !triageItems.isEmpty || requestsErrorText != nil {
-                        bookingRequestsSection(containerWidth: geo.size.width)
-                    }
+                ScrollView {
+                    VStack(spacing: 14) {
+                        if !triageItems.isEmpty || requestsErrorText != nil {
+                            bookingRequestsSection(containerWidth: geo.size.width)
+                        }
 
-                    if let bookingsErrorText, bookingItems.isEmpty, hasLoadedBookings {
-                        bookingsErrorRow(text: bookingsErrorText, containerWidth: geo.size.width)
-                    } else if !bookingItems.isEmpty {
-                        ProviderBookingsDropdownListContent(
-                            items: bookingItems,
-                            expandedFilters: $expandedFilters,
-                            isRequestedChangesExpanded: $isRequestedChangesExpanded,
-                            containerWidth: geo.size.width
-                        )
-                    } else if hasLoadedBookings, triageItems.isEmpty == false {
-                        bookingsEmptyHintRow(containerWidth: geo.size.width)
+                        if let bookingsErrorText, bookingItems.isEmpty, hasLoadedBookings {
+                            bookingsErrorRow(text: bookingsErrorText, containerWidth: geo.size.width)
+                        } else if !bookingItems.isEmpty {
+                            ProviderBookingsDropdownListContent(
+                                items: bookingItems.excludingOpenBookingRequests(triageItems: triageItems),
+                                expandedFilters: $expandedFilters,
+                                isRequestedChangesExpanded: $isRequestedChangesExpanded,
+                                containerWidth: geo.size.width
+                            )
+                        } else if hasLoadedBookings, triageItems.isEmpty == false {
+                            bookingsEmptyHintRow(containerWidth: geo.size.width)
+                        }
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, 16)
                 }
-                .listRowSpacing(14)
                 .providerLavaIntegratedListSurface()
                 .refreshable { await loadAll(isUserPullToRefresh: true) }
+                .animation(ProviderRequestSheetMetrics.triageCardSpring, value: expandedRequestId)
+                .animation(ProviderRequestSheetMetrics.triageCardSpring, value: editingRequestId)
+                .animation(ProviderRequestSheetMetrics.triageCardSpring, value: isBookingRequestsExpanded)
+                .animation(ProviderRequestSheetMetrics.triageCardSpring, value: expandedFilters)
+                .animation(ProviderRequestSheetMetrics.triageCardSpring, value: isRequestedChangesExpanded)
             }
         }
     }
@@ -199,7 +240,7 @@ struct ProviderRequestsInboxContent: View {
             }
         } else {
             ScrollView {
-                LazyVStack(spacing: 16) {
+                VStack(spacing: 16) {
                     ForEach(triageItems) { item in
                         requestTriageCard(item)
                     }
@@ -208,7 +249,9 @@ struct ProviderRequestsInboxContent: View {
                 .padding(.vertical, 12)
             }
             .scrollIndicators(.hidden)
-            .refreshable { await loadRequests() }
+            .animation(ProviderRequestSheetMetrics.triageCardSpring, value: expandedRequestId)
+            .animation(ProviderRequestSheetMetrics.triageCardSpring, value: editingRequestId)
+            .refreshable { await loadRequests(settlesPresentation: false) }
             .overlay {
                 if isRequestsLoading && triageItems.isEmpty {
                     ProgressView()
@@ -219,9 +262,9 @@ struct ProviderRequestsInboxContent: View {
         }
     }
 
-    private var isInitialLoad: Bool {
-        (isRequestsLoading && triageItems.isEmpty && requestsErrorText == nil)
-            || (isBookingsLoading && bookingItems.isEmpty && !hasLoadedBookings)
+    private var shouldGateInboxContent: Bool {
+        guard session.hasProviderProfile else { return false }
+        return !hasSettledInboxPresentation
     }
 
     private var showCombinedEmptyState: Bool {
@@ -242,7 +285,7 @@ struct ProviderRequestsInboxContent: View {
             count: triageItems.count,
             isExpanded: isBookingRequestsExpanded
         ) {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(ProviderRequestSheetMetrics.triageCardSpring) {
                 isBookingRequestsExpanded.toggle()
             }
         }
@@ -252,7 +295,7 @@ struct ProviderRequestsInboxContent: View {
             leadingInset: Self.bookingsPageLeadingInset
         )
 
-        if isBookingRequestsExpanded {
+        VStack(spacing: 8) {
             if let requestsErrorText, triageItems.isEmpty {
                 Text(requestsErrorText)
                     .font(.caption)
@@ -268,11 +311,13 @@ struct ProviderRequestsInboxContent: View {
                         .bookingsListCardRow(
                             contentWidth: nestedContentWidth(containerWidth: containerWidth),
                             verticalInset: 8,
-                            leadingInset: Self.bookingsPageLeadingInset + ProviderBookingsDropdownListContent.nestedIndent
+                            leadingInset: Self.bookingsPageLeadingInset + ProviderBookingsDropdownListContent.nestedIndent,
+                            showsBackground: false
                         )
                 }
             }
         }
+        .providerAnimatedCollapse(isExpanded: isBookingRequestsExpanded)
     }
 
     @ViewBuilder
@@ -295,7 +340,9 @@ struct ProviderRequestsInboxContent: View {
                 selectedDeclineReason = nil
                 declineOtherReasonText = ""
                 declineReasonPickerItem = item
-            }
+            },
+            isOpeningMessage: openingMessageRequestId == item.id,
+            onMessage: { Task { await openMessageThread(for: item) } }
         )
     }
 
@@ -365,7 +412,7 @@ struct ProviderRequestsInboxContent: View {
     // MARK: - Request interactions
 
     private func toggleExpansion(_ id: String) {
-        withAnimation(ProviderRequestSheetMetrics.sheetSpring) {
+        withAnimation(ProviderRequestSheetMetrics.triageCardSpring) {
             if expandedRequestId == id {
                 expandedRequestId = nil
                 if editingRequestId == id {
@@ -383,7 +430,7 @@ struct ProviderRequestsInboxContent: View {
     }
 
     private func beginEditingSchedule(_ item: RequestTriageItem) {
-        withAnimation(ProviderRequestSheetMetrics.sheetSpring) {
+        withAnimation(ProviderRequestSheetMetrics.triageCardSpring) {
             expandedRequestId = item.id
             editingRequestId = item.id
             draftScheduleDate = item.requestedStart
@@ -393,7 +440,7 @@ struct ProviderRequestsInboxContent: View {
     }
 
     private func cancelEditingSchedule() {
-        withAnimation(ProviderRequestSheetMetrics.sheetSpring) {
+        withAnimation(ProviderRequestSheetMetrics.triageCardSpring) {
             editingRequestId = nil
             scheduleEditError = nil
         }
@@ -402,12 +449,30 @@ struct ProviderRequestsInboxContent: View {
     // MARK: - Networking
 
     private func loadAll(isUserPullToRefresh: Bool) async {
-        async let requests: Void = loadRequests()
+        if !isUserPullToRefresh {
+            hasSettledInboxPresentation = false
+        }
+        defer {
+            if !isUserPullToRefresh {
+                hasSettledInboxPresentation = true
+            }
+        }
+
+        async let requests: Void = loadRequests(settlesPresentation: false)
         async let bookings: Void = loadBookings(isUserPullToRefresh: isUserPullToRefresh)
         _ = await (requests, bookings)
     }
 
-    private func loadRequests() async {
+    private func loadRequests(settlesPresentation: Bool) async {
+        if settlesPresentation {
+            hasSettledInboxPresentation = false
+        }
+        defer {
+            if settlesPresentation {
+                hasSettledInboxPresentation = true
+            }
+        }
+
         guard let bid = session.barberProfile?.id else {
             triageItems = []
             expandedRequestId = nil
@@ -484,10 +549,33 @@ struct ProviderRequestsInboxContent: View {
             NotificationCenter.default.post(name: .providerRequestsListShouldRefresh, object: nil)
             NotificationCenter.default.post(name: .providerBookingsListShouldRefresh, object: nil)
             editingRequestId = nil
-            await loadRequests()
+            await loadRequests(settlesPresentation: false)
             expandedRequestId = keepExpanded
         } catch {
             scheduleEditError = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+        }
+    }
+
+    private func openMessageThread(for item: RequestTriageItem) async {
+        openingMessageRequestId = item.id
+        defer { openingMessageRequestId = nil }
+
+        do {
+            guard let conversationId = try await ProviderMessagesService.conversationId(
+                forBookingId: item.row.bookingId
+            ) else {
+                messageOpenErrorText = "No conversation is linked to this booking yet."
+                showMessageOpenError = true
+                return
+            }
+            NotificationCenter.default.post(
+                name: .interaOpenMessagingConversation,
+                object: nil,
+                userInfo: ["conversationId": conversationId]
+            )
+        } catch {
+            messageOpenErrorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            showMessageOpenError = true
         }
     }
 
@@ -505,7 +593,7 @@ struct ProviderRequestsInboxContent: View {
                 reason: reasonText
             )
             NotificationCenter.default.post(name: .providerRequestsListShouldRefresh, object: nil)
-            await loadRequests()
+            await loadRequests(settlesPresentation: false)
         } catch {
             requestsErrorText = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
         }

@@ -17,9 +17,22 @@ struct ProviderExpandableRequestTriageCard: View {
     let onSaveSchedule: () -> Void
     let onAccept: () -> Void
     let onDecline: () -> Void
+    let isOpeningMessage: Bool
+    let onMessage: () -> Void
 
     private var displayStart: Date {
         isEditingSchedule ? draftScheduleDate : item.requestedStart
+    }
+
+    /// Cached expanded height so reopening animates smoothly and siblings slide instead of jumping.
+    @State private var expandedContentHeight: CGFloat = 0
+
+    private var expandedRevealHeight: CGFloat {
+        guard isExpanded else { return 0 }
+        if isEditingSchedule {
+            return max(expandedContentHeight, 520)
+        }
+        return expandedContentHeight > 0 ? expandedContentHeight : 360
     }
 
     var body: some View {
@@ -28,21 +41,45 @@ struct ProviderExpandableRequestTriageCard: View {
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onHeaderTap)
 
-            if isExpanded {
-                expandedBody
-                    .transition(
-                        .asymmetric(
-                            insertion: .opacity.combined(with: .move(edge: .top)),
-                            removal: .opacity.combined(with: .move(edge: .top))
-                        )
-                    )
-            }
+            expandedBody
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxHeight: expandedRevealHeight, alignment: .top)
+                .clipped()
+                .allowsHitTesting(isExpanded)
+                .accessibilityHidden(!isExpanded)
+                .overlay(alignment: .topLeading) {
+                    if !isEditingSchedule {
+                        expandedBody
+                            .fixedSize(horizontal: false, vertical: true)
+                            .hidden()
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                            .onGeometryChange(for: CGFloat.self) { proxy in
+                                proxy.size.height
+                            } action: { height in
+                                guard height > 0 else { return }
+                                expandedContentHeight = height
+                            }
+                    }
+                }
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { height in
+                    guard isExpanded, isEditingSchedule, height > 0 else { return }
+                    expandedContentHeight = max(expandedContentHeight, height)
+                }
         }
         .background(Color.providerElevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(Color.providerElevatedSurfaceStroke, lineWidth: 1)
         )
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onChange(of: isEditingSchedule) { _, editing in
+            if editing, isExpanded {
+                expandedContentHeight = max(expandedContentHeight, 520)
+            }
+        }
     }
 
     private var header: some View {
@@ -71,6 +108,7 @@ struct ProviderExpandableRequestTriageCard: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.lavaShellCream.opacity(0.6))
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                    .animation(ProviderRequestSheetMetrics.triageCardSpring, value: isExpanded)
                     .padding(.leading, 4)
             }
 
@@ -212,10 +250,18 @@ struct ProviderExpandableRequestTriageCard: View {
                     }
                 }
 
-                Button("Edit date & time", action: onBeginEditSchedule)
-                    .frame(maxWidth: .infinity)
-                    .buttonStyle(.bordered)
-                    .tint(.providerOlive)
+                HStack(spacing: 12) {
+                    Button("Edit time", action: onBeginEditSchedule)
+                        .buttonStyle(.bordered)
+                        .tint(.providerOlive)
+                        .frame(maxWidth: .infinity)
+
+                    Button(isOpeningMessage ? "Opening…" : "Message", action: onMessage)
+                        .buttonStyle(.bordered)
+                        .tint(.providerOlive)
+                        .frame(maxWidth: .infinity)
+                        .disabled(isOpeningMessage)
+                }
 
                 Divider()
                     .overlay(Color(uiColor: ProviderAppearance.separator))
@@ -225,7 +271,7 @@ struct ProviderExpandableRequestTriageCard: View {
                         .buttonStyle(.bordered)
                         .frame(maxWidth: .infinity)
 
-                    Button("Approve & book", action: onAccept)
+                    Button("Approve", action: onAccept)
                         .buttonStyle(.borderedProminent)
                         .tint(.providerOlive)
                         .frame(maxWidth: .infinity)
