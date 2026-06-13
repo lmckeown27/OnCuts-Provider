@@ -366,6 +366,9 @@ struct ProviderScheduleHourlySlot: Hashable {
     let start: String
     let end: String
 
+    /// CampusCuts bookable appointment length used on the provider schedule.
+    static let bookableSlotMinutes = 45
+
     var displayRange: String {
         "\(Self.format12h(minutes: startMinutes)) – \(Self.format12h(minutes: endMinutes))"
     }
@@ -392,6 +395,53 @@ struct ProviderScheduleHourlySlot: Hashable {
             }
         }
         return slots.sorted { $0.startHour < $1.startHour }
+    }
+
+    /// Fixed-length bookable windows (e.g. 45 min) aligned to the schedule grid.
+    static func generateBookableSlots(
+        from intervals: [BarberAvailabilityIntervalDTO],
+        slotMinutes: Int = bookableSlotMinutes
+    ) -> [ProviderScheduleHourlySlot] {
+        guard slotMinutes > 0 else { return [] }
+        var seen = Set<Int>()
+        var slots: [ProviderScheduleHourlySlot] = []
+        for interval in intervals {
+            let intervalStart = minutesFromHHMM(interval.start)
+            let intervalEnd = minutesFromHHMM(interval.end)
+            guard intervalEnd > intervalStart else { continue }
+
+            var slotStart = (intervalStart / slotMinutes) * slotMinutes
+            if slotStart < intervalStart { slotStart += slotMinutes }
+
+            while slotStart + slotMinutes <= intervalEnd {
+                if !seen.contains(slotStart) {
+                    seen.insert(slotStart)
+                    let slotEnd = slotStart + slotMinutes
+                    slots.append(
+                        ProviderScheduleHourlySlot(
+                            startHour: slotStart / 60,
+                            startMinutes: slotStart,
+                            endMinutes: slotEnd,
+                            start: hhmm(from: slotStart),
+                            end: hhmm(from: slotEnd)
+                        )
+                    )
+                }
+                slotStart += slotMinutes
+            }
+        }
+        return slots.sorted { $0.startMinutes < $1.startMinutes }
+    }
+
+    private static func minutesFromHHMM(_ hhmm: String) -> Int {
+        let parts = hhmm.split(separator: ":")
+        let h = parts.first.flatMap { Int($0) } ?? 0
+        let m = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+        return h * 60 + m
+    }
+
+    private static func hhmm(from totalMinutes: Int) -> String {
+        String(format: "%02d:%02d", totalMinutes / 60, totalMinutes % 60)
     }
 
     private static func parseHour(_ hhmm: String) -> Int? {

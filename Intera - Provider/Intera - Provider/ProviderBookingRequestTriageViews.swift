@@ -163,8 +163,7 @@ struct ProviderExpandableRequestTriageCard: View {
 
     private func scheduledTimeHeadline(for date: Date) -> String {
         if !isEditingSchedule,
-           let campusTime = item.row.requestedTime?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !campusTime.isEmpty {
+           let campusTime = ProviderBookingScheduleParsing.displayWallClockTime(from: item.row) {
             return campusTime
         }
         if !isEditingSchedule, item.row.requestedScheduleInstant == nil {
@@ -233,10 +232,15 @@ struct ProviderExpandableRequestTriageCard: View {
                     .disabled(isSavingSchedule || draftHasConflict)
                 }
             } else {
-                Text(item.requestedStart, format: .dateTime.weekday(.wide).month(.wide).day())
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color.lavaShellCream)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(scheduledDateHeadline(for: item.requestedStart))
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(Color.lavaShellCream)
+                    Text(scheduledTimeHeadline(for: displayStart))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 if item.surroundingSchedule.isEmpty {
                     Text("Schedule context unavailable for this time.")

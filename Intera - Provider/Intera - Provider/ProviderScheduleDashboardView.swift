@@ -56,6 +56,8 @@ struct ProviderScheduleDashboardView: View {
     @State private var isEditingAvailability = false
     @State private var inlineWeeklySchedule: WeeklyScheduleDTO?
     @State private var originalInlineWeeklySchedule: WeeklyScheduleDTO?
+    /// Recurring weekly hours — used for the week-view grid without waiting on per-day availability fetches.
+    @State private var cachedWeeklySchedule: WeeklyScheduleDTO?
     @State private var inlineWeeklyLoading = false
     @State private var inlineWeeklyLoadError: String?
     @State private var inlineValidationError: String?
@@ -67,6 +69,10 @@ struct ProviderScheduleDashboardView: View {
     @State private var timeChangeErrorText: String?
     @State private var movePromptBooking: SimpleBookingDTO?
     @State private var editingMoveBookingID: String?
+    /// While rescheduling, the booking being moved is only draggable when this matches `editingMoveBookingID`.
+    @State private var activeMoveDragBookingID: String?
+    /// When set, the day timeline scrolls to this booking after focusing a day from week/month view.
+    @State private var pendingScrollToBookingID: String?
 
     private var mondayCalendar: Calendar {
         var c = Calendar(identifier: .gregorian)
@@ -176,7 +182,9 @@ struct ProviderScheduleDashboardView: View {
         .task(id: session.barberProfile?.id) {
             availabilityByDay = [:]
             timeBlocksByDay = [:]
+            cachedWeeklySchedule = nil
             await loadBookings()
+            await loadCachedWeeklyScheduleIfNeeded()
         }
         /// Refetch the day's availability window any time the daily mode anchor or barber identity changes.
         .task(id: dailyAvailabilityKey) {
@@ -189,7 +197,10 @@ struct ProviderScheduleDashboardView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .providerAvailabilityChanged)) { _ in
-            Task { await refreshDayScheduleFromNetwork() }
+            Task {
+                await refreshDayScheduleFromNetwork()
+                await loadCachedWeeklyScheduleIfNeeded()
+            }
         }
         // Backstop for `@Observable` tracking through `awaitingPaymentTracker`. The detail
         // VC posts this notification on every `requestedIds` mutation, so when the user
@@ -201,12 +212,14 @@ struct ProviderScheduleDashboardView: View {
         }
         .onChange(of: dayOffset) { _, _ in
             editingMoveBookingID = nil
+            activeMoveDragBookingID = nil
             movePromptBooking = nil
             timeChangeProposal = nil
         }
         .onChange(of: effectiveZoomTier) { _, tier in
             if tier != .day && tier != .minute {
                 editingMoveBookingID = nil
+                activeMoveDragBookingID = nil
                 movePromptBooking = nil
                 timeChangeProposal = nil
             }
@@ -261,7 +274,6 @@ struct ProviderScheduleDashboardView: View {
             // per booking the user has locally flipped to "Awaiting Payment" via the
             // detail screen. Hidden when the tracker has nothing to surface.
             awaitingPaymentBanner
-            jumpChip
             summaryLine
             zoomPresetBar
             dateNavigationRow
@@ -269,9 +281,13 @@ struct ProviderScheduleDashboardView: View {
                 manageAvailabilityOrEditControls
             }
             VStack(alignment: .leading, spacing: 12) {
-                zoomScheduleCanvas(canvasViewerHeight: canvasViewerHeight)
-                if isDayZoomTier {
-                    dayScheduleSupplement
+                if isEditingAvailability && isDayZoomTier {
+                    inlineAvailabilityEditorPanel
+                } else {
+                    zoomScheduleCanvas(canvasViewerHeight: canvasViewerHeight)
+                    if isDayZoomTier {
+                        dayScheduleSupplement
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -357,51 +373,6 @@ struct ProviderScheduleDashboardView: View {
         }
     }
 
-    private var jumpChip: some View {
-        Group {
-            if jumpChipVisible {
-                Button(jumpChipTitle) {
-                    switch effectiveZoomTier {
-                    case .minute, .day: dayOffset = 0
-                    case .week: weekOffset = 0
-                    case .month: monthOffset = 0
-                    }
-                }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.lavaShellCream)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background {
-                    Capsule()
-                        .fill(Color.providerScheduleTrackFill)
-                        .overlay(
-                            Capsule()
-                                .strokeBorder(Color.providerScheduleTrackStroke, lineWidth: 0.6)
-                        )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        // When off today / this week / this month, keep the jump chip centered (parent VStack is leading-aligned).
-        .frame(maxWidth: .infinity, alignment: .center)
-    }
-
-    private var jumpChipVisible: Bool {
-        switch effectiveZoomTier {
-        case .minute, .day: dayOffset != 0
-        case .week: weekOffset != 0
-        case .month: monthOffset != 0
-        }
-    }
-
-    private var jumpChipTitle: String {
-        switch effectiveZoomTier {
-        case .minute, .day: "Today"
-        case .week: "This week"
-        case .month: "This month"
-        }
-    }
-
     private var summaryLine: some View {
         Text(summaryText)
             .font(.subheadline)
@@ -438,9 +409,7 @@ struct ProviderScheduleDashboardView: View {
                     awaitingPaymentRow(for: booking)
                 }
             }
-            // Slight bottom breathing room so the jump chip / summary line don't crowd
-            // the banner. The outer `VStack(spacing: 14)` adds 14pt above; nothing extra
-            // needed there.
+            // Slight bottom breathing room so the summary line doesn't crowd the banner.
             .padding(.bottom, 2)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(
@@ -564,7 +533,7 @@ struct ProviderScheduleDashboardView: View {
             } else {
                 let display = displayForDailyScheduleBody()
                 let intervals = display?.intervals ?? []
-                let bounds = ProviderScheduleTimelineBounds.range(for: intervals)
+                let bounds = timelineBoundsForCurrentZoom(displayIntervals: intervals)
                 ProviderZoomableScheduleCanvas(
                     zoomScale: $zoomScale,
                     calendar: mondayCalendar,
@@ -575,6 +544,7 @@ struct ProviderScheduleDashboardView: View {
                     timelineStartMinute: bounds.start,
                     timelineEndMinute: bounds.end,
                     availabilityIntervals: intervals,
+                    weekDayAvailabilityIntervals: availabilityIntervalsForVisibleWeek(),
                     timeBlocks: timeBlocksOnSelectedDay,
                     blockTimeTapsEnabled: !isEditingAvailability && (display?.available ?? false),
                     onBookingTap: { shellNavigator.pushBooking($0) },
@@ -582,11 +552,13 @@ struct ProviderScheduleDashboardView: View {
                         prepareBlockSheet(forMinute: minute)
                         showingBlockTimeSheet = true
                     },
-                    onWeekDayTap: { focusDay($0) },
-                    onMonthDayTap: { focusDay($0) },
+                    onWeekDayTap: { focusDay($0, scrollToFirstBooking: true) },
+                    onMonthDayTap: { focusDay($0, scrollToFirstBooking: true) },
+                    pendingScrollToBookingID: $pendingScrollToBookingID,
                     canvasViewerHeight: isDayZoomTier ? canvasViewerHeight : nil,
                     appointmentDragEnabled: isDayZoomTier && !isEditingAvailability,
                     editingMoveBookingID: $editingMoveBookingID,
+                    activeMoveDragBookingID: $activeMoveDragBookingID,
                     movePromptBooking: $movePromptBooking,
                     timeChangeProposal: $timeChangeProposal,
                     isApplyingTimeChange: isApplyingTimeChange,
@@ -594,7 +566,10 @@ struct ProviderScheduleDashboardView: View {
                         Task { await applyPendingTimeChange() }
                     },
                     onMoveBookingRequested: { movePromptBooking = $0 },
-                    onCancelMoveEditing: { editingMoveBookingID = nil },
+                    onCancelMoveEditing: {
+                        editingMoveBookingID = nil
+                        activeMoveDragBookingID = nil
+                    },
                     onBookingTimeChangeProposed: { booking, proposedTime in
                         timeChangeProposal = ScheduleAppointmentTimeChangeProposal(
                             booking: booking,
@@ -608,6 +583,33 @@ struct ProviderScheduleDashboardView: View {
     }
 
     @ViewBuilder
+    private var inlineAvailabilityEditorPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if inlineWeeklyLoading {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading weekly schedule…")
+                        .font(.footnote)
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                }
+                .padding(.vertical, 4)
+            } else if let inlineWeeklyLoadError {
+                Text(inlineWeeklyLoadError)
+                    .font(.footnote)
+                    .foregroundStyle(.red.opacity(0.9))
+            } else {
+                inlineDayScheduleEditorCard
+                if let inlineSaveError {
+                    Text(inlineSaveError)
+                        .font(.caption)
+                        .foregroundStyle(.red.opacity(0.9))
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
     private var dayScheduleSupplement: some View {
         let dayBookings = visibleBookingsForCurrentZoom().sorted {
             ($0.scheduledTime ?? .distantFuture) < ($1.scheduledTime ?? .distantFuture)
@@ -618,32 +620,9 @@ struct ProviderScheduleDashboardView: View {
         let slots = dayEnabled ? generateHourlySlots(from: intervals) : []
 
         VStack(alignment: .leading, spacing: 10) {
-            if isEditingAvailability {
-                if inlineWeeklyLoading {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Loading weekly schedule…")
-                            .font(.footnote)
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
-                    }
-                    .padding(.vertical, 4)
-                } else if let inlineWeeklyLoadError {
-                    Text(inlineWeeklyLoadError)
-                        .font(.footnote)
-                        .foregroundStyle(.red.opacity(0.9))
-                } else {
-                    inlineDayScheduleEditorCard
-                    if let inlineSaveError {
-                        Text(inlineSaveError)
-                            .font(.caption)
-                            .foregroundStyle(.red.opacity(0.9))
-                    }
-                }
-            }
             if session.hasProviderProfile,
                isLoadingAvailability,
-               displayForDailyScheduleBody() == nil,
-               !(isEditingAvailability && (inlineWeeklyLoading || inlineWeeklySchedule != nil))
+               displayForDailyScheduleBody() == nil
             {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
@@ -667,11 +646,7 @@ struct ProviderScheduleDashboardView: View {
                         blockedTimeRow(block: block)
                     }
                 }
-                if isEditingAvailability {
-                    Text("Finish saving or cancel to block time on the calendar.")
-                        .font(.caption2)
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
-                } else if effectiveZoomTier == .day {
+                if effectiveZoomTier == .day {
                     Text("Tap a booking for details. Hold to change its time. Pinch to zoom in for minute-level detail.")
                         .font(.caption2)
                         .foregroundStyle(Color.lavaShellCreamTertiary)
@@ -710,6 +685,7 @@ struct ProviderScheduleDashboardView: View {
             )
             timeChangeProposal = nil
             editingMoveBookingID = nil
+            activeMoveDragBookingID = nil
             NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
             await loadBookings()
             await refreshDayScheduleFromNetwork()
@@ -719,12 +695,41 @@ struct ProviderScheduleDashboardView: View {
         }
     }
 
-    private func focusDay(_ day: Date) {
+    private func focusDay(_ day: Date, scrollToFirstBooking: Bool = false) {
         let anchor = mondayCalendar.startOfDay(for: .now)
         dayOffset = mondayCalendar.dateComponents([.day], from: anchor, to: mondayCalendar.startOfDay(for: day)).day ?? 0
+
+        if scrollToFirstBooking {
+            let firstAppointment = scheduleBookings
+                .filter { $0.isSameCalendarDay(as: day, calendar: mondayCalendar) }
+                .compactMap { ScheduleCanvasAppointment.from(booking: $0, calendar: mondayCalendar) }
+                .sorted { $0.startMinute < $1.startMinute }
+                .first
+            pendingScrollToBookingID = firstAppointment?.id
+        } else {
+            pendingScrollToBookingID = nil
+        }
+
         withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
             zoomScale = ProviderScheduleZoom.defaultScale
         }
+    }
+
+    private func openMonthViewForSelectedDay() {
+        syncMonthOffset(to: selectedDay)
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+            zoomScale = ProviderScheduleZoom.Preset.month.targetScale
+        }
+    }
+
+    private func syncMonthOffset(to day: Date) {
+        let nowMonthStart = mondayCalendar.date(
+            from: mondayCalendar.dateComponents([.year, .month], from: .now)
+        ) ?? mondayCalendar.startOfDay(for: .now)
+        let dayMonthStart = mondayCalendar.date(
+            from: mondayCalendar.dateComponents([.year, .month], from: day)
+        ) ?? mondayCalendar.startOfDay(for: day)
+        monthOffset = mondayCalendar.dateComponents([.month], from: nowMonthStart, to: dayMonthStart).month ?? 0
     }
 
     // MARK: - Daily
@@ -743,9 +748,22 @@ struct ProviderScheduleDashboardView: View {
             }
             .buttonStyle(.plain)
             Spacer()
-            Text(periodTitle)
-                .font(.headline)
-                .multilineTextAlignment(.center)
+            if isDayZoomTier {
+                Button(action: openMonthViewForSelectedDay) {
+                    Text(periodTitle)
+                        .font(.headline)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(Color.lavaShellCream)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Show month view")
+                .accessibilityHint("Opens the monthly schedule for \(periodTitle)")
+            } else {
+                Text(periodTitle)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+            }
             Spacer()
             Button {
                 stepDate(1)
@@ -769,8 +787,8 @@ struct ProviderScheduleDashboardView: View {
     }
 
     /// Matches backend `weeklySchedule` keys (`Date.getDay()` order in JS docs).
-    private var weeklyDayKeyForSelectedDay: WeeklyScheduleDayKey {
-        let w = mondayCalendar.component(.weekday, from: selectedDay)
+    private func weeklyDayKey(for date: Date) -> WeeklyScheduleDayKey {
+        let w = mondayCalendar.component(.weekday, from: date)
         switch w {
         case 1: return .sunday
         case 2: return .monday
@@ -781,6 +799,10 @@ struct ProviderScheduleDashboardView: View {
         case 7: return .saturday
         default: return .monday
         }
+    }
+
+    private var weeklyDayKeyForSelectedDay: WeeklyScheduleDayKey {
+        weeklyDayKey(for: selectedDay)
     }
 
     private var dayTitleLabel: String {
@@ -794,7 +816,14 @@ struct ProviderScheduleDashboardView: View {
     private var periodTitle: String {
         switch effectiveZoomTier {
         case .minute, .day:
-            return dayTitleLabel + " · " + selectedDay.formatted(.dateTime.month(.wide).day().year())
+            let d = selectedDay
+            if mondayCalendar.isDateInToday(d)
+                || mondayCalendar.isDateInTomorrow(d)
+                || mondayCalendar.isDateInYesterday(d)
+            {
+                return dayTitleLabel + " · " + d.formatted(.dateTime.month(.wide).day().year())
+            }
+            return d.formatted(.dateTime.weekday(.wide).month(.wide).day().year())
         case .week:
             let (a, b) = weekRangeTitles()
             return "\(a) – \(b)"
@@ -1565,6 +1594,58 @@ struct ProviderScheduleDashboardView: View {
     }
 
     // MARK: - Weekly (list of 7 days, mobile-style)
+
+    private func timelineBoundsForCurrentZoom(displayIntervals: [BarberAvailabilityIntervalDTO]) -> (start: Int, end: Int) {
+        switch effectiveZoomTier {
+        case .week:
+            let weekIntervals = availabilityIntervalsForVisibleWeek().flatMap { $0 }
+            return ProviderScheduleTimelineBounds.range(for: weekIntervals)
+        default:
+            return ProviderScheduleTimelineBounds.range(for: displayIntervals)
+        }
+    }
+
+    private func availabilityIntervalsForVisibleWeek() -> [[BarberAvailabilityIntervalDTO]] {
+        (0 ..< 7).map { offset in
+            guard let day = mondayCalendar.date(byAdding: .day, value: offset, to: weekStartMonday) else {
+                return []
+            }
+            let apiIntervals = cachedAvailabilityIntervals(for: day)
+            if !apiIntervals.isEmpty { return apiIntervals }
+            return weeklyTemplateIntervals(for: day)
+        }
+    }
+
+    private func weeklyTemplateIntervals(for day: Date) -> [BarberAvailabilityIntervalDTO] {
+        let schedule = isEditingAvailability ? inlineWeeklySchedule : cachedWeeklySchedule
+        guard let schedule else { return [] }
+        let entry = schedule[weeklyDayKey(for: day)]
+        guard entry.enabled else { return [] }
+        return entry.intervals.map {
+            BarberAvailabilityIntervalDTO(id: $0.id, start: $0.start, end: $0.end)
+        }
+    }
+
+    private func loadCachedWeeklyScheduleIfNeeded() async {
+        guard session.hasProviderProfile, let barberId = session.barberProfile?.id else {
+            cachedWeeklySchedule = nil
+            return
+        }
+        do {
+            cachedWeeklySchedule = try await ProviderAvailabilityManagementService.fetchWeeklySchedule(barberId: barberId)
+        } catch {
+            cachedWeeklySchedule = nil
+        }
+    }
+
+    private func cachedAvailabilityIntervals(for day: Date) -> [BarberAvailabilityIntervalDTO] {
+        let key = dayKey(for: day)
+        guard let data = availabilityByDay[key] else { return [] }
+        if let raw = data.date?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            guard normalizedBlockDate(raw) == key else { return [] }
+        }
+        return data.intervals ?? []
+    }
 
     private var weekStartMonday: Date {
         let today = mondayCalendar.startOfDay(for: .now)

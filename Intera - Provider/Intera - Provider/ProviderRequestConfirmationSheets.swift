@@ -183,26 +183,19 @@ struct ProviderApproveBookingConfirmSheet: View {
   var body: some View {
     ProviderRequestCompactSheetChrome(detentHeight: ProviderRequestSheetMetrics.approveHeight) {
       VStack(alignment: .leading, spacing: 0) {
-        HStack(alignment: .top, spacing: 12) {
-          Image(systemName: "checkmark.seal.fill")
-            .font(.system(size: 28))
-            .foregroundStyle(ProviderRequestSheetColors.approveGreen)
-            .accessibilityHidden(true)
-
-          VStack(alignment: .leading, spacing: 6) {
-            ScaledSheetText(
-              text: "Confirm Appointment Slot",
-              font: .system(size: 20, weight: .bold),
-              color: ProviderRequestSheetColors.titleText,
-              lineLimit: 2
-            )
-            ScaledSheetText(
-              text: "This locks \(customerName) into your \(scheduleSummary) calendar.",
-              font: .system(size: 14, weight: .regular),
-              color: ProviderRequestSheetColors.bodyText,
-              lineLimit: 4
-            )
-          }
+        VStack(alignment: .leading, spacing: 6) {
+          ScaledSheetText(
+            text: "Confirm Appointment Slot",
+            font: .system(size: 20, weight: .bold),
+            color: ProviderRequestSheetColors.titleText,
+            lineLimit: 2
+          )
+          ScaledSheetText(
+            text: "This locks \(customerName) into your \(scheduleSummary) calendar.",
+            font: .system(size: 14, weight: .regular),
+            color: ProviderRequestSheetColors.bodyText,
+            lineLimit: 4
+          )
         }
         .padding(.horizontal, ProviderRequestSheetMetrics.horizontalPadding)
         .padding(.top, 14)
@@ -463,6 +456,10 @@ extension RequestTriageItem {
   }
 
   var approveScheduleSummary: String {
-    requestedStart.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+    if let wallClock = ProviderBookingScheduleParsing.displayWallClockTime(from: row) {
+      let datePart = requestedStart.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+      return "\(datePart) · \(wallClock)"
+    }
+    return requestedStart.formatted(.dateTime.weekday(.abbreviated).hour().minute())
   }
 }

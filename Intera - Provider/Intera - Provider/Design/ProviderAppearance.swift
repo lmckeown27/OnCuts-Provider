@@ -91,6 +91,13 @@ enum ProviderAppearance {
             : UIColor.black.withAlphaComponent(0.07)
     }
 
+    /// Opaque fill for floating appointment move / confirm prompts over the schedule.
+    static let schedulePromptCardFill = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 26 / 255, green: 28 / 255, blue: 38 / 255, alpha: 1)
+            : UIColor(red: 244 / 255, green: 244 / 255, blue: 248 / 255, alpha: 1)
+    }
+
     /// Day rows, time slots, availability wells, and other schedule cards.
     static let scheduleCardFill = UIColor { traits in
         traits.userInterfaceStyle == .dark
@@ -167,6 +174,7 @@ extension Color {
     static var providerScheduleTrackFill: Color { Color(uiColor: ProviderAppearance.scheduleTrackFill) }
     static var providerScheduleTrackStroke: Color { Color(uiColor: ProviderAppearance.scheduleTrackStroke) }
     static var providerScheduleCardFill: Color { Color(uiColor: ProviderAppearance.scheduleCardFill) }
+    static var providerSchedulePromptCardFill: Color { Color(uiColor: ProviderAppearance.schedulePromptCardFill) }
     static var providerScheduleCardStroke: Color { Color(uiColor: ProviderAppearance.scheduleCardStroke) }
     static var providerScheduleControlFill: Color { Color(uiColor: ProviderAppearance.scheduleControlFill) }
     static var providerScheduleControlStroke: Color { Color(uiColor: ProviderAppearance.scheduleControlStroke) }

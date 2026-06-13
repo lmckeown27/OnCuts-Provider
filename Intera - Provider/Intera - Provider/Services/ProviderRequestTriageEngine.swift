@@ -217,11 +217,15 @@ enum ProviderRequestTriageEngine {
         timeZone: TimeZone
     ) -> RequestScheduleContextItem {
         RequestScheduleContextItem(
-            timeLabel: timeLabel(start, timeZone: timeZone),
+            timeLabel: displayWallClockTime(from: request) ?? timeLabel(start, timeZone: timeZone),
             title: "\(request.customerName ?? "Customer"): \(request.serviceDisplayName)",
             type: .proposed,
             sortKey: start
         )
+    }
+
+    private static func displayWallClockTime(from row: BookingRequestRow) -> String? {
+        ProviderBookingScheduleParsing.displayWallClockTime(from: row)
     }
 
     private static func resolveHourWindow(

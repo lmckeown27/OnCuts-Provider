@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Zoom tiers & presets
 
@@ -115,7 +116,7 @@ struct ScheduleCanvasAppointment: Identifiable {
     let startMinute: Int
     let durationMinutes: Int
 
-    static func from(booking: SimpleBookingDTO, calendar: Calendar, defaultDurationMinutes: Int = 60) -> ScheduleCanvasAppointment? {
+    static func from(booking: SimpleBookingDTO, calendar: Calendar, defaultDurationMinutes: Int = ProviderScheduleHourlySlot.bookableSlotMinutes) -> ScheduleCanvasAppointment? {
         guard let scheduled = booking.scheduledTime else { return nil }
         let comps = calendar.dateComponents([.hour, .minute], from: scheduled)
         let start = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
@@ -141,16 +142,20 @@ struct ProviderZoomableScheduleCanvas: View {
     let timelineStartMinute: Int
     let timelineEndMinute: Int
     let availabilityIntervals: [BarberAvailabilityIntervalDTO]
+    /// Per-day availability intervals for the visible week (Mon–Sun), used for bookable-slot grid lines.
+    let weekDayAvailabilityIntervals: [[BarberAvailabilityIntervalDTO]]
     let timeBlocks: [BarberTimeBlockDTO]
     let blockTimeTapsEnabled: Bool
     let onBookingTap: (SimpleBookingDTO) -> Void
     let onAvailableMinuteTap: (Int) -> Void
     let onWeekDayTap: (Date) -> Void
     let onMonthDayTap: (Date) -> Void
+    @Binding var pendingScrollToBookingID: String?
     /// Height of the day/minute **viewer box**; timeline content scrolls vertically inside it.
     var canvasViewerHeight: CGFloat?
     var appointmentDragEnabled: Bool = false
     @Binding var editingMoveBookingID: String?
+    @Binding var activeMoveDragBookingID: String?
     @Binding var movePromptBooking: SimpleBookingDTO?
     @Binding var timeChangeProposal: ScheduleAppointmentTimeChangeProposal?
     var isApplyingTimeChange: Bool = false
@@ -159,10 +164,17 @@ struct ProviderZoomableScheduleCanvas: View {
     var onCancelMoveEditing: () -> Void = {}
     var onBookingTimeChangeProposed: (SimpleBookingDTO, Date) -> Void = { _, _ in }
 
-    @GestureState private var dynamicGestureScale: CGFloat = 1.0
+    @State private var pinchZoomMultiplier: CGFloat = 1.0
+    @State private var isPinchZoomActive = false
+    @State private var pinchSessionScrollY: CGFloat = 0
+    @State private var pinchSessionAnchorY: CGFloat = 0
+    @State private var pinchSessionLastEffectiveScale: CGFloat = 1
+    @State private var timelineScrollPosition = ScrollPosition()
+    @State private var timelineScrollOffsetY: CGFloat = 0
+    @State private var isPerformingDayScroll = false
 
     private var effectiveScale: CGFloat {
-        ProviderScheduleZoom.clamped(zoomScale * dynamicGestureScale)
+        ProviderScheduleZoom.clamped(zoomScale * pinchZoomMultiplier)
     }
 
     private var tier: ProviderScheduleZoomTier {
@@ -176,7 +188,12 @@ struct ProviderZoomableScheduleCanvas: View {
 
     private var appointments: [ScheduleCanvasAppointment] {
         bookings.compactMap { ScheduleCanvasAppointment.from(booking: $0, calendar: calendar) }
+            .filter { calendar.isDate($0.booking.scheduledTime ?? selectedDay, inSameDayAs: selectedDay) }
             .sorted { $0.startMinute < $1.startMinute }
+    }
+
+    private var dayTimelineVerticalScale: CGFloat {
+        effectiveScale * ProviderScheduleZoom.timelineVerticalScaleBoost
     }
 
     private var resolvedViewerBoxHeight: CGFloat {
@@ -184,6 +201,141 @@ struct ProviderZoomableScheduleCanvas: View {
             return canvasViewerHeight ?? ProviderScheduleZoom.dayMinuteViewerPreferredHeight
         }
         return ProviderScheduleZoom.canvasMinHeightDefault
+    }
+
+    /// Scrollable timeline content height (timeline + vertical padding in day/minute canvas).
+    private var timelineScrollContentHeight: CGFloat {
+        CGFloat(timelineEndMinute - timelineStartMinute) * dayTimelineVerticalScale + 16
+    }
+
+    private var maxTimelineScrollOffsetY: CGFloat {
+        maxTimelineScrollOffsetY(forEffectiveScale: effectiveScale)
+    }
+
+    private func maxTimelineScrollOffsetY(forEffectiveScale scale: CGFloat) -> CGFloat {
+        let verticalScale = scale * ProviderScheduleZoom.timelineVerticalScaleBoost
+        let contentHeight = CGFloat(timelineEndMinute - timelineStartMinute) * verticalScale + 16
+        return max(0, contentHeight - resolvedViewerBoxHeight)
+    }
+
+    /// Keeps the timeline point under the pinch centroid fixed while scale changes.
+    private func scrollOffsetAfterPinchIncrement(
+        incrementalRatio: CGFloat,
+        proposedEffectiveScale: CGFloat
+    ) -> CGFloat {
+        let padding = ScheduleTimelineDragLayout.contentVerticalPadding
+        let rawScroll = padding * (1 - incrementalRatio)
+            + pinchSessionScrollY * incrementalRatio
+            + pinchSessionAnchorY * (incrementalRatio - 1)
+        let maxScroll = maxTimelineScrollOffsetY(forEffectiveScale: proposedEffectiveScale)
+        return min(max(rawScroll, 0), maxScroll)
+    }
+
+    private func handlePinchZoomBegan(anchorYInViewport: CGFloat) {
+        isPinchZoomActive = true
+        pinchSessionAnchorY = anchorYInViewport
+        pinchSessionScrollY = timelineScrollOffsetY
+        pinchSessionLastEffectiveScale = effectiveScale
+    }
+
+    private func handlePinchZoomChanged(proposedEffectiveScale: CGFloat) {
+        guard abs(proposedEffectiveScale - pinchSessionLastEffectiveScale) > 0.0001 else { return }
+
+        let incrementalRatio = proposedEffectiveScale / pinchSessionLastEffectiveScale
+        pinchSessionScrollY = scrollOffsetAfterPinchIncrement(
+            incrementalRatio: incrementalRatio,
+            proposedEffectiveScale: proposedEffectiveScale
+        )
+        pinchSessionLastEffectiveScale = proposedEffectiveScale
+        pinchZoomMultiplier = proposedEffectiveScale / zoomScale
+        applyPinchZoomScroll(to: pinchSessionScrollY)
+    }
+
+    private func handlePinchZoomEnded(proposedEffectiveScale: CGFloat) {
+        handlePinchZoomChanged(proposedEffectiveScale: proposedEffectiveScale)
+
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+            zoomScale = proposedEffectiveScale
+            pinchZoomMultiplier = 1.0
+            isPinchZoomActive = false
+        }
+    }
+
+    private func applyPinchZoomScroll(to offsetY: CGFloat) {
+        timelineScrollOffsetY = offsetY
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            timelineScrollPosition.scrollTo(y: offsetY)
+        }
+    }
+
+    private func canScrollTimelineUp() -> Bool {
+        timelineScrollOffsetY > 0.5
+    }
+
+    private func canScrollTimelineDown() -> Bool {
+        timelineScrollOffsetY < maxTimelineScrollOffsetY - 0.5
+    }
+
+    @discardableResult
+    private func applyTimelineEdgeScroll(deltaY: CGFloat) -> CGFloat {
+        let next = min(max(timelineScrollOffsetY + deltaY, 0), maxTimelineScrollOffsetY)
+        let applied = next - timelineScrollOffsetY
+        guard abs(applied) > 0.01 else { return 0 }
+
+        timelineScrollOffsetY = next
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            timelineScrollPosition.scrollTo(y: next)
+        }
+        return applied
+    }
+
+    private func scrollToShowBooking(
+        for app: ScheduleCanvasAppointment,
+        clampedOffsetY: CGFloat,
+        reservePromptSpace: Bool
+    ) {
+        guard tier == .day || tier == .minute else { return }
+
+        let top = CGFloat(app.startMinute - timelineStartMinute) * dayTimelineVerticalScale
+        let height = max(4, CGFloat(app.durationMinutes) * dayTimelineVerticalScale)
+        let bookingContentTop = ScheduleTimelineDragLayout.contentVerticalPadding + top + clampedOffsetY
+        let bottomMargin: CGFloat = 14
+
+        let targetY: CGFloat
+        if reservePromptSpace {
+            let topMargin: CGFloat = 14
+            var promptTarget = bookingContentTop - ScheduleTimelineDragLayout.confirmPromptClearance - topMargin
+            let minScrollForBottom = bookingContentTop + height - resolvedViewerBoxHeight + bottomMargin
+            if minScrollForBottom > 0, promptTarget < minScrollForBottom {
+                promptTarget = minScrollForBottom
+            }
+            targetY = min(max(promptTarget, 0), maxTimelineScrollOffsetY)
+        } else {
+            let centeredY = max(0, bookingContentTop - resolvedViewerBoxHeight * 0.35)
+            targetY = min(centeredY, maxTimelineScrollOffsetY)
+        }
+
+        guard abs(targetY - timelineScrollOffsetY) > 1 else { return }
+
+        timelineScrollOffsetY = targetY
+        withAnimation(.easeInOut(duration: 0.28)) {
+            timelineScrollPosition.scrollTo(y: targetY)
+        }
+    }
+
+    private func scrollToRevealConfirmPrompt(
+        for app: ScheduleCanvasAppointment,
+        clampedOffsetY: CGFloat
+    ) {
+        scrollToShowBooking(for: app, clampedOffsetY: clampedOffsetY, reservePromptSpace: true)
+    }
+
+    private func scrollToFocusedBooking(for app: ScheduleCanvasAppointment) {
+        scrollToShowBooking(for: app, clampedOffsetY: 0, reservePromptSpace: false)
     }
 
     var body: some View {
@@ -195,12 +347,21 @@ struct ProviderZoomableScheduleCanvas: View {
 
             GeometryReader { proxy in
                 weekAwareScrollView(viewportSize: proxy.size)
-                    .modifier(PinchZoomGestureModifier(
-                        isEnabled: pinchZoomEnabled && editingMoveBookingID == nil,
-                        gesture: magnificationGesture
-                    ))
+                    .background {
+                        if pinchZoomEnabled && activeMoveDragBookingID == nil {
+                            ScheduleTimelinePinchZoomAttachment(
+                                isEnabled: true,
+                                currentZoomScale: zoomScale,
+                                clampZoom: Self.clampToPinchZoomRange,
+                                onPinchBegan: handlePinchZoomBegan,
+                                onPinchChanged: handlePinchZoomChanged,
+                                onPinchEnded: handlePinchZoomEnded
+                            )
+                        }
+                    }
             }
             .frame(height: resolvedViewerBoxHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .background(Color.providerScheduleCardFill.opacity(0.35))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -208,6 +369,45 @@ struct ProviderZoomableScheduleCanvas: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(Color.providerScheduleTrackStroke, lineWidth: 0.6)
         )
+        .onChange(of: pendingScrollToBookingID) { _, bookingID in
+            guard bookingID != nil else { return }
+            Task { await performPendingDayScroll() }
+        }
+        .onChange(of: tier) { _, newTier in
+            guard newTier == .day || newTier == .minute else { return }
+            guard pendingScrollToBookingID != nil else { return }
+            Task { await performPendingDayScroll() }
+        }
+        .onChange(of: selectedDay) { _, _ in
+            guard pendingScrollToBookingID != nil else { return }
+            Task { await performPendingDayScroll() }
+        }
+        .onChange(of: editingMoveBookingID) { oldID, newID in
+            guard oldID == nil, let newID, let app = appointments.first(where: { $0.id == newID }) else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(80))
+                scrollToFocusedBooking(for: app)
+            }
+        }
+        .onChange(of: movePromptBooking) { oldValue, newValue in
+            guard oldValue == nil,
+                  let booking = newValue,
+                  let app = appointments.first(where: { $0.id == booking.id }) else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(80))
+                scrollToRevealConfirmPrompt(for: app, clampedOffsetY: 0)
+            }
+        }
+    }
+
+    private var minuteTierHeaderOpacity: Double {
+        if effectiveScale <= 3.0 { return 0 }
+        if effectiveScale >= 3.5 { return 1 }
+        return Double((effectiveScale - 3.0) / 0.5)
+    }
+
+    private var dailyTierHeaderOpacity: Double {
+        1 - minuteTierHeaderOpacity
     }
 
     private var zoomContextHeader: some View {
@@ -240,14 +440,22 @@ struct ProviderZoomableScheduleCanvas: View {
                 }
             } else {
                 HStack(spacing: 8) {
-                    Text(tier.headerLabel)
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(Color.lavaShellCream)
+                    ZStack(alignment: .leading) {
+                        Text("Daily schedule")
+                            .opacity(dailyTierHeaderOpacity)
+                        Text("Minute-by-minute")
+                            .opacity(minuteTierHeaderOpacity)
+                    }
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(Color.lavaShellCream)
+                    .animation(isPinchZoomActive ? nil : .smooth(duration: 0.28), value: effectiveScale)
                     Spacer()
                     if tier.supportsPinchZoom {
                         Text(String(format: "%.1fx", effectiveScale))
                             .font(.caption2.monospacedDigit())
                             .foregroundStyle(Color.lavaShellCreamSecondary)
+                            .contentTransition(.numericText())
+                            .animation(isPinchZoomActive ? nil : .smooth(duration: 0.28), value: effectiveScale)
                     }
                 }
             }
@@ -278,7 +486,13 @@ struct ProviderZoomableScheduleCanvas: View {
                 canvasContent(in: viewportSize)
                     .frame(minWidth: viewportSize.width, alignment: .topLeading)
             }
-            .scrollDisabled(editingMoveBookingID != nil)
+            .scrollPosition($timelineScrollPosition)
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentOffset.y
+            } action: { _, newValue in
+                guard !isPinchZoomActive else { return }
+                timelineScrollOffsetY = newValue
+            }
             .contentShape(Rectangle())
         }
     }
@@ -303,6 +517,7 @@ struct ProviderZoomableScheduleCanvas: View {
                     viewportSize: size,
                     startMinute: timelineStartMinute,
                     endMinute: timelineEndMinute,
+                    dayAvailabilityIntervals: weekDayAvailabilityIntervals,
                     onDayTap: onWeekDayTap,
                     onBookingTap: onBookingTap
                 )
@@ -313,6 +528,7 @@ struct ProviderZoomableScheduleCanvas: View {
                     day: selectedDay,
                     appointments: appointments,
                     scale: effectiveScale,
+                    isPinchZoomActive: isPinchZoomActive,
                     startMinute: timelineStartMinute,
                     endMinute: timelineEndMinute,
                     availabilityIntervals: availabilityIntervals,
@@ -320,34 +536,31 @@ struct ProviderZoomableScheduleCanvas: View {
                     blockTimeTapsEnabled: blockTimeTapsEnabled,
                     appointmentDragEnabled: appointmentDragEnabled,
                     editingMoveBookingID: $editingMoveBookingID,
+                    activeMoveDragBookingID: $activeMoveDragBookingID,
                     movePromptBooking: $movePromptBooking,
                     timeChangeProposal: $timeChangeProposal,
                     isApplyingTimeChange: isApplyingTimeChange,
                     onConfirmTimeChange: onConfirmTimeChange,
                     onMoveBookingRequested: onMoveBookingRequested,
                     onBookingTap: onBookingTap,
-                    onAvailableMinuteTap: onAvailableMinuteTap,
-                    onBookingTimeChangeProposed: onBookingTimeChangeProposed
+                    onAvailableMinuteTap: { minute in
+                        if editingMoveBookingID != nil {
+                            activeMoveDragBookingID = nil
+                        }
+                        onAvailableMinuteTap(minute)
+                    },
+                    onBookingTimeChangeProposed: onBookingTimeChangeProposed,
+                    onBookingDropScroll: scrollToRevealConfirmPrompt,
+                    viewportHeight: resolvedViewerBoxHeight,
+                    canScrollTimelineUp: canScrollTimelineUp,
+                    canScrollTimelineDown: canScrollTimelineDown,
+                    onScrollTimelineBy: applyTimelineEdgeScroll,
+                    currentScrollOffsetY: { timelineScrollOffsetY }
                 )
                 .frame(width: size.width)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: tier)
-    }
-
-    private var magnificationGesture: some Gesture {
-        MagnificationGesture()
-            .updating($dynamicGestureScale) { value, state, _ in
-                guard pinchZoomEnabled else { return }
-                let clamped = Self.clampToPinchZoomRange(zoomScale * value)
-                state = clamped / zoomScale
-            }
-            .onEnded { value in
-                guard pinchZoomEnabled else { return }
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
-                    zoomScale = Self.clampToPinchZoomRange(zoomScale * value)
-                }
-            }
+        .animation(isPinchZoomActive ? nil : .smooth(duration: 0.28), value: effectiveScale)
     }
 
     /// Keeps pinch zoom within day and minute tiers only.
@@ -356,17 +569,140 @@ struct ProviderZoomableScheduleCanvas: View {
             min(ProviderScheduleZoom.scaleMax, max(ProviderScheduleZoom.dayLower, scale))
         )
     }
+
+    private func clampedScrollMinute(_ minute: Int) -> Int {
+        min(max(minute, timelineStartMinute), max(timelineStartMinute, timelineEndMinute - 1))
+    }
+
+    private func performPendingDayScroll() async {
+        guard !isPerformingDayScroll else { return }
+        guard let bookingID = pendingScrollToBookingID else { return }
+        guard tier == .day || tier == .minute else { return }
+
+        isPerformingDayScroll = true
+        defer { isPerformingDayScroll = false }
+
+        for attempt in 0 ..< 8 {
+            let delayMs = attempt == 0 ? 450 : 120
+            try? await Task.sleep(for: .milliseconds(delayMs))
+            guard !Task.isCancelled else { return }
+            guard tier == .day || tier == .minute else { return }
+            guard pendingScrollToBookingID == bookingID else { return }
+
+            guard let appointment = appointments.first(where: { $0.id == bookingID }) else {
+                continue
+            }
+
+            let minute = clampedScrollMinute(appointment.startMinute)
+            let targetY = CGFloat(minute - timelineStartMinute) * dayTimelineVerticalScale + 8
+            let centeredY = max(0, targetY - resolvedViewerBoxHeight * 0.35)
+
+            withAnimation(.easeInOut(duration: 0.28)) {
+                timelineScrollPosition.scrollTo(y: centeredY)
+            }
+            pendingScrollToBookingID = nil
+            return
+        }
+
+        pendingScrollToBookingID = nil
+    }
 }
 
-private struct PinchZoomGestureModifier<G: Gesture>: ViewModifier {
-    let isEnabled: Bool
-    let gesture: G
+/// Attaches a UIKit pinch recognizer to the timeline scroll view without blocking taps or scroll.
+private struct ScheduleTimelinePinchZoomAttachment: UIViewRepresentable {
+    var isEnabled: Bool
+    var currentZoomScale: CGFloat
+    var clampZoom: (CGFloat) -> CGFloat
+    var onPinchBegan: (_ anchorYInViewport: CGFloat) -> Void
+    var onPinchChanged: (_ proposedEffectiveScale: CGFloat) -> Void
+    var onPinchEnded: (_ proposedEffectiveScale: CGFloat) -> Void
 
-    func body(content: Content) -> some View {
-        if isEnabled {
-            content.simultaneousGesture(gesture)
-        } else {
-            content
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.parent = self
+        context.coordinator.attachIfNeeded(from: uiView)
+    }
+
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var parent: ScheduleTimelinePinchZoomAttachment
+        weak var pinchRecognizer: UIPinchGestureRecognizer?
+        weak var wiredScrollView: UIScrollView?
+
+        private var pinchStartZoomScale: CGFloat = 1
+
+        init(parent: ScheduleTimelinePinchZoomAttachment) {
+            self.parent = parent
+        }
+
+        deinit {
+            detach()
+        }
+
+        func attachIfNeeded(from view: UIView) {
+            guard let scrollView = view.enclosingScrollView else { return }
+
+            if wiredScrollView !== scrollView {
+                detach()
+                let pinch = UIPinchGestureRecognizer(
+                    target: self,
+                    action: #selector(handlePinch(_:))
+                )
+                pinch.cancelsTouchesInView = false
+                pinch.delegate = self
+                scrollView.addGestureRecognizer(pinch)
+                pinchRecognizer = pinch
+                wiredScrollView = scrollView
+            }
+
+            pinchRecognizer?.isEnabled = parent.isEnabled
+        }
+
+        func detach() {
+            if let pinch = pinchRecognizer, let scrollView = wiredScrollView {
+                scrollView.removeGestureRecognizer(pinch)
+            }
+            pinchRecognizer = nil
+            wiredScrollView = nil
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            otherGestureRecognizer === wiredScrollView?.panGestureRecognizer
+        }
+
+        @objc func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
+            guard parent.isEnabled else { return }
+            guard let scrollView = recognizer.view as? UIScrollView ?? recognizer.view?.enclosingScrollView else { return }
+
+            switch recognizer.state {
+            case .began:
+                pinchStartZoomScale = parent.currentZoomScale
+                parent.onPinchBegan(recognizer.location(in: scrollView).y)
+            case .changed:
+                let proposed = parent.clampZoom(pinchStartZoomScale * recognizer.scale)
+                parent.onPinchChanged(proposed)
+            case .ended, .cancelled:
+                let proposed = parent.clampZoom(pinchStartZoomScale * recognizer.scale)
+                parent.onPinchEnded(proposed)
+            default:
+                break
+            }
         }
     }
 }
@@ -380,16 +716,11 @@ struct ScheduleAppointmentTimeChangeProposal: Identifiable {
     let proposedTime: Date
 }
 
-private enum ScheduleTimelineCoordinateSpace {
-    static let name = "scheduleTimelineCanvas"
-}
-
-private struct ScheduleAppointmentFrameKey: PreferenceKey {
-    static var defaultValue: [String: CGRect] = [:]
-
-    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { $1 })
-    }
+private enum ScheduleTimelineDragLayout {
+    static let contentVerticalPadding: CGFloat = 8
+    static let viewportEdgeInset: CGFloat = 4
+    /// Space reserved above a dropped booking so the confirm prompt stays visible.
+    static let confirmPromptClearance: CGFloat = 152
 }
 
 enum ScheduleAppointmentDrag {
@@ -410,11 +741,47 @@ enum ScheduleAppointmentDrag {
 
 // MARK: - Minute / day timeline
 
+private enum ScheduleTimelineZoomVisuals {
+    static let fineTickStep = 5
+
+    /// 30-minute labels — strongest at day zoom, fade out as minute detail appears.
+    static func majorTickLabelOpacity(scale: CGFloat) -> Double {
+        if scale <= 2.0 { return 1 }
+        if scale >= 3.4 { return 0 }
+        return Double(1 - (scale - 2.0) / 1.4)
+    }
+
+    /// 15-minute labels — bridge between coarse and fine ticks.
+    static func midTickLabelOpacity(scale: CGFloat) -> Double {
+        if scale <= 1.6 { return 0 }
+        if scale >= 2.2, scale <= 3.0 { return 1 }
+        if scale < 2.2 { return Double((scale - 1.6) / 0.6) }
+        return Double(1 - (scale - 3.0) / 0.8)
+    }
+
+    /// 5-minute labels — fade in for minute-by-minute density.
+    static func fineTickLabelOpacity(scale: CGFloat) -> Double {
+        if scale <= 2.6 { return 0 }
+        if scale >= 3.8 { return 1 }
+        return Double((scale - 2.6) / 1.2)
+    }
+
+    static func minorGridLineOpacity(scale: CGFloat) -> Double {
+        0.05 + 0.1 * fineTickLabelOpacity(scale: scale)
+    }
+
+    static func tickLabelFontSize(scale: CGFloat) -> CGFloat {
+        let t = min(1, max(0, (scale - 2.0) / 2.0))
+        return 10 - t
+    }
+}
+
 private struct SchedulePreciseTimelineCanvas: View {
     let calendar: Calendar
     let day: Date
     let appointments: [ScheduleCanvasAppointment]
     let scale: CGFloat
+    var isPinchZoomActive: Bool = false
     let startMinute: Int
     let endMinute: Int
     let availabilityIntervals: [BarberAvailabilityIntervalDTO]
@@ -422,6 +789,7 @@ private struct SchedulePreciseTimelineCanvas: View {
     let blockTimeTapsEnabled: Bool
     let appointmentDragEnabled: Bool
     @Binding var editingMoveBookingID: String?
+    @Binding var activeMoveDragBookingID: String?
     @Binding var movePromptBooking: SimpleBookingDTO?
     @Binding var timeChangeProposal: ScheduleAppointmentTimeChangeProposal?
     let isApplyingTimeChange: Bool
@@ -430,10 +798,12 @@ private struct SchedulePreciseTimelineCanvas: View {
     let onBookingTap: (SimpleBookingDTO) -> Void
     let onAvailableMinuteTap: (Int) -> Void
     let onBookingTimeChangeProposed: (SimpleBookingDTO, Date) -> Void
-
-    private var tickStep: Int {
-        scale >= 3.5 ? 5 : (scale >= 2.0 ? 15 : 30)
-    }
+    let onBookingDropScroll: (ScheduleCanvasAppointment, CGFloat) -> Void
+    let viewportHeight: CGFloat
+    let canScrollTimelineUp: () -> Bool
+    let canScrollTimelineDown: () -> Bool
+    let onScrollTimelineBy: (CGFloat) -> CGFloat
+    let currentScrollOffsetY: () -> CGFloat
 
     /// Points per minute for timeline layout; grows with pinch zoom and may exceed the viewer box height.
     private var verticalScale: CGFloat {
@@ -456,97 +826,22 @@ private struct SchedulePreciseTimelineCanvas: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            if editingMoveBookingID != nil, activeMoveDragBookingID != nil {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(maxWidth: .infinity)
+                    .frame(height: timelineHeight + 16)
+                    .onTapGesture {
+                        activeMoveDragBookingID = nil
+                    }
+            }
             availabilityBackground
             timeBlockOverlays
             tickMarks
             appointmentBlocks
         }
-        .coordinateSpace(name: ScheduleTimelineCoordinateSpace.name)
         .frame(height: timelineHeight)
         .padding(.vertical, 8)
-        .overlayPreferenceValue(ScheduleAppointmentFrameKey.self) { frames in
-            GeometryReader { proxy in
-                if let booking = movePromptBooking, let frame = frames[booking.id] {
-                    anchoredPrompt(
-                        title: "Change appointment time?",
-                        message: "You held this booking to reschedule. Drag it to an open slot, then confirm the new time.",
-                        primaryTitle: "Change time",
-                        secondaryTitle: "Cancel",
-                        isPrimaryDisabled: false,
-                        targetFrame: frame,
-                        in: proxy.size
-                    ) {
-                        editingMoveBookingID = booking.id
-                        movePromptBooking = nil
-                    } onSecondary: {
-                        movePromptBooking = nil
-                    }
-                }
-
-                if let proposal = timeChangeProposal, let frame = frames[proposal.booking.id] {
-                    let fromTime = proposal.originalTime.formatted(date: .omitted, time: .shortened)
-                    let toTime = proposal.proposedTime.formatted(date: .omitted, time: .shortened)
-                    anchoredPrompt(
-                        title: "Confirm time change",
-                        message: "Move \(proposal.booking.consumerDisplayName)'s \(proposal.booking.serviceDisplayName) from \(fromTime) to \(toTime)?",
-                        primaryTitle: isApplyingTimeChange ? "Saving…" : "Confirm",
-                        secondaryTitle: "Cancel",
-                        isPrimaryDisabled: isApplyingTimeChange,
-                        targetFrame: frame,
-                        in: proxy.size
-                    ) {
-                        onConfirmTimeChange()
-                    } onSecondary: {
-                        timeChangeProposal = nil
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func anchoredPrompt(
-        title: String,
-        message: String,
-        primaryTitle: String,
-        secondaryTitle: String,
-        isPrimaryDisabled: Bool,
-        targetFrame: CGRect,
-        in containerSize: CGSize,
-        onPrimary: @escaping () -> Void,
-        onSecondary: @escaping () -> Void
-    ) -> some View {
-        let cardWidth = min(280, max(180, containerSize.width - 72))
-        let showAbove = targetFrame.minY > 118
-        let anchorX = min(max(targetFrame.midX, cardWidth / 2 + 12), containerSize.width - cardWidth / 2 - 12)
-
-        VStack(spacing: 0) {
-            if !showAbove {
-                ScheduleAppointmentPromptArrow(pointingUp: true)
-            }
-
-            ScheduleAnchoredAppointmentPromptCard(
-                title: title,
-                message: message,
-                primaryTitle: primaryTitle,
-                secondaryTitle: secondaryTitle,
-                isPrimaryDisabled: isPrimaryDisabled,
-                onPrimary: onPrimary,
-                onSecondary: onSecondary
-            )
-            .frame(width: cardWidth)
-
-            if showAbove {
-                ScheduleAppointmentPromptArrow(pointingUp: false)
-            }
-        }
-        .position(
-            x: anchorX,
-            y: showAbove
-                ? targetFrame.minY - 58
-                : targetFrame.maxY + 58
-        )
-        .zIndex(20)
     }
 
     private var availabilityBackground: some View {
@@ -595,98 +890,341 @@ private struct SchedulePreciseTimelineCanvas: View {
 
     private var tickMarks: some View {
         VStack(spacing: 0) {
-            ForEach(Array(stride(from: startMinute, to: endMinute, by: tickStep)), id: \.self) { minute in
-                HStack(alignment: .top, spacing: 6) {
-                    Text(formatMinuteLabel(minute))
-                        .font(.system(size: scale >= 3.5 ? 9 : 10))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
-                        .frame(width: 52, alignment: .trailing)
-                    Rectangle()
-                        .fill(Color.lavaShellCreamTertiary.opacity(0.35))
-                        .frame(height: 0.5)
-                }
-                .frame(height: CGFloat(tickStep) * verticalScale, alignment: .top)
+            ForEach(
+                Array(stride(from: startMinute, to: endMinute, by: ScheduleTimelineZoomVisuals.fineTickStep)),
+                id: \.self
+            ) { minute in
+                tickRow(for: minute)
             }
         }
+        .animation(isPinchZoomActive ? nil : .smooth(duration: 0.28), value: scale)
+    }
+
+    private func tickRow(for minute: Int) -> some View {
+        let presentation = tickPresentation(for: minute)
+        let rowHeight = CGFloat(ScheduleTimelineZoomVisuals.fineTickStep) * verticalScale
+
+        return HStack(alignment: .top, spacing: 6) {
+            Group {
+                if let label = presentation.label {
+                    Text(label)
+                        .opacity(presentation.labelOpacity)
+                } else {
+                    Text(" ")
+                        .opacity(0)
+                }
+            }
+            .font(.system(size: ScheduleTimelineZoomVisuals.tickLabelFontSize(scale: scale)))
+            .foregroundStyle(Color.lavaShellCreamSecondary)
+            .frame(width: 52, alignment: .trailing)
+
+            Rectangle()
+                .fill(Color.lavaShellCreamTertiary.opacity(presentation.lineOpacity))
+                .frame(height: 0.5)
+        }
+        .frame(height: rowHeight, alignment: .top)
+    }
+
+    private struct TickPresentation {
+        let label: String?
+        let labelOpacity: Double
+        let lineOpacity: Double
+    }
+
+    private func tickPresentation(for minute: Int) -> TickPresentation {
+        let majorOpacity = ScheduleTimelineZoomVisuals.majorTickLabelOpacity(scale: scale)
+        let midOpacity = ScheduleTimelineZoomVisuals.midTickLabelOpacity(scale: scale)
+        let fineOpacity = ScheduleTimelineZoomVisuals.fineTickLabelOpacity(scale: scale)
+        let minorLine = ScheduleTimelineZoomVisuals.minorGridLineOpacity(scale: scale)
+
+        if minute % 30 == 0, majorOpacity > 0.04 {
+            return TickPresentation(
+                label: formatMinuteLabel(minute),
+                labelOpacity: majorOpacity,
+                lineOpacity: 0.16 + 0.24 * majorOpacity
+            )
+        }
+
+        if minute % 15 == 0, midOpacity > 0.04 {
+            return TickPresentation(
+                label: formatMinuteLabel(minute),
+                labelOpacity: midOpacity,
+                lineOpacity: 0.12 + 0.2 * midOpacity
+            )
+        }
+
+        if minute % 5 == 0, fineOpacity > 0.04 {
+            return TickPresentation(
+                label: formatMinuteLabel(minute),
+                labelOpacity: fineOpacity,
+                lineOpacity: 0.08 + 0.16 * fineOpacity
+            )
+        }
+
+        return TickPresentation(label: nil, labelOpacity: 0, lineOpacity: minorLine)
     }
 
     private var appointmentBlocks: some View {
         ForEach(appointments) { app in
-            let top = CGFloat(app.startMinute - startMinute) * verticalScale
-            let height = max(4, CGFloat(app.durationMinutes) * verticalScale)
-            let canMove = appointmentDragEnabled && ScheduleAppointmentDrag.isDraggable(app.booking)
-            let isEditing = editingMoveBookingID == app.id
+            appointmentBlock(for: app)
+        }
+    }
 
-            ScheduleDraggableAppointmentBlock(
-                top: top,
-                height: height,
-                isEditing: isEditing,
-                canRequestMove: canMove && editingMoveBookingID == nil,
-                onTap: {
-                    guard editingMoveBookingID == nil else { return }
-                    onBookingTap(app.booking)
-                },
-                onMoveRequested: { onMoveBookingRequested(app.booking) },
-                onDragEnded: { translationY in
-                    handleAppointmentDragEnded(app: app, translationY: translationY)
+    @ViewBuilder
+    private func appointmentBlock(for app: ScheduleCanvasAppointment) -> some View {
+        let top = CGFloat(app.startMinute - startMinute) * verticalScale
+        let height = max(4, CGFloat(app.durationMinutes) * verticalScale)
+        let canMove = appointmentDragEnabled && ScheduleAppointmentDrag.isDraggable(app.booking)
+        let isMoveSession = editingMoveBookingID == app.id
+        let isDragActive = activeMoveDragBookingID == app.id
+        let isParked = isMoveSession && !isDragActive
+        let allowedStart = allowedDragStartMinuteRange(for: app)
+        let minDragOffsetY = CGFloat(allowedStart.minStart - app.startMinute) * verticalScale
+        let maxDragOffsetY = CGFloat(allowedStart.maxStart - app.startMinute) * verticalScale
+
+        ScheduleDraggableAppointmentBlock(
+            top: top,
+            height: height,
+            appointmentID: app.booking.id,
+            isMoveSession: isMoveSession,
+            isDragActive: isDragActive,
+            canRequestMove: canMove && editingMoveBookingID == nil,
+            hasActivePrompt: movePromptBooking?.id == app.booking.id
+                || timeChangeProposal?.booking.id == app.booking.id,
+            minDragOffsetY: minDragOffsetY,
+            maxDragOffsetY: maxDragOffsetY,
+            snapDragOffset: { totalOffsetY in
+                clampedDragOffsetY(for: app, totalOffsetY: totalOffsetY, snapToGrid: true)
+            },
+            liveClampDragOffset: { totalOffsetY in
+                liveClampedDragOffsetY(
+                    for: app,
+                    top: top,
+                    height: height,
+                    totalOffsetY: totalOffsetY
+                )
+            },
+            shouldAllowEdgeScroll: { direction, totalOffsetY in
+                shouldAllowEdgeScroll(
+                    direction: direction,
+                    for: app,
+                    top: top,
+                    height: height,
+                    minDragOffsetY: minDragOffsetY,
+                    maxDragOffsetY: maxDragOffsetY,
+                    totalOffsetY: totalOffsetY
+                )
+            },
+            viewportHeight: viewportHeight,
+            canScrollTimelineUp: canScrollTimelineUp,
+            canScrollTimelineDown: canScrollTimelineDown,
+            onScrollTimelineBy: onScrollTimelineBy,
+            currentScrollOffsetY: currentScrollOffsetY,
+            onTap: {
+                if let editingID = editingMoveBookingID {
+                    if app.id == editingID {
+                        timeChangeProposal = nil
+                        activeMoveDragBookingID = app.id
+                    } else {
+                        activeMoveDragBookingID = nil
+                    }
+                    return
                 }
-            ) {
-                HStack(spacing: 0) {
-                    Spacer().frame(width: 52)
-                    appointmentBlockContent(
-                        for: app,
-                        blockHeight: height,
-                        isEditing: isEditing,
-                        canRequestMove: canMove && editingMoveBookingID == nil
+                onBookingTap(app.booking)
+            },
+            onMoveRequested: { onMoveBookingRequested(app.booking) },
+            onDragEnded: { totalOffsetY in
+                handleAppointmentDragEnded(app: app, totalOffsetY: totalOffsetY)
+            }
+        ) {
+            HStack(spacing: 0) {
+                Spacer().frame(width: 52)
+                appointmentBlockContent(
+                    for: app,
+                    blockHeight: height,
+                    isMoveSession: isMoveSession,
+                    isDragActive: isDragActive,
+                    canRequestMove: canMove && editingMoveBookingID == nil
+                )
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .background(appointmentColor(for: app.booking, isDragActive: isDragActive, isParked: isParked))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay {
+                        if isDragActive {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(Color.providerOlive.opacity(0.95), lineWidth: 2)
+                        } else if isParked {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(Color.lavaShellCreamSecondary.opacity(0.55), lineWidth: 2)
+                        }
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } promptOverlay: {
+            if let booking = movePromptBooking, booking.id == app.booking.id {
+                ScheduleBookingAbovePromptAnchor {
+                    ScheduleAnchoredAppointmentPromptCard(
+                        title: "Change appointment time?",
+                        message: "You held this booking to reschedule. Drag it to an open slot, then confirm the new time.",
+                        primaryTitle: "Change time",
+                        secondaryTitle: "Cancel",
+                        isPrimaryDisabled: false,
+                        onPrimary: {
+                            timeChangeProposal = nil
+                            editingMoveBookingID = booking.id
+                            activeMoveDragBookingID = booking.id
+                            movePromptBooking = nil
+                        },
+                        onSecondary: {
+                            movePromptBooking = nil
+                        }
                     )
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                        .background(appointmentColor(for: app.booking, isEditing: isEditing))
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .overlay {
-                            if isEditing {
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .strokeBorder(Color.providerOlive.opacity(0.95), lineWidth: 2)
-                            }
-                        }
-                        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .background {
-                            GeometryReader { geo in
-                                Color.clear.preference(
-                                    key: ScheduleAppointmentFrameKey.self,
-                                    value: [
-                                        app.id: geo.frame(in: .named(ScheduleTimelineCoordinateSpace.name))
-                                    ]
-                                )
-                            }
-                        }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            } else if let proposal = timeChangeProposal, proposal.booking.id == app.booking.id {
+                let fromTime = proposal.originalTime.formatted(date: .omitted, time: .shortened)
+                let toTime = proposal.proposedTime.formatted(date: .omitted, time: .shortened)
+                ScheduleBookingAbovePromptAnchor {
+                    ScheduleAnchoredAppointmentPromptCard(
+                        title: "Confirm time change",
+                        message: "Move \(proposal.booking.consumerDisplayName)'s \(proposal.booking.serviceDisplayName) from \(fromTime) to \(toTime)?",
+                        primaryTitle: isApplyingTimeChange ? "Saving…" : "Confirm",
+                        secondaryTitle: "Cancel",
+                        isPrimaryDisabled: isApplyingTimeChange,
+                        onPrimary: onConfirmTimeChange,
+                        onSecondary: {
+                            timeChangeProposal = nil
+                            editingMoveBookingID = nil
+                            activeMoveDragBookingID = nil
+                        }
+                    )
+                }
             }
         }
     }
 
-    private func handleAppointmentDragEnded(app: ScheduleCanvasAppointment, translationY: CGFloat) {
-        guard abs(translationY) > 4 else { return }
+    /// Latest/earliest start times derived from the provider's availability windows.
+    private func allowedDragStartMinuteRange(for app: ScheduleCanvasAppointment) -> (minStart: Int, maxStart: Int) {
+        let timelineMin = startMinute
+        let timelineMax = max(startMinute, endMinute - app.durationMinutes)
 
-        let deltaMinutes = Int((translationY / verticalScale).rounded())
-        let rawProposed = app.startMinute + deltaMinutes
-        let snapped = ScheduleAppointmentDrag.snapMinute(rawProposed, step: dragSnapStep)
-        let clampedStart = min(
-            max(snapped, startMinute),
-            max(startMinute, endMinute - app.durationMinutes)
+        guard !availabilityIntervals.isEmpty else {
+            return (timelineMin, timelineMax)
+        }
+
+        var minStart = Int.max
+        var maxStart = Int.min
+        for interval in availabilityIntervals {
+            let intervalStart = minutesFromHHMM(interval.start)
+            let intervalEnd = minutesFromHHMM(interval.end)
+            guard intervalEnd - intervalStart >= app.durationMinutes else { continue }
+            minStart = min(minStart, intervalStart)
+            maxStart = max(maxStart, intervalEnd - app.durationMinutes)
+        }
+
+        guard minStart <= maxStart else {
+            return (timelineMin, timelineMax)
+        }
+
+        return (max(minStart, timelineMin), min(maxStart, timelineMax))
+    }
+
+    private func visibleDragOffsetRange(top: CGFloat, height: CGFloat) -> (min: CGFloat, max: CGFloat) {
+        let scrollY = currentScrollOffsetY()
+        let padding = ScheduleTimelineDragLayout.contentVerticalPadding
+        let inset = ScheduleTimelineDragLayout.viewportEdgeInset
+        let minOffset = scrollY - padding - top + inset
+        let maxOffset = scrollY + viewportHeight - height - padding - top - inset
+        return (minOffset, max(maxOffset, minOffset))
+    }
+
+    private func liveClampedDragOffsetY(
+        for app: ScheduleCanvasAppointment,
+        top: CGFloat,
+        height: CGFloat,
+        totalOffsetY: CGFloat
+    ) -> CGFloat {
+        let availabilityClamped = clampedDragOffsetY(
+            for: app,
+            totalOffsetY: totalOffsetY,
+            snapToGrid: false
         )
+        let visible = visibleDragOffsetRange(top: top, height: height)
+        return min(max(availabilityClamped, visible.min), visible.max)
+    }
 
-        guard clampedStart != app.startMinute else { return }
-        guard isOpenSlot(
-            startMinute: clampedStart,
-            durationMinutes: app.durationMinutes,
-            excludingAppointmentID: app.id
-        ) else { return }
-        guard let proposedDate = scheduledDate(on: day, totalMinutes: clampedStart) else { return }
+    private func shouldAllowEdgeScroll(
+        direction: CGFloat,
+        for app: ScheduleCanvasAppointment,
+        top: CGFloat,
+        height: CGFloat,
+        minDragOffsetY: CGFloat,
+        maxDragOffsetY: CGFloat,
+        totalOffsetY: CGFloat
+    ) -> Bool {
+        let availabilityClamped = clampedDragOffsetY(
+            for: app,
+            totalOffsetY: totalOffsetY,
+            snapToGrid: false
+        )
+        let scrollY = currentScrollOffsetY()
+        let padding = ScheduleTimelineDragLayout.contentVerticalPadding
+        let inset = ScheduleTimelineDragLayout.viewportEdgeInset
 
+        if direction > 0, availabilityClamped >= maxDragOffsetY - 1 {
+            let viewportTop = padding + top + availabilityClamped - scrollY
+            if viewportTop <= padding + inset + 1 {
+                return false
+            }
+        }
+
+        if direction < 0, availabilityClamped <= minDragOffsetY + 1 {
+            let viewportBottom = padding + top + availabilityClamped - scrollY + height
+            if viewportBottom >= viewportHeight - padding - inset - 1 {
+                return false
+            }
+        }
+
+        return true
+    }
+
+    private func clampedDragOffsetY(
+        for app: ScheduleCanvasAppointment,
+        totalOffsetY: CGFloat,
+        snapToGrid: Bool
+    ) -> CGFloat {
+        let rawProposedMinute = CGFloat(app.startMinute) + (totalOffsetY / verticalScale)
+        let proposedMinute: CGFloat
+        if snapToGrid {
+            let snapped = ScheduleAppointmentDrag.snapMinute(
+                Int(rawProposedMinute.rounded()),
+                step: dragSnapStep
+            )
+            proposedMinute = CGFloat(snapped)
+        } else {
+            proposedMinute = rawProposedMinute
+        }
+
+        let allowed = allowedDragStartMinuteRange(for: app)
+        let clampedStart = min(
+            max(proposedMinute, CGFloat(allowed.minStart)),
+            CGFloat(allowed.maxStart)
+        )
+        return (clampedStart - CGFloat(app.startMinute)) * verticalScale
+    }
+
+    @discardableResult
+    private func handleAppointmentDragEnded(app: ScheduleCanvasAppointment, totalOffsetY: CGFloat) -> Bool {
+        let clampedOffsetY = clampedDragOffsetY(for: app, totalOffsetY: totalOffsetY, snapToGrid: true)
+        let clampedStart = app.startMinute + Int((clampedOffsetY / verticalScale).rounded())
+        guard let proposedDate = scheduledDate(on: day, totalMinutes: clampedStart) else { return false }
+
+        activeMoveDragBookingID = nil
+        onBookingDropScroll(app, clampedOffsetY)
         onBookingTimeChangeProposed(app.booking, proposedDate)
+        return true
     }
 
     private func isOpenSlot(startMinute: Int, durationMinutes: Int, excludingAppointmentID: String) -> Bool {
@@ -724,17 +1262,23 @@ private struct SchedulePreciseTimelineCanvas: View {
     private func appointmentBlockContent(
         for app: ScheduleCanvasAppointment,
         blockHeight: CGFloat,
-        isEditing: Bool,
+        isMoveSession: Bool,
+        isDragActive: Bool,
         canRequestMove: Bool
     ) -> some View {
         let booking = app.booking
         let detailLevel = appointmentDetailLevel(for: blockHeight)
 
         VStack(alignment: .center, spacing: detailLineSpacing(for: detailLevel)) {
-            if isEditing {
+            if isDragActive {
                 Label("Drag to move", systemImage: "arrow.up.and.down")
                     .font(.system(size: min(12, detailFontSize(for: blockHeight) + 1), weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
+                    .allowsHitTesting(false)
+            } else if isMoveSession {
+                Label("Tap to drag again", systemImage: "hand.tap")
+                    .font(.system(size: min(12, detailFontSize(for: blockHeight) + 1), weight: .semibold))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
                     .allowsHitTesting(false)
             } else if canRequestMove, blockHeight >= 34 {
                 appointmentInteractionHint(blockHeight: blockHeight)
@@ -935,7 +1479,11 @@ private struct SchedulePreciseTimelineCanvas: View {
         return trimmed
     }
 
-    private func appointmentColor(for booking: SimpleBookingDTO, isEditing: Bool) -> Color {
+    private func appointmentColor(for booking: SimpleBookingDTO, isDragActive: Bool, isParked: Bool) -> Color {
+        if isParked {
+            return Color.lavaShellCreamSecondary.opacity(0.24)
+        }
+
         let base: Color
         if ProviderBookingStatusDisplay.isScheduleCompleted(status: booking.status) {
             base = Color.green.opacity(0.32)
@@ -944,7 +1492,7 @@ private struct SchedulePreciseTimelineCanvas: View {
         } else {
             base = Color.providerScheduleCardFill
         }
-        if isEditing {
+        if isDragActive {
             return base.opacity(0.92)
         }
         return base
@@ -1021,7 +1569,7 @@ private struct ScheduleAnchoredAppointmentPromptCard: View {
         .padding(12)
         .background {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.providerScheduleCardFill)
+                .fill(Color.providerSchedulePromptCardFill)
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(Color.providerOlive.opacity(0.55), lineWidth: 1)
@@ -1037,33 +1585,77 @@ private struct ScheduleAppointmentPromptArrow: View {
     var body: some View {
         Image(systemName: pointingUp ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
             .font(.system(size: 11, weight: .bold))
-            .foregroundStyle(Color.providerScheduleCardFill)
+            .foregroundStyle(Color.providerSchedulePromptCardFill)
             .shadow(color: Color.black.opacity(0.18), radius: 2, y: 1)
     }
 }
 
-private enum ScheduleAppointmentInteraction {
-    static let moveHoldDuration = 0.55
-    static let moveHoldMaxDistance: CGFloat = 10
-}
+// MARK: - Appointment move / confirm prompts (anchored on booking)
 
-private struct ScheduleDraggableAppointmentBlock<Content: View>: View {
-    let top: CGFloat
-    let height: CGFloat
-    let isEditing: Bool
-    let canRequestMove: Bool
-    let onTap: () -> Void
-    let onMoveRequested: () -> Void
-    let onDragEnded: (CGFloat) -> Void
+/// Positions a prompt card directly above its booking block in local coordinates.
+private struct ScheduleBookingAbovePromptAnchor<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
-    @GestureState private var dragTranslationY: CGFloat = 0
+    var body: some View {
+        GeometryReader { geo in
+            let cardWidth = min(280, max(180, geo.size.width + 120))
+            VStack(spacing: 0) {
+                content()
+                    .frame(width: cardWidth)
+                ScheduleAppointmentPromptArrow(pointingUp: false)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .position(x: geo.size.width / 2, y: 0)
+            .offset(y: -72)
+        }
+        .allowsHitTesting(true)
+    }
+}
+
+private enum ScheduleAppointmentInteraction {
+    static let moveHoldDuration = 0.25
+    static let moveHoldMaxDistance: CGFloat = 10
+    /// Delay before hold feedback appears so quick taps stay visually neutral.
+    static var moveHoldHighlightDelay: Double { moveHoldDuration * 0.42 }
+}
+
+private struct ScheduleDraggableAppointmentBlock<Content: View, PromptOverlay: View>: View {
+    let top: CGFloat
+    let height: CGFloat
+    let appointmentID: String
+    let isMoveSession: Bool
+    let isDragActive: Bool
+    let canRequestMove: Bool
+    let hasActivePrompt: Bool
+    let minDragOffsetY: CGFloat
+    let maxDragOffsetY: CGFloat
+    let snapDragOffset: (CGFloat) -> CGFloat
+    let liveClampDragOffset: (CGFloat) -> CGFloat
+    let shouldAllowEdgeScroll: (CGFloat, CGFloat) -> Bool
+    let viewportHeight: CGFloat
+    let canScrollTimelineUp: () -> Bool
+    let canScrollTimelineDown: () -> Bool
+    let onScrollTimelineBy: (CGFloat) -> CGFloat
+    let currentScrollOffsetY: () -> CGFloat
+    let onTap: () -> Void
+    let onMoveRequested: () -> Void
+    let onDragEnded: (CGFloat) -> Bool
+    @ViewBuilder let content: () -> Content
+    @ViewBuilder let promptOverlay: () -> PromptOverlay
+
+    @State private var liveDragOffsetY: CGFloat = 0
+    @State private var persistedOffsetY: CGFloat = 0
+    @State private var isPanActive = false
     @State private var isPressingForMove = false
     @State private var suppressNextTap = false
     @State private var pressBeganAt: Date?
 
+    private var dragDeltaY: CGFloat {
+        persistedOffsetY + liveDragOffsetY
+    }
+
     private var displayTop: CGFloat {
-        top + (isEditing ? dragTranslationY : 0)
+        top + dragDeltaY
     }
 
     var body: some View {
@@ -1071,7 +1663,31 @@ private struct ScheduleDraggableAppointmentBlock<Content: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: height)
             .overlay {
-                interactionOverlay
+                if isDragActive {
+                    ScheduleUIKitVerticalDragOverlay(
+                        onChanged: handleDragChanged,
+                        onEnded: handleDragEnded,
+                        onInteractionReset: handleDragInteractionReset,
+                        viewportHeight: viewportHeight,
+                        canScrollTimelineUp: canScrollTimelineUp,
+                        canScrollTimelineDown: canScrollTimelineDown,
+                        onScrollTimelineBy: onScrollTimelineBy,
+                        currentScrollOffsetY: currentScrollOffsetY,
+                        shouldAllowEdgeScroll: { direction, translationY in
+                            shouldAllowEdgeScroll(
+                                direction,
+                                persistedOffsetY + translationY
+                            )
+                        }
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if isMoveSession {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: onTap)
+                } else {
+                    interactionOverlay
+                }
             }
             .overlay {
                 if isPressingForMove {
@@ -1080,35 +1696,80 @@ private struct ScheduleDraggableAppointmentBlock<Content: View>: View {
                         .allowsHitTesting(false)
                 }
             }
+            .overlay {
+                if hasActivePrompt {
+                    promptOverlay()
+                }
+            }
             .offset(y: displayTop)
-            .zIndex(isEditing ? 3 : (isPressingForMove ? 2 : 0))
+            .zIndex(hasActivePrompt ? 50 : (isDragActive ? 3 : (isMoveSession ? 2 : (isPressingForMove ? 2 : 0))))
             .scaleEffect(scaleForInteractionState)
             .shadow(
-                color: Color.black.opacity(isEditing ? 0.32 : (isPressingForMove ? 0.18 : 0)),
-                radius: isEditing ? 10 : (isPressingForMove ? 6 : 0),
-                y: isEditing ? 5 : (isPressingForMove ? 3 : 0)
+                color: Color.black.opacity(isDragActive ? 0.32 : (isPressingForMove ? 0.18 : 0)),
+                radius: isDragActive ? 10 : (isPressingForMove ? 6 : 0),
+                y: isDragActive ? 5 : (isPressingForMove ? 3 : 0)
             )
-            .animation(.spring(response: 0.28, dampingFraction: 0.82), value: isEditing)
-            .animation(.easeInOut(duration: 0.12), value: isPressingForMove)
+            .transaction { transaction in
+                if isPanActive {
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
+            }
+            .animation(isMoveSession || isPanActive ? nil : .spring(response: 0.26, dampingFraction: 0.84), value: isMoveSession)
+            .animation(isMoveSession ? nil : .easeInOut(duration: 0.12), value: isPressingForMove)
+            .onChange(of: isMoveSession) { _, inSession in
+                if !inSession {
+                    persistedOffsetY = 0
+                    liveDragOffsetY = 0
+                    isPanActive = false
+                }
+            }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityLabel)
             .accessibilityHint(accessibilityHint)
-            .accessibilityAddTraits(isEditing ? .isSelected : .isButton)
+            .accessibilityAddTraits(isMoveSession ? .isSelected : .isButton)
+    }
+
+    private func handleDragChanged(_ translationY: CGFloat) {
+        if !isPanActive {
+            isPanActive = true
+        }
+        let totalOffsetY = persistedOffsetY + translationY
+        let clampedTotal = liveClampDragOffset(totalOffsetY)
+        liveDragOffsetY = clampedTotal - persistedOffsetY
+    }
+
+    private func handleDragInteractionReset() {
+        guard !isPanActive else { return }
+        liveDragOffsetY = 0
+    }
+
+    private func handleDragEnded(_ translationY: CGFloat) {
+        isPanActive = false
+        let totalOffsetY = persistedOffsetY + translationY
+        liveDragOffsetY = 0
+
+        let snappedTotal = snapDragOffset(totalOffsetY)
+        if onDragEnded(snappedTotal) {
+            persistedOffsetY = snappedTotal
+        }
     }
 
     private var scaleForInteractionState: CGFloat {
-        if isEditing { return 1.03 }
+        if isDragActive { return 1.03 }
         if isPressingForMove { return 0.98 }
         return 1
     }
 
     private var accessibilityLabel: String {
-        if isEditing { return "Moving appointment. Drag to a new time." }
+        if isDragActive { return "Moving appointment. Drag to a new time." }
+        if isMoveSession { return "Appointment selected for rescheduling. Tap to drag again." }
         return "Appointment"
     }
 
     private var accessibilityHint: String {
-        if isEditing { return "Drag vertically to choose a new time slot." }
+        if isDragActive { return "Drag vertically to choose a new time slot." }
+        if isMoveSession { return "Tap this booking to drag it again, or tap elsewhere on the schedule to inspect other times." }
         if canRequestMove { return "Tap for booking details. Hold to change the appointment time." }
         return "Tap for booking details."
     }
@@ -1117,9 +1778,8 @@ private struct ScheduleDraggableAppointmentBlock<Content: View>: View {
     private var interactionOverlay: some View {
         Color.clear
             .contentShape(Rectangle())
-            .gesture(isEditing ? editingDragGesture : nil)
             .modifier(StaticAppointmentInteractionModifier(
-                isEnabled: !isEditing,
+                isEnabled: !isMoveSession,
                 canRequestMove: canRequestMove,
                 moveHoldDuration: ScheduleAppointmentInteraction.moveHoldDuration,
                 moveHoldMaxDistance: ScheduleAppointmentInteraction.moveHoldMaxDistance,
@@ -1133,16 +1793,320 @@ private struct ScheduleDraggableAppointmentBlock<Content: View>: View {
                 }
             ))
     }
+}
 
-    /// Editing mode: simple vertical drag without fighting the scroll view.
-    private var editingDragGesture: some Gesture {
-        DragGesture(minimumDistance: 4)
-            .updating($dragTranslationY) { value, state, _ in
-                state = value.translation.height
+/// UIKit pan avoids SwiftUI `DragGesture` fighting `ScrollView` + `.offset` during reschedule drags.
+private struct ScheduleUIKitVerticalDragOverlay: UIViewRepresentable {
+    var onChanged: (CGFloat) -> Void
+    var onEnded: (CGFloat) -> Void
+    var onInteractionReset: () -> Void
+    var viewportHeight: CGFloat
+    var canScrollTimelineUp: () -> Bool
+    var canScrollTimelineDown: () -> Bool
+    var onScrollTimelineBy: (CGFloat) -> CGFloat
+    var currentScrollOffsetY: () -> CGFloat
+    var shouldAllowEdgeScroll: (CGFloat, CGFloat) -> Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            onChanged: onChanged,
+            onEnded: onEnded,
+            onInteractionReset: onInteractionReset,
+            viewportHeight: viewportHeight,
+            canScrollTimelineUp: canScrollTimelineUp,
+            canScrollTimelineDown: canScrollTimelineDown,
+            onScrollTimelineBy: onScrollTimelineBy,
+            currentScrollOffsetY: currentScrollOffsetY,
+            shouldAllowEdgeScroll: shouldAllowEdgeScroll
+        )
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.isMultipleTouchEnabled = false
+        view.isUserInteractionEnabled = true
+
+        let pan = UIPanGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handlePan(_:))
+        )
+        pan.maximumNumberOfTouches = 1
+        pan.cancelsTouchesInView = true
+        pan.delaysTouchesBegan = false
+        pan.delaysTouchesEnded = false
+        pan.delegate = context.coordinator
+        view.addGestureRecognizer(pan)
+        context.coordinator.panRecognizer = pan
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.onChanged = onChanged
+        context.coordinator.onEnded = onEnded
+        context.coordinator.onInteractionReset = onInteractionReset
+        context.coordinator.viewportHeight = viewportHeight
+        context.coordinator.canScrollTimelineUp = canScrollTimelineUp
+        context.coordinator.canScrollTimelineDown = canScrollTimelineDown
+        context.coordinator.onScrollTimelineBy = onScrollTimelineBy
+        context.coordinator.currentScrollOffsetY = currentScrollOffsetY
+        context.coordinator.shouldAllowEdgeScroll = shouldAllowEdgeScroll
+        context.coordinator.configureScrollViewInteraction(for: uiView)
+    }
+
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        coordinator.teardownScrollViewInteraction()
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var onChanged: (CGFloat) -> Void
+        var onEnded: (CGFloat) -> Void
+        var onInteractionReset: () -> Void
+        var viewportHeight: CGFloat
+        var canScrollTimelineUp: () -> Bool
+        var canScrollTimelineDown: () -> Bool
+        var onScrollTimelineBy: (CGFloat) -> CGFloat
+        var currentScrollOffsetY: () -> CGFloat
+        var shouldAllowEdgeScroll: (CGFloat, CGFloat) -> Bool
+        weak var panRecognizer: UIPanGestureRecognizer?
+
+        private var edgeScrollDisplayLink: CADisplayLink?
+        private var edgeScrollIntensity: CGFloat = 0
+        private weak var edgeScrollTarget: UIScrollView?
+        private weak var edgeScrollRecognizer: UIPanGestureRecognizer?
+        private weak var wiredScrollView: UIScrollView?
+        private var scrollOffsetObservation: NSKeyValueObservation?
+        private var dragStartFingerViewportY: CGFloat?
+        private var dragStartScrollOffsetY: CGFloat?
+
+        private let edgeThreshold: CGFloat = 72
+        /// Points per second at intensity 1.0 — scales up as the finger pushes further into the edge.
+        private let maxEdgeScrollPointsPerSecond: CGFloat = 160
+        /// Up to ~2.25× base speed when the finger is pushed well past the viewport edge.
+        private let maxEdgeScrollIntensity: CGFloat = 2.25
+
+        private func edgeScrollIntensity(fingerY: CGFloat, visibleHeight: CGFloat) -> CGFloat {
+            if fingerY < edgeThreshold, canScrollTimelineUp() {
+                let penetration = edgeThreshold - fingerY
+                guard penetration > 0 else { return 0 }
+                let normalized = penetration / edgeThreshold
+                return -min(normalized, maxEdgeScrollIntensity)
             }
-            .onEnded { value in
-                onDragEnded(value.translation.height)
+
+            if fingerY > visibleHeight - edgeThreshold, canScrollTimelineDown() {
+                let penetration = fingerY - (visibleHeight - edgeThreshold)
+                guard penetration > 0 else { return 0 }
+                let normalized = penetration / edgeThreshold
+                return min(normalized, maxEdgeScrollIntensity)
             }
+
+            return 0
+        }
+
+        init(
+            onChanged: @escaping (CGFloat) -> Void,
+            onEnded: @escaping (CGFloat) -> Void,
+            onInteractionReset: @escaping () -> Void,
+            viewportHeight: CGFloat,
+            canScrollTimelineUp: @escaping () -> Bool,
+            canScrollTimelineDown: @escaping () -> Bool,
+            onScrollTimelineBy: @escaping (CGFloat) -> CGFloat,
+            currentScrollOffsetY: @escaping () -> CGFloat,
+            shouldAllowEdgeScroll: @escaping (CGFloat, CGFloat) -> Bool
+        ) {
+            self.onChanged = onChanged
+            self.onEnded = onEnded
+            self.onInteractionReset = onInteractionReset
+            self.viewportHeight = viewportHeight
+            self.canScrollTimelineUp = canScrollTimelineUp
+            self.canScrollTimelineDown = canScrollTimelineDown
+            self.onScrollTimelineBy = onScrollTimelineBy
+            self.currentScrollOffsetY = currentScrollOffsetY
+            self.shouldAllowEdgeScroll = shouldAllowEdgeScroll
+        }
+
+        deinit {
+            stopEdgeScroll()
+            teardownScrollViewInteraction()
+        }
+
+        func configureScrollViewInteraction(for view: UIView) {
+            guard let pan = panRecognizer,
+                  let scrollView = view.enclosingScrollView else { return }
+
+            if wiredScrollView !== scrollView {
+                teardownScrollViewInteraction()
+                scrollView.panGestureRecognizer.require(toFail: pan)
+                wiredScrollView = scrollView
+                scrollOffsetObservation = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
+                    self?.handleExternalScroll()
+                }
+            }
+        }
+
+        func teardownScrollViewInteraction() {
+            scrollOffsetObservation?.invalidate()
+            scrollOffsetObservation = nil
+            wiredScrollView = nil
+        }
+
+        private func handleExternalScroll() {
+            guard let pan = panRecognizer,
+                  let scrollView = pan.view?.enclosingScrollView else { return }
+            switch pan.state {
+            case .began, .changed:
+                onChanged(currentTranslation(recognizer: pan, scrollView: scrollView))
+            default:
+                onInteractionReset()
+            }
+        }
+
+        @objc func handlePan(_ recognizer: UIPanGestureRecognizer) {
+            guard let hostView = recognizer.view,
+                  let scrollView = hostView.enclosingScrollView else { return }
+
+            switch recognizer.state {
+            case .began:
+                dragStartFingerViewportY = fingerYInViewport(recognizer, scrollView: scrollView)
+                dragStartScrollOffsetY = currentScrollOffsetY()
+                onChanged(0)
+            case .changed:
+                onChanged(currentTranslation(recognizer: recognizer, scrollView: scrollView))
+                let fingerY = fingerYInViewport(recognizer, scrollView: scrollView)
+                updateEdgeScroll(fingerY: fingerY, scrollView: scrollView, recognizer: recognizer)
+            case .ended, .cancelled, .failed:
+                stopEdgeScroll()
+                onEnded(currentTranslation(recognizer: recognizer, scrollView: scrollView))
+                dragStartFingerViewportY = nil
+                dragStartScrollOffsetY = nil
+            default:
+                break
+            }
+        }
+
+        private func fingerYInViewport(_ recognizer: UIPanGestureRecognizer, scrollView: UIScrollView) -> CGFloat {
+            let fingerInWindow = recognizer.location(in: nil)
+            let viewportFrame = scrollView.convert(scrollView.bounds, to: nil)
+            return fingerInWindow.y - viewportFrame.minY
+        }
+
+        private func currentTranslation(
+            recognizer: UIPanGestureRecognizer,
+            scrollView: UIScrollView
+        ) -> CGFloat {
+            guard let startFinger = dragStartFingerViewportY,
+                  let startScroll = dragStartScrollOffsetY else { return 0 }
+            let fingerDelta = fingerYInViewport(recognizer, scrollView: scrollView) - startFinger
+            let scrollDelta = currentScrollOffsetY() - startScroll
+            return fingerDelta + scrollDelta
+        }
+
+        private func updateEdgeScroll(
+            fingerY: CGFloat,
+            scrollView: UIScrollView,
+            recognizer: UIPanGestureRecognizer
+        ) {
+            let visibleHeight = max(viewportHeight, scrollView.bounds.height)
+            guard visibleHeight > edgeThreshold * 2 else {
+                stopEdgeScroll()
+                return
+            }
+
+            var intensity: CGFloat = 0
+            intensity = edgeScrollIntensity(fingerY: fingerY, visibleHeight: visibleHeight)
+
+            if abs(intensity) > 0.02 {
+                let translation = currentTranslation(recognizer: recognizer, scrollView: scrollView)
+                guard shouldAllowEdgeScroll(intensity, translation) else {
+                    stopEdgeScroll()
+                    return
+                }
+                startEdgeScroll(intensity: intensity, scrollView: scrollView, recognizer: recognizer)
+            } else {
+                stopEdgeScroll()
+            }
+        }
+
+        private func startEdgeScroll(
+            intensity: CGFloat,
+            scrollView: UIScrollView,
+            recognizer: UIPanGestureRecognizer
+        ) {
+            edgeScrollIntensity = intensity
+            edgeScrollTarget = scrollView
+            edgeScrollRecognizer = recognizer
+            guard edgeScrollDisplayLink == nil else { return }
+
+            let link = CADisplayLink(target: self, selector: #selector(edgeScrollTick(_:)))
+            link.add(to: .main, forMode: .common)
+            edgeScrollDisplayLink = link
+        }
+
+        private func stopEdgeScroll() {
+            edgeScrollDisplayLink?.invalidate()
+            edgeScrollDisplayLink = nil
+            edgeScrollIntensity = 0
+            edgeScrollTarget = nil
+            edgeScrollRecognizer = nil
+        }
+
+        @objc private func edgeScrollTick(_ link: CADisplayLink) {
+            guard let scrollView = edgeScrollTarget,
+                  let recognizer = edgeScrollRecognizer else {
+                stopEdgeScroll()
+                return
+            }
+
+            let visibleHeight = max(viewportHeight, scrollView.bounds.height)
+            let fingerY = fingerYInViewport(recognizer, scrollView: scrollView)
+            let intensity = edgeScrollIntensity(fingerY: fingerY, visibleHeight: visibleHeight)
+            edgeScrollIntensity = intensity
+
+            guard abs(intensity) > 0.02 else {
+                stopEdgeScroll()
+                return
+            }
+
+            if intensity < 0, !canScrollTimelineUp() {
+                stopEdgeScroll()
+                return
+            }
+            if edgeScrollIntensity > 0, !canScrollTimelineDown() {
+                stopEdgeScroll()
+                return
+            }
+
+            let translation = currentTranslation(recognizer: recognizer, scrollView: scrollView)
+            guard shouldAllowEdgeScroll(edgeScrollIntensity, translation) else {
+                stopEdgeScroll()
+                return
+            }
+
+            let deltaTime = max(link.duration, 1.0 / 120.0)
+            let scrollDelta = edgeScrollIntensity * maxEdgeScrollPointsPerSecond * CGFloat(deltaTime)
+            let appliedDelta = onScrollTimelineBy(scrollDelta)
+            guard abs(appliedDelta) > 0.01 else {
+                stopEdgeScroll()
+                return
+            }
+
+            onChanged(currentTranslation(recognizer: recognizer, scrollView: scrollView))
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            otherGestureRecognizer === wiredScrollView?.panGestureRecognizer
+        }
+    }
+}
+
+private extension UIView {
+    var enclosingScrollView: UIScrollView? {
+        sequence(first: self, next: { $0.superview })
+            .compactMap { $0 as? UIScrollView }
+            .first
     }
 }
 
@@ -1157,6 +2121,8 @@ private struct StaticAppointmentInteractionModifier: ViewModifier {
     @Binding var pressBeganAt: Date?
     let onTap: () -> Void
     let onMoveRequested: () -> Void
+
+    @State private var pendingMoveHighlight: DispatchWorkItem?
 
     func body(content: Content) -> some View {
         if isEnabled, canRequestMove {
@@ -1176,12 +2142,26 @@ private struct StaticAppointmentInteractionModifier: ViewModifier {
     }
 
     private func handlePressingChanged(_ pressing: Bool) {
-        withAnimation(.easeInOut(duration: 0.12)) {
-            isPressingForMove = pressing
-        }
         if pressing {
             pressBeganAt = Date()
+            pendingMoveHighlight?.cancel()
+            let work = DispatchWorkItem {
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    isPressingForMove = true
+                }
+            }
+            pendingMoveHighlight = work
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + ScheduleAppointmentInteraction.moveHoldHighlightDelay,
+                execute: work
+            )
             return
+        }
+
+        pendingMoveHighlight?.cancel()
+        pendingMoveHighlight = nil
+        withAnimation(.easeInOut(duration: 0.12)) {
+            isPressingForMove = false
         }
 
         guard let began = pressBeganAt else { return }
@@ -1220,6 +2200,7 @@ private struct ScheduleWeekColumnsCanvas: View {
     let viewportSize: CGSize
     let startMinute: Int
     let endMinute: Int
+    let dayAvailabilityIntervals: [[BarberAvailabilityIntervalDTO]]
     let onDayTap: (Date) -> Void
     let onBookingTap: (SimpleBookingDTO) -> Void
 
@@ -1248,6 +2229,9 @@ private struct ScheduleWeekColumnsCanvas: View {
                 let day = calendar.date(byAdding: .day, value: offset, to: weekStart) ?? weekStart
                 let dayBookings = bookings.filter { $0.isSameCalendarDay(as: day, calendar: calendar) }
                 let apps = dayBookings.compactMap { ScheduleCanvasAppointment.from(booking: $0, calendar: calendar) }
+                let intervals = dayAvailabilityIntervals.indices.contains(offset)
+                    ? dayAvailabilityIntervals[offset]
+                    : []
 
                 Button {
                     onDayTap(day)
@@ -1265,6 +2249,7 @@ private struct ScheduleWeekColumnsCanvas: View {
                         ZStack(alignment: .topLeading) {
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
                                 .fill(Color.providerScheduleControlFill)
+                            bookableSlotGrid(intervals: intervals)
                             ForEach(apps) { app in
                                 let top = CGFloat(app.startMinute - startMinute) * columnScale
                                 let height = max(3, CGFloat(app.durationMinutes) * columnScale)
@@ -1290,6 +2275,51 @@ private struct ScheduleWeekColumnsCanvas: View {
         }
         .frame(height: viewportSize.height, alignment: .top)
         .padding(10)
+    }
+
+    @ViewBuilder
+    private func bookableSlotGrid(intervals: [BarberAvailabilityIntervalDTO]) -> some View {
+        let slots = resolvedBookableSlots(intervals: intervals)
+        ForEach(slots, id: \.startMinutes) { slot in
+            let top = CGFloat(slot.startMinutes - startMinute) * columnScale
+            let height = max(1, CGFloat(slot.endMinutes - slot.startMinutes) * columnScale)
+
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(Color.providerOlive.opacity(0.07))
+                .frame(height: height)
+                .offset(y: top)
+                .padding(.horizontal, 2)
+
+            Rectangle()
+                .fill(Color.lavaShellCreamTertiary.opacity(0.32))
+                .frame(height: 0.5)
+                .offset(y: top)
+                .padding(.horizontal, 2)
+
+            Rectangle()
+                .fill(Color.lavaShellCreamTertiary.opacity(0.22))
+                .frame(height: 0.5)
+                .offset(y: top + height)
+                .padding(.horizontal, 2)
+        }
+    }
+
+    private func resolvedBookableSlots(intervals: [BarberAvailabilityIntervalDTO]) -> [ProviderScheduleHourlySlot] {
+        let bookable = ProviderScheduleHourlySlot.generateBookableSlots(from: intervals)
+        if !bookable.isEmpty { return bookable }
+        return ProviderScheduleHourlySlot.generateBookableSlots(from: [timelineSpanInterval])
+    }
+
+    private var timelineSpanInterval: BarberAvailabilityIntervalDTO {
+        BarberAvailabilityIntervalDTO(
+            id: "timeline-span",
+            start: Self.hhmm(from: startMinute),
+            end: Self.hhmm(from: endMinute)
+        )
+    }
+
+    private static func hhmm(from totalMinutes: Int) -> String {
+        String(format: "%02d:%02d", totalMinutes / 60, totalMinutes % 60)
     }
 }
 

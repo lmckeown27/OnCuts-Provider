@@ -81,7 +81,8 @@ enum ProviderBookingScheduleParsing {
 
         if let dateRaw, !dateRaw.isEmpty {
             if let parsed = parseAPIDateString(dateRaw) {
-                if let timeRaw, !timeRaw.isEmpty, !looksLikeISODateTime(timeRaw) {
+                if let timeRaw, !timeRaw.isEmpty, !looksLikeISODateTime(timeRaw),
+                   shouldMergeWallClockTime(into: dateRaw) {
                     if let combined = combineCalendarDate(parsed, timeString: timeRaw, timeZone: timeZone) {
                         return combined
                     }
@@ -103,7 +104,22 @@ enum ProviderBookingScheduleParsing {
         return nil
     }
 
+    /// Campus-local time label from the API (e.g. `"12:45 PM"`), when provided separately from the ISO instant.
+    static func displayWallClockTime(from row: BookingRequestRow) -> String? {
+        guard let raw = row.requestedTime?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty,
+              !looksLikeISODateTime(raw)
+        else { return nil }
+        return raw
+    }
+
     static func formattedRequestedSchedule(from row: BookingRequestRow, timeZone: TimeZone = .current) -> String {
+        if let wallClock = displayWallClockTime(from: row),
+           let instant = requestedInstant(from: row, timeZone: timeZone) {
+            let datePart = instant.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+            return "\(datePart) · \(wallClock)"
+        }
+
         if let instant = requestedInstant(from: row, timeZone: timeZone) {
             return instant.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
         }
@@ -119,6 +135,26 @@ enum ProviderBookingScheduleParsing {
 
     private static func looksLikeISODateTime(_ value: String) -> Bool {
         value.contains("T") && value.contains("-")
+    }
+
+    /// Only merge `requestedTime` into `requestedDate` when the date field is not already a zoned instant.
+    private static func shouldMergeWallClockTime(into dateRaw: String) -> Bool {
+        if isDateOnlyString(dateRaw) { return true }
+        if hasExplicitTimeZone(in: dateRaw) { return false }
+        return isNaiveTimestampString(dateRaw)
+    }
+
+    private static func isDateOnlyString(_ raw: String) -> Bool {
+        raw.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil
+    }
+
+    private static func hasExplicitTimeZone(in raw: String) -> Bool {
+        if raw.hasSuffix("Z") { return true }
+        return raw.range(of: #"[\+\-]\d{2}:\d{2}$"#, options: .regularExpression) != nil
+    }
+
+    private static func isNaiveTimestampString(_ raw: String) -> Bool {
+        raw.range(of: #"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}"#, options: .regularExpression) != nil
     }
 
     private static func combineCalendarDate(_ date: Date, timeString: String, timeZone: TimeZone) -> Date? {
