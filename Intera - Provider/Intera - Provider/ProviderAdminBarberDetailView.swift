@@ -21,7 +21,7 @@ struct ProviderAdminBarberDetailView: View {
                 profileCard
                 if let errorText {
                     Text(errorText)
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(.red)
                         .padding(.horizontal, 12)
                 }
@@ -47,8 +47,8 @@ struct ProviderAdminBarberDetailView: View {
                         .frame(width: 56, height: 56)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(barber.displayName)
-                            .font(.title3.weight(.semibold))
-                        if let cn = barber.campusName { Text(cn).font(.caption).foregroundStyle(Color.lavaShellCreamSecondary) }
+                            .font(.provider(.title3, weight: .semibold))
+                        if let cn = barber.campusName { Text(cn).font(.provider(.caption)).foregroundStyle(Color.lavaShellCreamSecondary) }
                         HStack(spacing: 6) {
                             if barber.isCampusManager == true { tag(text: "Campus manager", tint: Color.providerOlive) }
                             if barber.hasStripeSetup == true {
@@ -71,11 +71,11 @@ struct ProviderAdminBarberDetailView: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Visible to consumers")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.provider(.subheadline, weight: .semibold))
                 Text(barber.isActive == true
                      ? "Customers can see and book this barber."
                      : "Hidden from the consumer marketplace.")
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             }
             Spacer()
@@ -100,7 +100,7 @@ struct ProviderAdminBarberDetailView: View {
         sectionCard(title: "Recent bookings", subtitle: bookings.isEmpty ? nil : "\(bookings.count) loaded.") {
             if bookings.isEmpty {
                 Text(isLoading ? "Loading bookings…" : "No bookings yet.")
-                    .font(.footnote)
+                    .font(.provider(.footnote))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             } else {
                 VStack(spacing: 10) {
@@ -109,7 +109,7 @@ struct ProviderAdminBarberDetailView: View {
                     }
                     if bookings.count > 50 {
                         Text("Showing first 50 of \(bookings.count). Refine on the web dashboard for more.")
-                            .font(.caption2)
+                            .font(.provider(.caption2))
                             .foregroundStyle(Color.lavaShellCreamTertiary)
                     }
                 }
@@ -121,7 +121,7 @@ struct ProviderAdminBarberDetailView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(b.consumerDisplayName)
-                    .font(.title3.weight(.semibold))
+                    .font(.provider(.title3, weight: .semibold))
                 Spacer()
                 statusBadge((b.status ?? "").uppercased())
             }
@@ -135,20 +135,20 @@ struct ProviderAdminBarberDetailView: View {
                     Text("·"); Text(pm.capitalized)
                 }
             }
-            .font(.caption)
+            .font(.provider(.caption))
             .foregroundStyle(Color.lavaShellCreamSecondary)
             if let t = b.scheduledTime {
                 Text(t, format: .dateTime.month().day().year().hour().minute())
-                    .font(.caption2)
+                    .font(.provider(.caption2))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
             }
             if let r = b.reviewRating {
                 HStack(spacing: 4) {
-                    Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
-                    Text(String(format: "%.1f", r)).font(.caption2)
+                    Image(systemName: "star.fill").font(.provider(.caption2)).foregroundStyle(.yellow)
+                    Text(String(format: "%.1f", r)).font(.provider(.caption2))
                     if let text = b.reviewText, !text.isEmpty {
                         Text("· \(text)")
-                            .font(.caption2)
+                            .font(.provider(.caption2))
                             .foregroundStyle(Color.lavaShellCreamSecondary)
                             .lineLimit(2)
                     }
@@ -232,10 +232,10 @@ struct ProviderAdminBarberDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.title3.weight(.semibold))
+                    .font(.provider(.title3, weight: .semibold))
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 }
             }
@@ -255,7 +255,7 @@ struct ProviderAdminBarberDetailView: View {
 
     private func tag(text: String, tint: Color) -> some View {
         Text(text)
-            .font(.caption2.weight(.bold))
+            .font(.provider(.caption2, weight: .bold))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(tint.opacity(0.6), in: Capsule())
@@ -270,7 +270,7 @@ struct ProviderAdminBarberDetailView: View {
         default: Color.gray.opacity(0.6)
         }
         return Text(status.replacingOccurrences(of: "_", with: " "))
-            .font(.caption2.weight(.semibold))
+            .font(.provider(.caption2, weight: .semibold))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(tint, in: Capsule())

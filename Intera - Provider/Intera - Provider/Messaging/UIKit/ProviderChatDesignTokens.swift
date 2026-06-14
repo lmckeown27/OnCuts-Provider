@@ -57,19 +57,19 @@ enum ProviderChatDesignTokens {
 
     enum Font {
         static func heading(_ size: CGFloat = 17) -> UIFont {
-            .systemFont(ofSize: size, weight: .bold)
+            .provider(size: size, weight: .bold, textStyle: .headline)
         }
 
         static func body(_ size: CGFloat = 15) -> UIFont {
-            .systemFont(ofSize: size, weight: .regular)
+            .provider(size: size, weight: .regular, textStyle: .body)
         }
 
         static func caption(_ size: CGFloat = 12) -> UIFont {
-            .systemFont(ofSize: size, weight: .medium)
+            .provider(size: size, weight: .medium, textStyle: .caption1)
         }
 
         static func badge(_ size: CGFloat = 11) -> UIFont {
-            .systemFont(ofSize: size, weight: .semibold)
+            .provider(size: size, weight: .semibold, textStyle: .caption2)
         }
     }
 

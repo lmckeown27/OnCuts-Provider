@@ -30,7 +30,7 @@ struct ProviderPayoutSettingsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         Text("Stripe Connect payouts · booking estimates (not a platform balance)")
-                            .font(.footnote)
+                            .font(.provider(.footnote))
                             .foregroundStyle(Color.lavaShellCreamSecondary)
 
                         if isLoading {
@@ -38,7 +38,7 @@ struct ProviderPayoutSettingsView: View {
                                 ProgressView()
                                     .tint(.providerOlive)
                                 Text("Loading payout settings…")
-                                    .font(.subheadline)
+                                    .font(.provider(.subheadline))
                                     .foregroundStyle(Color.lavaShellCreamSecondary)
                             }
                             .frame(maxWidth: .infinity)
@@ -78,22 +78,22 @@ struct ProviderPayoutSettingsView: View {
     private func revenueSection(_ s: BarberPayoutSummaryDTO) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Revenue overview", systemImage: "chart.bar.fill")
-                .font(.subheadline.weight(.semibold))
+                .font(.provider(.subheadline, weight: .semibold))
             Text(
                 "Figures reflect paid bookings and internal records for your reference. Payout cash is not stored in a platform balance—funds flow to your Stripe Connect account per Stripe’s schedule."
             )
-            .font(.caption)
+            .font(.provider(.caption))
             .foregroundStyle(Color.lavaShellCreamSecondary)
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Estimated received")
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                     Text(s.displayTotalDollars, format: .currency(code: "USD"))
-                        .font(.title3.weight(.bold))
+                        .font(.provider(.title3, weight: .bold))
                     Text(s.usesLedger ? "From ledger records (accounting); payouts still go through Stripe Connect." : "From paid bookings (~85% of service after platform fee + tips).")
-                        .font(.caption2)
+                        .font(.provider(.caption2))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
                 .padding(12)
@@ -102,12 +102,12 @@ struct ProviderPayoutSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Paid bookings")
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                     Text("\(s.paidBookingsCount)")
-                        .font(.title3.weight(.bold))
+                        .font(.provider(.title3, weight: .bold))
                     Text("Completed checkout")
-                        .font(.caption2)
+                        .font(.provider(.caption2))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
                 .padding(12)
@@ -116,10 +116,10 @@ struct ProviderPayoutSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Last 30 days (estimate)")
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                     Text(Double(s.recent30DBarberCents) / 100, format: .currency(code: "USD"))
-                        .font(.headline.weight(.semibold))
+                        .font(.provider(.headline, weight: .semibold))
                         .foregroundStyle(Color.providerOlive)
                 }
                 .padding(12)
@@ -131,13 +131,13 @@ struct ProviderPayoutSettingsView: View {
             if s.usesLedger {
                 HStack(spacing: 8) {
                     Text("Recorded settled: \(s.ledgerPaidOutDollars, format: .currency(code: "USD"))")
-                        .font(.caption2.weight(.medium))
+                        .font(.provider(.caption2, weight: .medium))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(Color.green.opacity(0.2), in: Capsule())
                     if s.ledgerPendingDollars > 0 {
                         Text("Recorded pending: \(s.ledgerPendingDollars, format: .currency(code: "USD"))")
-                            .font(.caption2.weight(.medium))
+                            .font(.provider(.caption2, weight: .medium))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
                             .background(Color.orange.opacity(0.22), in: Capsule())
@@ -153,14 +153,14 @@ struct ProviderPayoutSettingsView: View {
     private var stripeConnectSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Stripe Connect", systemImage: "building.columns.fill")
-                .font(.subheadline.weight(.semibold))
+                .font(.provider(.subheadline, weight: .semibold))
             Text("Open your Stripe Express dashboard to see payouts, balances, and bank transfers—or finish setup if you haven’t connected yet.")
-                .font(.caption)
+                .font(.provider(.caption))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
 
             if connectStatusUnknown {
                 Text("Could not load your Connect status. You can still open Stripe or start setup below.")
-                    .font(.caption2)
+                    .font(.provider(.caption2))
                     .foregroundStyle(Color.orange.opacity(0.95))
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -176,7 +176,7 @@ struct ProviderPayoutSettingsView: View {
                         Text(connectBusy == .dashboard ? "Opening…" : "Open Stripe dashboard")
                         Spacer()
                     }
-                    .font(.body.weight(.semibold))
+                    .font(.provider(.body, weight: .semibold))
                     .padding(.vertical, 12)
                     .padding(.horizontal, 14)
                     .frame(maxWidth: .infinity)
@@ -194,7 +194,7 @@ struct ProviderPayoutSettingsView: View {
                     Text(onboardingButtonTitle)
                     Spacer()
                 }
-                .font(.body.weight(.semibold))
+                .font(.provider(.body, weight: .semibold))
                 .padding(.vertical, 12)
                 .padding(.horizontal, 14)
                 .frame(maxWidth: .infinity)
@@ -222,7 +222,7 @@ struct ProviderPayoutSettingsView: View {
     private var stripeMobileAppSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Manage revenue on the go", systemImage: "iphone")
-                .font(.subheadline.weight(.semibold))
+                .font(.provider(.subheadline, weight: .semibold))
             (
                 Text("Download the ")
                     .foregroundStyle(Color.lavaShellCreamSecondary)
@@ -232,7 +232,7 @@ struct ProviderPayoutSettingsView: View {
                     )
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             )
-            .font(.caption)
+            .font(.provider(.caption))
             Button {
                 openURL(Self.stripeDashboardAppStoreURL)
             } label: {
@@ -241,10 +241,10 @@ struct ProviderPayoutSettingsView: View {
                     Text("Get Stripe Dashboard on the App Store")
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
+                        .font(.provider(.caption, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
-                .font(.body.weight(.semibold))
+                .font(.provider(.body, weight: .semibold))
                 .padding(.vertical, 12)
                 .padding(.horizontal, 14)
                 .frame(maxWidth: .infinity)
@@ -252,7 +252,7 @@ struct ProviderPayoutSettingsView: View {
             }
             .buttonStyle(.plain)
             Text("Use the web flow above first if you still need to finish Stripe Connect onboarding.")
-                .font(.caption2)
+                .font(.provider(.caption2))
                 .foregroundStyle(Color.lavaShellCreamTertiary)
         }
         .padding(14)
@@ -268,13 +268,13 @@ struct ProviderPayoutSettingsView: View {
     private var howPaymentsWorkSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("How payments work")
-                .font(.subheadline.weight(.semibold))
+                .font(.provider(.subheadline, weight: .semibold))
             VStack(alignment: .leading, spacing: 6) {
                 bulletRow("Customer pays in USD through Stripe Checkout (card / enabled methods).")
                 bulletRow("Your share is paid out through Stripe Connect. The platform does not hold barber payout funds in a balance.")
                 bulletRow("Use the buttons above to open Stripe or finish Connect onboarding.")
             }
-            .font(.caption)
+            .font(.provider(.caption))
             .foregroundStyle(Color.lavaShellCreamSecondary)
         }
         .padding(.top, 4)

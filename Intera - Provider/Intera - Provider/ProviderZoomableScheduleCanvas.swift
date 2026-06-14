@@ -94,9 +94,9 @@ enum ProviderScheduleZoomTier: Equatable {
     var headerLabel: String {
         switch self {
         case .minute: return "Minute-by-minute"
-        case .day: return "Daily schedule"
-        case .week: return "Weekly overview"
-        case .month: return "Monthly overview"
+        case .day: return "Daily Schedule"
+        case .week: return "Weekly Schedule"
+        case .month: return "Monthly Schedule"
         }
     }
 
@@ -204,8 +204,19 @@ struct ProviderZoomableScheduleCanvas: View {
     }
 
     /// Scrollable timeline content height (timeline + vertical padding in day/minute canvas).
+    private var dayMinuteTimelineLayout: ScheduleAvailabilityTimelineLayout {
+        ScheduleAvailabilityTimelineLayout(
+            intervals: availabilityIntervals,
+            verticalScale: dayTimelineVerticalScale
+        )
+    }
+
     private var timelineScrollContentHeight: CGFloat {
-        CGFloat(timelineEndMinute - timelineStartMinute) * dayTimelineVerticalScale + 16
+        let bookedHoursHeight = dayMinuteTimelineLayout.contentHeight
+        if bookedHoursHeight > 0 {
+            return bookedHoursHeight + 16
+        }
+        return 16
     }
 
     private var maxTimelineScrollOffsetY: CGFloat {
@@ -214,7 +225,11 @@ struct ProviderZoomableScheduleCanvas: View {
 
     private func maxTimelineScrollOffsetY(forEffectiveScale scale: CGFloat) -> CGFloat {
         let verticalScale = scale * ProviderScheduleZoom.timelineVerticalScaleBoost
-        let contentHeight = CGFloat(timelineEndMinute - timelineStartMinute) * verticalScale + 16
+        let layout = ScheduleAvailabilityTimelineLayout(
+            intervals: availabilityIntervals,
+            verticalScale: verticalScale
+        )
+        let contentHeight = layout.contentHeight + 16
         return max(0, contentHeight - resolvedViewerBoxHeight)
     }
 
@@ -299,8 +314,8 @@ struct ProviderZoomableScheduleCanvas: View {
         reservePromptSpace: Bool
     ) {
         guard tier == .day || tier == .minute else { return }
+        guard let top = dayMinuteTimelineLayout.contentY(forMinute: app.startMinute) else { return }
 
-        let top = CGFloat(app.startMinute - timelineStartMinute) * dayTimelineVerticalScale
         let height = max(4, CGFloat(app.durationMinutes) * dayTimelineVerticalScale)
         let bookingContentTop = ScheduleTimelineDragLayout.contentVerticalPadding + top + clampedOffsetY
         let bottomMargin: CGFloat = 14
@@ -417,10 +432,10 @@ struct ProviderZoomableScheduleCanvas: View {
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Moving appointment")
-                            .font(.subheadline.weight(.bold))
+                            .font(.provider(.subheadline, weight: .bold))
                             .foregroundStyle(Color.lavaShellCream)
                         Text("Drag \(moving.booking.consumerDisplayName) to a new open slot")
-                            .font(.caption)
+                            .font(.provider(.caption))
                             .foregroundStyle(Color.lavaShellCreamSecondary)
                             .lineLimit(1)
                     }
@@ -428,7 +443,7 @@ struct ProviderZoomableScheduleCanvas: View {
                     Button("Cancel") {
                         onCancelMoveEditing()
                     }
-                    .font(.caption.weight(.semibold))
+                    .font(.provider(.caption, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
@@ -440,19 +455,25 @@ struct ProviderZoomableScheduleCanvas: View {
                 }
             } else {
                 HStack(spacing: 8) {
-                    ZStack(alignment: .leading) {
-                        Text("Daily schedule")
-                            .opacity(dailyTierHeaderOpacity)
-                        Text("Minute-by-minute")
-                            .opacity(minuteTierHeaderOpacity)
+                    Group {
+                        if tier == .week || tier == .month {
+                            Text(tier.headerLabel)
+                        } else {
+                            ZStack(alignment: .leading) {
+                                Text("Daily Schedule")
+                                    .opacity(dailyTierHeaderOpacity)
+                                Text("Minute-by-minute")
+                                    .opacity(minuteTierHeaderOpacity)
+                            }
+                        }
                     }
-                    .font(.subheadline.weight(.bold))
+                    .font(.provider(.subheadline, weight: .bold))
                     .foregroundStyle(Color.lavaShellCream)
                     .animation(isPinchZoomActive ? nil : .smooth(duration: 0.28), value: effectiveScale)
                     Spacer()
                     if tier.supportsPinchZoom {
                         Text(String(format: "%.1fx", effectiveScale))
-                            .font(.caption2.monospacedDigit())
+                            .font(.provider(.caption2)).monospacedDigit()
                             .foregroundStyle(Color.lavaShellCreamSecondary)
                             .contentTransition(.numericText())
                             .animation(isPinchZoomActive ? nil : .smooth(duration: 0.28), value: effectiveScale)
@@ -502,15 +523,20 @@ struct ProviderZoomableScheduleCanvas: View {
         Group {
             switch tier {
             case .month:
-                ScheduleMonthHeatmapGrid(
+                BarberMonthlyDensityView(
                     calendar: calendar,
                     monthAnchor: monthAnchor,
-                    bookings: bookings,
+                    workloads: BarberMonthlyDensityView.workloads(
+                        monthAnchor: monthAnchor,
+                        bookings: bookings,
+                        calendar: calendar
+                    ),
+                    selectedDate: selectedDay,
                     onDayTap: onMonthDayTap
                 )
                 .frame(width: size.width)
             case .week:
-                ScheduleWeekColumnsCanvas(
+                WeeklySwimlaneView(
                     calendar: calendar,
                     weekStart: weekStartMonday,
                     bookings: bookings,
@@ -594,7 +620,10 @@ struct ProviderZoomableScheduleCanvas: View {
             }
 
             let minute = clampedScrollMinute(appointment.startMinute)
-            let targetY = CGFloat(minute - timelineStartMinute) * dayTimelineVerticalScale + 8
+            guard let top = dayMinuteTimelineLayout.contentY(forMinute: minute) else {
+                continue
+            }
+            let targetY = top + 8
             let centeredY = max(0, targetY - resolvedViewerBoxHeight * 0.35)
 
             withAnimation(.easeInOut(duration: 0.28)) {
@@ -774,6 +803,14 @@ private enum ScheduleTimelineZoomVisuals {
         let t = min(1, max(0, (scale - 2.0) / 2.0))
         return 10 - t
     }
+
+    /// Smallest time division the user can target at this zoom — matches visible tick labels.
+    static func visibleSnapStepMinutes(scale: CGFloat) -> Int {
+        if scale >= ProviderScheduleZoom.minuteLower { return 1 }
+        if fineTickLabelOpacity(scale: scale) > 0.45 { return fineTickStep }
+        if midTickLabelOpacity(scale: scale) > 0.45 { return 15 }
+        return 30
+    }
 }
 
 private struct SchedulePreciseTimelineCanvas: View {
@@ -810,12 +847,12 @@ private struct SchedulePreciseTimelineCanvas: View {
         scale * ProviderScheduleZoom.timelineVerticalScaleBoost
     }
 
-    private var dragSnapStep: Int {
-        scale >= ProviderScheduleZoom.minuteLower ? 5 : 15
+    private var timelineLayout: ScheduleAvailabilityTimelineLayout {
+        ScheduleAvailabilityTimelineLayout(intervals: availabilityIntervals, verticalScale: verticalScale)
     }
 
     private var timelineHeight: CGFloat {
-        CGFloat(endMinute - startMinute) * verticalScale
+        timelineLayout.contentHeight
     }
 
     private var detailTextOpacity: Double {
@@ -825,19 +862,43 @@ private struct SchedulePreciseTimelineCanvas: View {
     }
 
     var body: some View {
+        Group {
+            if timelineLayout.isEmpty {
+                Text("No booking hours for this day")
+                    .font(.provider(.footnote))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .padding(.vertical, 8)
+            } else {
+                timelineBody
+            }
+        }
+    }
+
+    private var timelineBody: some View {
         ZStack(alignment: .topLeading) {
-            if editingMoveBookingID != nil, activeMoveDragBookingID != nil {
+            availabilityBackground
+                .allowsHitTesting(false)
+            timeBlockOverlays
+                .allowsHitTesting(false)
+            tickMarks
+                .allowsHitTesting(editingMoveBookingID == nil)
+            if let movingID = editingMoveBookingID,
+               appointments.contains(where: { $0.id == movingID }) {
                 Color.clear
                     .contentShape(Rectangle())
                     .frame(maxWidth: .infinity)
                     .frame(height: timelineHeight + 16)
-                    .onTapGesture {
-                        activeMoveDragBookingID = nil
+                    .onTapGesture(coordinateSpace: .local) { location in
+                        guard let app = appointments.first(where: { $0.id == movingID }) else { return }
+                        if activeMoveDragBookingID != nil {
+                            activeMoveDragBookingID = nil
+                            return
+                        }
+                        proposeMoveToTimelinePoint(location, for: app)
                     }
             }
-            availabilityBackground
-            timeBlockOverlays
-            tickMarks
             appointmentBlocks
         }
         .frame(height: timelineHeight)
@@ -849,11 +910,11 @@ private struct SchedulePreciseTimelineCanvas: View {
             let interval = availabilityIntervals[index]
             let start = minutesFromHHMM(interval.start)
             let end = minutesFromHHMM(interval.end)
-            if end > start {
+            if end > start, let y = timelineLayout.contentY(forMinute: start) {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(Color.providerOlive.opacity(0.08))
                     .frame(height: CGFloat(end - start) * verticalScale)
-                    .offset(x: 52, y: CGFloat(start - startMinute) * verticalScale)
+                    .offset(x: 52, y: y)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -863,7 +924,7 @@ private struct SchedulePreciseTimelineCanvas: View {
         ForEach(timeBlocks) { block in
             let start = minutesFromHHMM(block.startTime)
             let end = minutesFromHHMM(block.endTime)
-            if end > start {
+            if end > start, let y = timelineLayout.contentY(forMinute: start) {
                 HStack(spacing: 6) {
                     Spacer().frame(width: 52)
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
@@ -875,7 +936,7 @@ private struct SchedulePreciseTimelineCanvas: View {
                         .overlay(alignment: .leading) {
                             if detailTextOpacity > 0.3 {
                                 Text("Blocked")
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(.provider(size: 10, weight: .semibold))
                                     .foregroundStyle(Color.lavaShellCreamSecondary)
                                     .padding(.horizontal, 6)
                                     .opacity(detailTextOpacity)
@@ -883,18 +944,21 @@ private struct SchedulePreciseTimelineCanvas: View {
                         }
                         .frame(height: max(4, CGFloat(end - start) * verticalScale))
                 }
-                .offset(y: CGFloat(start - startMinute) * verticalScale)
+                .offset(y: y)
             }
         }
     }
 
     private var tickMarks: some View {
         VStack(spacing: 0) {
-            ForEach(
-                Array(stride(from: startMinute, to: endMinute, by: ScheduleTimelineZoomVisuals.fineTickStep)),
-                id: \.self
-            ) { minute in
-                tickRow(for: minute)
+            ForEach(timelineLayout.segments.indices, id: \.self) { segmentIndex in
+                let segment = timelineLayout.segments[segmentIndex]
+                ForEach(
+                    Array(stride(from: segment.start, to: segment.end, by: ScheduleTimelineZoomVisuals.fineTickStep)),
+                    id: \.self
+                ) { minute in
+                    tickRow(for: minute)
+                }
             }
         }
         .animation(isPinchZoomActive ? nil : .smooth(duration: 0.28), value: scale)
@@ -914,7 +978,7 @@ private struct SchedulePreciseTimelineCanvas: View {
                         .opacity(0)
                 }
             }
-            .font(.system(size: ScheduleTimelineZoomVisuals.tickLabelFontSize(scale: scale)))
+            .font(.provider(size: ScheduleTimelineZoomVisuals.tickLabelFontSize(scale: scale)))
             .foregroundStyle(Color.lavaShellCreamSecondary)
             .frame(width: 52, alignment: .trailing)
 
@@ -966,21 +1030,23 @@ private struct SchedulePreciseTimelineCanvas: View {
 
     private var appointmentBlocks: some View {
         ForEach(appointments) { app in
-            appointmentBlock(for: app)
+            if timelineLayout.contentY(forMinute: app.startMinute) != nil {
+                appointmentBlock(for: app)
+            }
         }
     }
 
     @ViewBuilder
     private func appointmentBlock(for app: ScheduleCanvasAppointment) -> some View {
-        let top = CGFloat(app.startMinute - startMinute) * verticalScale
+        let top = timelineLayout.contentY(forMinute: app.startMinute) ?? 0
         let height = max(4, CGFloat(app.durationMinutes) * verticalScale)
         let canMove = appointmentDragEnabled && ScheduleAppointmentDrag.isDraggable(app.booking)
         let isMoveSession = editingMoveBookingID == app.id
         let isDragActive = activeMoveDragBookingID == app.id
         let isParked = isMoveSession && !isDragActive
         let allowedStart = allowedDragStartMinuteRange(for: app)
-        let minDragOffsetY = CGFloat(allowedStart.minStart - app.startMinute) * verticalScale
-        let maxDragOffsetY = CGFloat(allowedStart.maxStart - app.startMinute) * verticalScale
+        let minDragOffsetY = (timelineLayout.contentY(forMinute: allowedStart.minStart) ?? top) - top
+        let maxDragOffsetY = (timelineLayout.contentY(forMinute: allowedStart.maxStart) ?? top) - top
 
         ScheduleDraggableAppointmentBlock(
             top: top,
@@ -994,7 +1060,7 @@ private struct SchedulePreciseTimelineCanvas: View {
             minDragOffsetY: minDragOffsetY,
             maxDragOffsetY: maxDragOffsetY,
             snapDragOffset: { totalOffsetY in
-                clampedDragOffsetY(for: app, totalOffsetY: totalOffsetY, snapToGrid: true)
+                clampedDragOffsetY(for: app, totalOffsetY: totalOffsetY)
             },
             liveClampDragOffset: { totalOffsetY in
                 liveClampedDragOffsetY(
@@ -1105,30 +1171,140 @@ private struct SchedulePreciseTimelineCanvas: View {
         }
     }
 
-    /// Latest/earliest start times derived from the provider's availability windows.
+    private var visibleSnapStepMinutes: Int {
+        ScheduleTimelineZoomVisuals.visibleSnapStepMinutes(scale: scale)
+    }
+
+    private func snappedVisibleMinute(_ minute: Int) -> Int {
+        ScheduleAppointmentDrag.snapMinute(minute, step: visibleSnapStepMinutes)
+    }
+
+    /// Latest/earliest open start minutes where the appointment fits without overlap.
     private func allowedDragStartMinuteRange(for app: ScheduleCanvasAppointment) -> (minStart: Int, maxStart: Int) {
-        let timelineMin = startMinute
-        let timelineMax = max(startMinute, endMinute - app.durationMinutes)
+        let openStarts = openStartMinutes(for: app)
+        if openStarts.isEmpty {
+            return (app.startMinute, app.startMinute)
+        }
+        return (openStarts.min() ?? app.startMinute, openStarts.max() ?? app.startMinute)
+    }
 
-        guard !availabilityIntervals.isEmpty else {
-            return (timelineMin, timelineMax)
+    private func openStartMinutes(for app: ScheduleCanvasAppointment) -> [Int] {
+        timelineLayout.segments.flatMap { segment in
+            let latestStart = segment.end - app.durationMinutes
+            guard latestStart >= segment.start else { return [Int]() }
+            return (segment.start ... latestStart).filter { minute in
+                isOpenSlot(
+                    startMinute: minute,
+                    durationMinutes: app.durationMinutes,
+                    excludingAppointmentID: app.id
+                )
+            }
+        }
+    }
+
+    private func clampMinuteToBookingHours(_ minute: Int) -> Int {
+        if timelineLayout.contains(minute: minute) { return minute }
+
+        var bestMinute = minute
+        var bestDistance = Int.max
+        for segment in timelineLayout.segments {
+            if minute < segment.start {
+                let distance = segment.start - minute
+                if distance < bestDistance {
+                    bestDistance = distance
+                    bestMinute = segment.start
+                }
+            } else if minute >= segment.end {
+                let distance = minute - (segment.end - 1)
+                if distance < bestDistance {
+                    bestDistance = distance
+                    bestMinute = segment.end - 1
+                }
+            }
+        }
+        return bestMinute
+    }
+
+    private func resolvedOpenStartMinute(for app: ScheduleCanvasAppointment, proposedMinute: Int) -> Int {
+        let openStarts = openStartMinutes(for: app)
+        guard !openStarts.isEmpty else { return app.startMinute }
+
+        let minStart = openStarts.min() ?? app.startMinute
+        let maxStart = openStarts.max() ?? app.startMinute
+        let clamped = min(
+            max(clampMinuteToBookingHours(proposedMinute), minStart),
+            maxStart
+        )
+        let snapped = snappedVisibleMinute(clamped)
+
+        if isOpenSlot(
+            startMinute: snapped,
+            durationMinutes: app.durationMinutes,
+            excludingAppointmentID: app.id
+        ) {
+            return snapped
         }
 
-        var minStart = Int.max
-        var maxStart = Int.min
-        for interval in availabilityIntervals {
-            let intervalStart = minutesFromHHMM(interval.start)
-            let intervalEnd = minutesFromHHMM(interval.end)
-            guard intervalEnd - intervalStart >= app.durationMinutes else { continue }
-            minStart = min(minStart, intervalStart)
-            maxStart = max(maxStart, intervalEnd - app.durationMinutes)
+        return nearestOpenStartMinute(for: app, around: snapped, step: visibleSnapStepMinutes) ?? app.startMinute
+    }
+
+    private func nearestOpenStartMinute(
+        for app: ScheduleCanvasAppointment,
+        around target: Int,
+        step: Int
+    ) -> Int? {
+        let openStarts = openStartMinutes(for: app)
+        guard !openStarts.isEmpty else { return nil }
+
+        let snapStride = max(step, 1)
+        let snappedTarget = ScheduleAppointmentDrag.snapMinute(target, step: snapStride)
+        let minStart = openStarts.min() ?? snappedTarget
+        let maxStart = openStarts.max() ?? snappedTarget
+        let maxSteps = max(
+            (snappedTarget - minStart) / snapStride,
+            (maxStart - snappedTarget) / snapStride
+        )
+
+        for stepIndex in 0 ... maxSteps {
+            let delta = stepIndex * snapStride
+            if stepIndex == 0 {
+                if openStarts.contains(snappedTarget) {
+                    return snappedTarget
+                }
+                continue
+            }
+
+            let later = snappedTarget + delta
+            if later <= maxStart, openStarts.contains(later) {
+                return later
+            }
+
+            let earlier = snappedTarget - delta
+            if earlier >= minStart, openStarts.contains(earlier) {
+                return earlier
+            }
         }
 
-        guard minStart <= maxStart else {
-            return (timelineMin, timelineMax)
-        }
+        return nil
+    }
 
-        return (max(minStart, timelineMin), min(maxStart, timelineMax))
+    private func startMinute(atTimelineY locationY: CGFloat) -> Int {
+        timelineLayout.minute(atContentY: max(0, locationY)) ?? startMinute
+    }
+
+    private func proposeMoveToTimelinePoint(_ location: CGPoint, for app: ScheduleCanvasAppointment) {
+        guard location.x >= 48 else { return }
+
+        let proposedStart = startMinute(atTimelineY: location.y)
+        let resolvedStart = resolvedOpenStartMinute(for: app, proposedMinute: proposedStart)
+        guard resolvedStart != app.startMinute else { return }
+
+        guard let baseTop = timelineLayout.contentY(forMinute: app.startMinute),
+              let resolvedTop = timelineLayout.contentY(forMinute: resolvedStart)
+        else { return }
+
+        let offsetY = resolvedTop - baseTop
+        _ = handleAppointmentDragEnded(app: app, totalOffsetY: offsetY)
     }
 
     private func visibleDragOffsetRange(top: CGFloat, height: CGFloat) -> (min: CGFloat, max: CGFloat) {
@@ -1148,8 +1324,7 @@ private struct SchedulePreciseTimelineCanvas: View {
     ) -> CGFloat {
         let availabilityClamped = clampedDragOffsetY(
             for: app,
-            totalOffsetY: totalOffsetY,
-            snapToGrid: false
+            totalOffsetY: totalOffsetY
         )
         let visible = visibleDragOffsetRange(top: top, height: height)
         return min(max(availabilityClamped, visible.min), visible.max)
@@ -1166,8 +1341,7 @@ private struct SchedulePreciseTimelineCanvas: View {
     ) -> Bool {
         let availabilityClamped = clampedDragOffsetY(
             for: app,
-            totalOffsetY: totalOffsetY,
-            snapToGrid: false
+            totalOffsetY: totalOffsetY
         )
         let scrollY = currentScrollOffsetY()
         let padding = ScheduleTimelineDragLayout.contentVerticalPadding
@@ -1192,33 +1366,25 @@ private struct SchedulePreciseTimelineCanvas: View {
 
     private func clampedDragOffsetY(
         for app: ScheduleCanvasAppointment,
-        totalOffsetY: CGFloat,
-        snapToGrid: Bool
+        totalOffsetY: CGFloat
     ) -> CGFloat {
-        let rawProposedMinute = CGFloat(app.startMinute) + (totalOffsetY / verticalScale)
-        let proposedMinute: CGFloat
-        if snapToGrid {
-            let snapped = ScheduleAppointmentDrag.snapMinute(
-                Int(rawProposedMinute.rounded()),
-                step: dragSnapStep
-            )
-            proposedMinute = CGFloat(snapped)
-        } else {
-            proposedMinute = rawProposedMinute
-        }
+        guard let baseTop = timelineLayout.contentY(forMinute: app.startMinute) else { return 0 }
 
-        let allowed = allowedDragStartMinuteRange(for: app)
-        let clampedStart = min(
-            max(proposedMinute, CGFloat(allowed.minStart)),
-            CGFloat(allowed.maxStart)
-        )
-        return (clampedStart - CGFloat(app.startMinute)) * verticalScale
+        let proposedY = baseTop + totalOffsetY
+        let proposedMinute = timelineLayout.minute(atContentY: max(0, proposedY)) ?? app.startMinute
+        let resolvedStart = resolvedOpenStartMinute(for: app, proposedMinute: proposedMinute)
+        let resolvedTop = timelineLayout.contentY(forMinute: resolvedStart) ?? baseTop
+        return resolvedTop - baseTop
     }
 
     @discardableResult
     private func handleAppointmentDragEnded(app: ScheduleCanvasAppointment, totalOffsetY: CGFloat) -> Bool {
-        let clampedOffsetY = clampedDragOffsetY(for: app, totalOffsetY: totalOffsetY, snapToGrid: true)
-        let clampedStart = app.startMinute + Int((clampedOffsetY / verticalScale).rounded())
+        let clampedOffsetY = clampedDragOffsetY(for: app, totalOffsetY: totalOffsetY)
+        guard let baseTop = timelineLayout.contentY(forMinute: app.startMinute) else { return false }
+
+        let resolvedTop = baseTop + clampedOffsetY
+        let clampedStart = timelineLayout.minute(atContentY: max(0, resolvedTop)) ?? app.startMinute
+        guard clampedStart != app.startMinute else { return false }
         guard let proposedDate = scheduledDate(on: day, totalMinutes: clampedStart) else { return false }
 
         activeMoveDragBookingID = nil
@@ -1272,12 +1438,12 @@ private struct SchedulePreciseTimelineCanvas: View {
         VStack(alignment: .center, spacing: detailLineSpacing(for: detailLevel)) {
             if isDragActive {
                 Label("Drag to move", systemImage: "arrow.up.and.down")
-                    .font(.system(size: min(12, detailFontSize(for: blockHeight) + 1), weight: .semibold))
+                    .font(.provider(size: min(12, detailFontSize(for: blockHeight) + 1), weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
                     .allowsHitTesting(false)
             } else if isMoveSession {
                 Label("Tap to drag again", systemImage: "hand.tap")
-                    .font(.system(size: min(12, detailFontSize(for: blockHeight) + 1), weight: .semibold))
+                    .font(.provider(size: min(12, detailFontSize(for: blockHeight) + 1), weight: .semibold))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                     .allowsHitTesting(false)
             } else if canRequestMove, blockHeight >= 34 {
@@ -1286,7 +1452,7 @@ private struct SchedulePreciseTimelineCanvas: View {
 
             if detailTextOpacity > 0.05 {
                 Text(booking.consumerDisplayName)
-                    .font(.system(size: consumerFontSize(for: blockHeight, level: detailLevel), weight: .bold))
+                    .font(.provider(size: consumerFontSize(for: blockHeight, level: detailLevel), weight: .bold))
                     .multilineTextAlignment(.center)
                     .lineLimit(lineLimit(for: detailLevel, primary: true))
                     .minimumScaleFactor(0.85)
@@ -1294,7 +1460,7 @@ private struct SchedulePreciseTimelineCanvas: View {
                     .allowsHitTesting(false)
 
                 Text(booking.serviceDisplayName)
-                    .font(.system(size: serviceFontSize(for: blockHeight, level: detailLevel), weight: .semibold))
+                    .font(.provider(size: serviceFontSize(for: blockHeight, level: detailLevel), weight: .semibold))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(lineLimit(for: detailLevel, primary: false))
@@ -1304,13 +1470,13 @@ private struct SchedulePreciseTimelineCanvas: View {
 
                 if detailLevel >= .standard {
                     Text(appointmentTimeRange(for: app))
-                        .font(.system(size: detailFontSize(for: blockHeight), weight: .medium))
+                        .font(.provider(size: detailFontSize(for: blockHeight), weight: .medium))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                         .multilineTextAlignment(.center)
                         .allowsHitTesting(false)
 
                     Text(ProviderBookingStatusDisplay.title(for: booking.status))
-                        .font(.system(size: detailFontSize(for: blockHeight) - 1, weight: .semibold))
+                        .font(.provider(size: detailFontSize(for: blockHeight) - 1, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                         .multilineTextAlignment(.center)
                         .allowsHitTesting(false)
@@ -1319,7 +1485,7 @@ private struct SchedulePreciseTimelineCanvas: View {
                 if detailLevel >= .detailed {
                     if let price = formattedPrice(for: booking) {
                         Text(price)
-                            .font(.system(size: detailFontSize(for: blockHeight), weight: .semibold))
+                            .font(.provider(size: detailFontSize(for: blockHeight), weight: .semibold))
                             .foregroundStyle(Color.lavaShellCream)
                             .multilineTextAlignment(.center)
                             .allowsHitTesting(false)
@@ -1327,7 +1493,7 @@ private struct SchedulePreciseTimelineCanvas: View {
 
                     if let duration = formattedDuration(minutes: app.durationMinutes) {
                         Text(duration)
-                            .font(.system(size: detailFontSize(for: blockHeight) - 1, weight: .medium))
+                            .font(.provider(size: detailFontSize(for: blockHeight) - 1, weight: .medium))
                             .foregroundStyle(Color.lavaShellCreamTertiary)
                             .multilineTextAlignment(.center)
                             .allowsHitTesting(false)
@@ -1335,7 +1501,7 @@ private struct SchedulePreciseTimelineCanvas: View {
 
                     if booking.hasPendingRescheduleRequest {
                         Text("Reschedule requested")
-                            .font(.system(size: detailFontSize(for: blockHeight) - 1, weight: .semibold))
+                            .font(.provider(size: detailFontSize(for: blockHeight) - 1, weight: .semibold))
                             .foregroundStyle(Color.orange.opacity(0.95))
                             .multilineTextAlignment(.center)
                             .allowsHitTesting(false)
@@ -1344,12 +1510,12 @@ private struct SchedulePreciseTimelineCanvas: View {
                     if let location = trimmedNonEmpty(booking.location) {
                         HStack(alignment: .top, spacing: 4) {
                             Image(systemName: "mappin.and.ellipse")
-                                .font(.system(size: detailFontSize(for: blockHeight) - 2))
+                                .font(.provider(size: detailFontSize(for: blockHeight) - 2))
                             Text(location)
                                 .multilineTextAlignment(.leading)
                                 .lineLimit(2)
                         }
-                        .font(.system(size: detailFontSize(for: blockHeight) - 1, weight: .medium))
+                        .font(.provider(size: detailFontSize(for: blockHeight) - 1, weight: .medium))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .allowsHitTesting(false)
@@ -1357,7 +1523,7 @@ private struct SchedulePreciseTimelineCanvas: View {
 
                     if let notes = trimmedNonEmpty(booking.notes) {
                         Text(notes)
-                            .font(.system(size: detailFontSize(for: blockHeight) - 1, weight: .regular))
+                            .font(.provider(size: detailFontSize(for: blockHeight) - 1, weight: .regular))
                             .italic()
                             .foregroundStyle(Color.lavaShellCreamTertiary)
                             .multilineTextAlignment(.center)
@@ -1378,7 +1544,7 @@ private struct SchedulePreciseTimelineCanvas: View {
             Label("Tap for details", systemImage: "hand.tap")
             Label("Hold to move time", systemImage: "clock.arrow.circlepath")
         }
-        .font(.system(size: fontSize, weight: .medium))
+        .font(.provider(size: fontSize, weight: .medium))
         .foregroundStyle(Color.lavaShellCream.opacity(0.72))
         .labelStyle(.titleAndIcon)
         .lineLimit(1)
@@ -1529,18 +1695,18 @@ private struct ScheduleAnchoredAppointmentPromptCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.subheadline.weight(.bold))
+                .font(.provider(.subheadline, weight: .bold))
                 .foregroundStyle(Color.lavaShellCream)
 
             Text(message)
-                .font(.caption)
+                .font(.provider(.caption))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 8) {
                 Button(action: onSecondary) {
                     Text(secondaryTitle)
-                        .font(.caption.weight(.semibold))
+                        .font(.provider(.caption, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                 }
@@ -1553,7 +1719,7 @@ private struct ScheduleAnchoredAppointmentPromptCard: View {
 
                 Button(action: onPrimary) {
                     Text(primaryTitle)
-                        .font(.caption.weight(.semibold))
+                        .font(.provider(.caption, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                 }
@@ -1584,7 +1750,7 @@ private struct ScheduleAppointmentPromptArrow: View {
 
     var body: some View {
         Image(systemName: pointingUp ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
-            .font(.system(size: 11, weight: .bold))
+            .font(.provider(size: 11, weight: .bold))
             .foregroundStyle(Color.providerSchedulePromptCardFill)
             .shadow(color: Color.black.opacity(0.18), radius: 2, y: 1)
     }
@@ -2191,243 +2357,14 @@ private struct StaticAppointmentInteractionModifier: ViewModifier {
     }
 }
 
-// MARK: - Week columns
-
-private struct ScheduleWeekColumnsCanvas: View {
-    let calendar: Calendar
-    let weekStart: Date
-    let bookings: [SimpleBookingDTO]
-    let viewportSize: CGSize
-    let startMinute: Int
-    let endMinute: Int
-    let dayAvailabilityIntervals: [[BarberAvailabilityIntervalDTO]]
-    let onDayTap: (Date) -> Void
-    let onBookingTap: (SimpleBookingDTO) -> Void
-
-    private let columnSpacing: CGFloat = 8
-
-    /// Weekday + date labels and padding above the timeline track.
-    private var columnHeaderHeight: CGFloat { 36 }
-
-    /// Outer canvas padding (`.padding(10)`) plus per-column button padding.
-    private var verticalChrome: CGFloat { 32 }
-
-    /// Fits the full availability window into the viewer — no vertical scroll.
-    private var timelineHeight: CGFloat {
-        max(48, viewportSize.height - columnHeaderHeight - verticalChrome)
-    }
-
-    /// Points per minute so the day column ends at the bottom of the schedule viewer.
-    private var columnScale: CGFloat {
-        let minuteSpan = CGFloat(max(1, endMinute - startMinute))
-        return timelineHeight / minuteSpan
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: columnSpacing) {
-            ForEach(0 ..< 7, id: \.self) { offset in
-                let day = calendar.date(byAdding: .day, value: offset, to: weekStart) ?? weekStart
-                let dayBookings = bookings.filter { $0.isSameCalendarDay(as: day, calendar: calendar) }
-                let apps = dayBookings.compactMap { ScheduleCanvasAppointment.from(booking: $0, calendar: calendar) }
-                let intervals = dayAvailabilityIntervals.indices.contains(offset)
-                    ? dayAvailabilityIntervals[offset]
-                    : []
-
-                Button {
-                    onDayTap(day)
-                } label: {
-                    VStack(spacing: 4) {
-                        Text(day.formatted(.dateTime.weekday(.abbreviated)))
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(
-                                calendar.isDateInToday(day) ? Color.lavaShellCream : Color.lavaShellCreamSecondary
-                            )
-                        Text(day.formatted(.dateTime.day()))
-                            .font(.caption2)
-                            .foregroundStyle(Color.lavaShellCreamTertiary)
-
-                        ZStack(alignment: .topLeading) {
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.providerScheduleControlFill)
-                            bookableSlotGrid(intervals: intervals)
-                            ForEach(apps) { app in
-                                let top = CGFloat(app.startMinute - startMinute) * columnScale
-                                let height = max(3, CGFloat(app.durationMinutes) * columnScale)
-                                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                    .fill(Color.providerOlive.opacity(0.55))
-                                    .frame(height: height)
-                                    .offset(y: top)
-                                    .padding(.horizontal, 2)
-                            }
-                        }
-                        .frame(height: timelineHeight)
-                        .clipped()
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .padding(6)
-                    .background {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(calendar.isDateInToday(day) ? Color.providerOlive.opacity(0.22) : Color.clear)
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .frame(height: viewportSize.height, alignment: .top)
-        .padding(10)
-    }
-
-    @ViewBuilder
-    private func bookableSlotGrid(intervals: [BarberAvailabilityIntervalDTO]) -> some View {
-        let slots = resolvedBookableSlots(intervals: intervals)
-        ForEach(slots, id: \.startMinutes) { slot in
-            let top = CGFloat(slot.startMinutes - startMinute) * columnScale
-            let height = max(1, CGFloat(slot.endMinutes - slot.startMinutes) * columnScale)
-
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(Color.providerOlive.opacity(0.07))
-                .frame(height: height)
-                .offset(y: top)
-                .padding(.horizontal, 2)
-
-            Rectangle()
-                .fill(Color.lavaShellCreamTertiary.opacity(0.32))
-                .frame(height: 0.5)
-                .offset(y: top)
-                .padding(.horizontal, 2)
-
-            Rectangle()
-                .fill(Color.lavaShellCreamTertiary.opacity(0.22))
-                .frame(height: 0.5)
-                .offset(y: top + height)
-                .padding(.horizontal, 2)
-        }
-    }
-
-    private func resolvedBookableSlots(intervals: [BarberAvailabilityIntervalDTO]) -> [ProviderScheduleHourlySlot] {
-        let bookable = ProviderScheduleHourlySlot.generateBookableSlots(from: intervals)
-        if !bookable.isEmpty { return bookable }
-        return ProviderScheduleHourlySlot.generateBookableSlots(from: [timelineSpanInterval])
-    }
-
-    private var timelineSpanInterval: BarberAvailabilityIntervalDTO {
-        BarberAvailabilityIntervalDTO(
-            id: "timeline-span",
-            start: Self.hhmm(from: startMinute),
-            end: Self.hhmm(from: endMinute)
-        )
-    }
-
-    private static func hhmm(from totalMinutes: Int) -> String {
-        String(format: "%02d:%02d", totalMinutes / 60, totalMinutes % 60)
-    }
-}
-
-// MARK: - Month heatmap
-
-private struct ScheduleMonthHeatmapGrid: View {
-    let calendar: Calendar
-    let monthAnchor: Date
-    let bookings: [SimpleBookingDTO]
-    let onDayTap: (Date) -> Void
-
-    private let cellHeight: CGFloat = 34
-    private let gridSpacing: CGFloat = 5
-    private let dayFontSize: CGFloat = 11
-
-    private var gridDays: [Date?] {
-        let range = calendar.range(of: .day, in: .month, for: monthAnchor) ?? 1 ..< 29
-        let first = calendar.date(from: calendar.dateComponents([.year, .month], from: monthAnchor)) ?? monthAnchor
-        let weekday = calendar.component(.weekday, from: first)
-        let pad = (weekday + 5) % 7
-        var cells: [Date?] = Array(repeating: nil, count: pad)
-        for d in range {
-            if let date = calendar.date(byAdding: .day, value: d - 1, to: first) {
-                cells.append(date)
-            }
-        }
-        while cells.count % 7 != 0 { cells.append(nil) }
-        return cells
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: gridSpacing), count: 7), spacing: gridSpacing) {
-                ForEach(Array(["M", "T", "W", "T", "F", "S", "S"].enumerated()), id: \.offset) { _, label in
-                    Text(label)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
-                }
-                ForEach(gridDays.indices, id: \.self) { index in
-                    if let date = gridDays[index] {
-                        monthDayCell(date: date)
-                    } else {
-                        Color.clear.frame(height: cellHeight)
-                    }
-                }
-            }
-            .padding(12)
-        }
-    }
-
-    private func monthDayCell(date: Date) -> some View {
-        let dayBookings = bookings.filter { $0.isSameCalendarDay(as: date, calendar: calendar) }
-        let count = dayBookings.count
-        let booked = dayBookings.filter { ProviderBookingStatusDisplay.isScheduleBooked(status: $0.status) }.count
-        let completed = dayBookings.filter { ProviderBookingStatusDisplay.isScheduleCompleted(status: $0.status) }.count
-        let intensity = min(1.0, Double(count) / 4.0)
-        let isToday = calendar.isDateInToday(date)
-
-        return Button {
-            onDayTap(date)
-        } label: {
-            VStack(spacing: 4) {
-                Text("\(calendar.component(.day, from: date))")
-                    .font(.system(size: dayFontSize, weight: isToday ? .bold : .semibold))
-                    .foregroundStyle(Color.lavaShellCream)
-                HStack(spacing: 3) {
-                    if booked > 0 {
-                        Circle()
-                            .fill(Color.providerOlive)
-                            .frame(width: 6, height: 6)
-                    }
-                    if completed > 0 {
-                        Circle()
-                            .fill(Color.green.opacity(0.85))
-                            .frame(width: 6, height: 6)
-                    }
-                    if count == 0 {
-                        Circle()
-                            .fill(Color.lavaShellCreamTertiary.opacity(0.25))
-                            .frame(width: 6, height: 6)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: cellHeight)
-            .background {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.providerOlive.opacity(intensity * 0.35 + (isToday ? 0.12 : 0)))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(
-                                isToday ? Color.providerOlive.opacity(0.7) : Color.providerScheduleCardStroke,
-                                lineWidth: isToday ? 1 : 0.5
-                            )
-                    )
-            }
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 // MARK: - Timeline bounds helper
 
 enum ProviderScheduleTimelineBounds {
     static let defaultStartMinute = 8 * 60
     static let defaultEndMinute = 19 * 60
 
-    static func range(for intervals: [BarberAvailabilityIntervalDTO]) -> (start: Int, end: Int) {
+    /// Padded outer range — used for week overview where a little breathing room helps.
+    static func range(for intervals: [BarberAvailabilityIntervalDTO], paddingMinutes: Int = 30) -> (start: Int, end: Int) {
         guard !intervals.isEmpty else {
             return (defaultStartMinute, defaultEndMinute)
         }
@@ -2439,7 +2376,92 @@ enum ProviderScheduleTimelineBounds {
             start = min(start, s)
             end = max(end, e)
         }
-        return (max(0, start - 30), min(24 * 60, end + 30))
+        return (max(0, start - paddingMinutes), min(24 * 60, end + paddingMinutes))
+    }
+
+    /// Exact booking-hour envelope with no padding — day/minute views use this.
+    static func exactRange(for intervals: [BarberAvailabilityIntervalDTO]) -> (start: Int, end: Int)? {
+        guard !intervals.isEmpty else { return nil }
+        var start = defaultEndMinute
+        var end = defaultStartMinute
+        for interval in intervals {
+            let s = minutesFromHHMM(interval.start)
+            let e = minutesFromHHMM(interval.end)
+            start = min(start, s)
+            end = max(end, e)
+        }
+        guard end > start else { return nil }
+        return (start, end)
+    }
+
+    /// Total minutes of availability (excludes gaps between intervals).
+    static func visibleMinuteSpan(for intervals: [BarberAvailabilityIntervalDTO]) -> Int {
+        intervals.reduce(0) { total, interval in
+            let s = minutesFromHHMM(interval.start)
+            let e = minutesFromHHMM(interval.end)
+            return total + max(0, e - s)
+        }
+    }
+
+    private static func minutesFromHHMM(_ hhmm: String) -> Int {
+        let parts = hhmm.split(separator: ":")
+        let h = parts.first.flatMap { Int($0) } ?? 0
+        let m = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+        return h * 60 + m
+    }
+}
+
+/// Maps clock minutes into stacked availability segments (gaps between booking hours are omitted).
+private struct ScheduleAvailabilityTimelineLayout {
+    struct Segment: Equatable {
+        let start: Int
+        let end: Int
+    }
+
+    let segments: [Segment]
+    let verticalScale: CGFloat
+
+    init(intervals: [BarberAvailabilityIntervalDTO], verticalScale: CGFloat) {
+        self.verticalScale = verticalScale
+        self.segments = intervals
+            .map { Segment(start: Self.minutesFromHHMM($0.start), end: Self.minutesFromHHMM($0.end)) }
+            .filter { $0.end > $0.start }
+            .sorted { $0.start < $1.start }
+    }
+
+    var isEmpty: Bool { segments.isEmpty }
+
+    var contentHeight: CGFloat {
+        segments.reduce(0) { $0 + CGFloat($1.end - $1.start) * verticalScale }
+    }
+
+    func contentY(forMinute minute: Int) -> CGFloat? {
+        var offset: CGFloat = 0
+        for segment in segments {
+            if minute < segment.start { return nil }
+            if minute < segment.end {
+                return offset + CGFloat(minute - segment.start) * verticalScale
+            }
+            offset += CGFloat(segment.end - segment.start) * verticalScale
+        }
+        return nil
+    }
+
+    func minute(atContentY y: CGFloat) -> Int? {
+        var offset: CGFloat = 0
+        for segment in segments {
+            let segmentHeight = CGFloat(segment.end - segment.start) * verticalScale
+            if y < offset + segmentHeight {
+                let minute = segment.start + Int(((y - offset) / verticalScale).rounded())
+                return min(max(minute, segment.start), segment.end - 1)
+            }
+            offset += segmentHeight
+        }
+        return nil
+    }
+
+    func contains(minute: Int) -> Bool {
+        segments.contains { minute >= $0.start && minute < $0.end }
     }
 
     private static func minutesFromHHMM(_ hhmm: String) -> Int {

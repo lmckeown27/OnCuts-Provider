@@ -24,7 +24,7 @@ struct ProviderPendingRequestScheduleEditor: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Date")
-                    .font(.caption.weight(.semibold))
+                    .font(.provider(.caption, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                 DatePicker(
                     "",
@@ -40,23 +40,23 @@ struct ProviderPendingRequestScheduleEditor: View {
             .background(scheduleChromeBackground(cornerRadius: 12, style: .neutral))
 
             Text(selectedDateTime, format: .dateTime.weekday(.wide).month(.wide).day())
-                .font(.title3.weight(.semibold))
+                .font(.provider(.title3, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCream)
 
             Text("Tap an available hour for this appointment")
-                .font(.caption)
+                .font(.provider(.caption))
                 .foregroundStyle(Color.lavaShellCreamTertiary)
 
             if isLoading {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Loading schedule…")
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 }
             } else if let loadError {
                 Text(loadError)
-                    .font(.footnote)
+                    .font(.provider(.footnote))
                     .foregroundStyle(.red.opacity(0.9))
             } else {
                 scheduleHourList
@@ -96,7 +96,7 @@ struct ProviderPendingRequestScheduleEditor: View {
         let slots = ProviderScheduleHourlySlot.generate(from: intervals)
         if slots.isEmpty {
             Text("No working hours on this day.")
-                .font(.footnote)
+                .font(.provider(.footnote))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
         } else {
             VStack(spacing: 8) {
@@ -131,23 +131,23 @@ struct ProviderPendingRequestScheduleEditor: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(slot.displayRange)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.provider(.subheadline, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
                 Spacer()
                 Text("PENDING")
-                    .font(.caption2.weight(.bold))
+                    .font(.provider(.caption2, weight: .bold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(Color.providerOlive.opacity(0.35), in: Capsule())
             }
             Text(customerName)
-                .font(.title3.weight(.semibold))
+                .font(.provider(.title3, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCream)
             Text(serviceType)
-                .font(.subheadline)
+                .font(.provider(.subheadline))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
             Text("Selected time — tap another open hour to move")
-                .font(.caption2)
+                .font(.provider(.caption2))
                 .foregroundStyle(Color.lavaShellCreamTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -159,20 +159,20 @@ struct ProviderPendingRequestScheduleEditor: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(slot.displayRange)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.provider(.subheadline, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
                 Spacer()
                 Text(booking.statusUpper)
-                    .font(.caption2.weight(.bold))
+                    .font(.provider(.caption2, weight: .bold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(Color.providerElevatedSurface, in: Capsule())
             }
             Text(booking.consumerDisplayName)
-                .font(.title3.weight(.semibold))
+                .font(.provider(.title3, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCream)
             Text(booking.serviceDisplayName)
-                .font(.subheadline)
+                .font(.provider(.subheadline))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -186,11 +186,11 @@ struct ProviderPendingRequestScheduleEditor: View {
                 .fill(Color.providerOlive)
                 .frame(width: 8, height: 8)
             Text(slot.displayRange)
-                .font(.subheadline.weight(.medium))
+                .font(.provider(.subheadline, weight: .medium))
                 .foregroundStyle(Color.lavaShellCream)
             Spacer()
             Text("Available")
-                .font(.caption2.weight(.semibold))
+                .font(.provider(.caption2, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -202,14 +202,14 @@ struct ProviderPendingRequestScheduleEditor: View {
     private func blockedRow(slot: ProviderScheduleHourlySlot) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "hand.raised.fill")
-                .font(.subheadline)
+                .font(.provider(.subheadline))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
             Text(slot.displayRange)
-                .font(.subheadline.weight(.medium))
+                .font(.provider(.subheadline, weight: .medium))
                 .foregroundStyle(Color.lavaShellCream)
             Spacer()
             Text("Blocked")
-                .font(.caption2.weight(.semibold))
+                .font(.provider(.caption2, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

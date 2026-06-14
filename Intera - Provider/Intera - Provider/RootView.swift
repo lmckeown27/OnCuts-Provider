@@ -39,6 +39,7 @@ struct RootView: View {
             }
             #endif
         }
+        .environment(\.font, .provider(.body))
         .task {
             await session.bootstrap()
             #if os(iOS) || os(visionOS)

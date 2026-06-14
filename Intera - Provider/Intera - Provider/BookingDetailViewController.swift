@@ -379,7 +379,7 @@ final class BookingDetailViewController: UIViewController {
     private func makeHeader() -> UIView {
         let titleLabel = UILabel()
         titleLabel.text = "Booking Details"
-        titleLabel.font = .systemFont(ofSize: 24, weight: .bold)
+        titleLabel.font = .provider(size: 24, weight: .bold)
         titleLabel.textColor = Token.primaryText
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -412,7 +412,7 @@ final class BookingDetailViewController: UIViewController {
         let (background, foreground) = statusPalette(for: status)
         let label = UILabel()
         label.text = status.isEmpty ? "—" : status
-        label.font = .systemFont(ofSize: 11, weight: .heavy)
+        label.font = .provider(size: 11, weight: .heavy)
         label.textColor = foreground
         label.translatesAutoresizingMaskIntoConstraints = false
 
@@ -460,7 +460,7 @@ final class BookingDetailViewController: UIViewController {
 
         let nameLabel = UILabel()
         nameLabel.text = current.consumerDisplayName
-        nameLabel.font = .systemFont(ofSize: 22, weight: .semibold)
+        nameLabel.font = .provider(size: 22, weight: .semibold)
         nameLabel.textColor = Token.primaryText
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
 
@@ -566,13 +566,13 @@ final class BookingDetailViewController: UIViewController {
 
         let service = UILabel()
         service.text = current.serviceDisplayName
-        service.font = .systemFont(ofSize: 16, weight: .semibold)
+        service.font = .provider(size: 16, weight: .semibold)
         service.textColor = Token.primaryText
         service.translatesAutoresizingMaskIntoConstraints = false
 
         let price = UILabel()
         price.text = formattedPrice() ?? "—"
-        price.font = .systemFont(ofSize: 16, weight: .bold)
+        price.font = .provider(size: 16, weight: .bold)
         price.textColor = Token.primaryText
         price.translatesAutoresizingMaskIntoConstraints = false
         price.setContentHuggingPriority(.required, for: .horizontal)
@@ -619,7 +619,7 @@ final class BookingDetailViewController: UIViewController {
         let card = makeCard()
         let label = UILabel()
         label.text = notes
-        label.font = .systemFont(ofSize: 15, weight: .regular)
+        label.font = .provider(size: 15, weight: .regular)
         label.textColor = Token.primaryText
         label.numberOfLines = 0
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -648,13 +648,13 @@ final class BookingDetailViewController: UIViewController {
 
         let totalTitle = UILabel()
         totalTitle.text = "Total Paid"
-        totalTitle.font = .systemFont(ofSize: 15, weight: .medium)
+        totalTitle.font = .provider(size: 15, weight: .medium)
         totalTitle.textColor = Token.primaryText
         totalTitle.translatesAutoresizingMaskIntoConstraints = false
 
         let totalValue = UILabel()
         totalValue.text = formattedTotalPaid()
-        totalValue.font = .systemFont(ofSize: 18, weight: .bold)
+        totalValue.font = .provider(size: 18, weight: .bold)
         totalValue.textColor = Token.accent
         totalValue.translatesAutoresizingMaskIntoConstraints = false
         totalValue.setContentHuggingPriority(.required, for: .horizontal)
@@ -666,7 +666,7 @@ final class BookingDetailViewController: UIViewController {
 
         let tipTitle = UILabel()
         tipTitle.text = "Tip"
-        tipTitle.font = .systemFont(ofSize: 14, weight: .medium)
+        tipTitle.font = .provider(size: 14, weight: .medium)
         tipTitle.textColor = Token.secondaryText
         tipTitle.translatesAutoresizingMaskIntoConstraints = false
 
@@ -678,7 +678,7 @@ final class BookingDetailViewController: UIViewController {
             tipValue.text = "No tip"
             tipValue.textColor = Token.secondaryText
         }
-        tipValue.font = .systemFont(ofSize: 15, weight: .semibold)
+        tipValue.font = .provider(size: 15, weight: .semibold)
         tipValue.translatesAutoresizingMaskIntoConstraints = false
         tipValue.setContentHuggingPriority(.required, for: .horizontal)
 
@@ -736,13 +736,13 @@ final class BookingDetailViewController: UIViewController {
 
         let titleLabel = UILabel()
         titleLabel.text = title.uppercased()
-        titleLabel.font = .systemFont(ofSize: 11, weight: .semibold)
+        titleLabel.font = .provider(size: 11, weight: .semibold)
         titleLabel.textColor = Token.secondaryText
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         let valueLabel = UILabel()
         valueLabel.text = value
-        valueLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        valueLabel.font = .provider(size: 15, weight: .semibold)
         valueLabel.textColor = Token.primaryText
         valueLabel.numberOfLines = 1
         valueLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -766,7 +766,7 @@ final class BookingDetailViewController: UIViewController {
     private func makeSectionHeader(text: String) -> UILabel {
         let label = UILabel()
         label.text = text
-        label.font = .systemFont(ofSize: 12, weight: .semibold)
+        label.font = .provider(size: 12, weight: .semibold)
         label.textColor = Token.secondaryText
         return label
     }
@@ -776,13 +776,13 @@ final class BookingDetailViewController: UIViewController {
     private func makeReferenceFooter() -> UIView {
         let caption = UILabel()
         caption.text = "Booking Reference"
-        caption.font = .systemFont(ofSize: 12, weight: .medium)
+        caption.font = .provider(size: 12, weight: .medium)
         caption.textColor = Token.secondaryText
         caption.textAlignment = .center
 
         let code = UILabel()
         code.text = bookingReferenceCode()
-        code.font = .monospacedSystemFont(ofSize: 16, weight: .semibold)
+        code.font = .provider(size: 16, weight: .semibold)
         code.textColor = Token.primaryText
         code.textAlignment = .center
 
@@ -978,7 +978,7 @@ final class BookingDetailViewController: UIViewController {
         config.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16)
 
         var titleAttr = AttributedString(title)
-        titleAttr.font = .systemFont(ofSize: 16, weight: .semibold)
+        titleAttr.font = .provider(size: 16, weight: .semibold)
         titleAttr.foregroundColor = foreground
         config.attributedTitle = titleAttr
 
@@ -1011,7 +1011,7 @@ final class BookingDetailViewController: UIViewController {
         config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14)
 
         var titleAttr = AttributedString(title)
-        titleAttr.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleAttr.font = .provider(size: 15, weight: .semibold)
         titleAttr.foregroundColor = foreground
         config.attributedTitle = titleAttr
 
@@ -1044,7 +1044,7 @@ final class BookingDetailViewController: UIViewController {
         config.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16)
 
         var titleAttr = AttributedString(title)
-        titleAttr.font = .systemFont(ofSize: 16, weight: .semibold)
+        titleAttr.font = .provider(size: 16, weight: .semibold)
         titleAttr.foregroundColor = Token.secondaryText
         config.attributedTitle = titleAttr
 

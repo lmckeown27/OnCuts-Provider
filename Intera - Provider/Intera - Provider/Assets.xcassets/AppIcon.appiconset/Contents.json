@@ -1,7 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "Footer_Chair copy 2.png",
+      "filename" : "NewInteraProvider_AppIcon.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -13,7 +13,7 @@
           "value" : "dark"
         }
       ],
-      "filename" : "Footer_Chair copy 3.png",
+      "filename" : "NewInteraProvider_AppIcon 1.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -25,19 +25,17 @@
           "value" : "tinted"
         }
       ],
-      "filename" : "Footer_Chair copy 4.png",
+      "filename" : "NewInteraProvider_AppIcon 2.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
     },
     {
-      "filename" : "Footer_Chair copy.png",
       "idiom" : "mac",
       "scale" : "1x",
       "size" : "16x16"
     },
     {
-      "filename" : "Footer_Chair copy 5.png",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "16x16"

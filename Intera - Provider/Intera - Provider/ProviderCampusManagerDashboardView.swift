@@ -176,7 +176,7 @@ struct ProviderCampusManagerDashboardView: View {
         VStack(spacing: 0) {
             if let errorText {
                 Text(errorText)
-                    .font(.footnote)
+                    .font(.provider(.footnote))
                     .foregroundStyle(Color.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
@@ -191,7 +191,7 @@ struct ProviderCampusManagerDashboardView: View {
             Picker("Section", selection: $mainTab) {
                 ForEach(CampusManagerMainTab.allCases) { tab in
                     Text(tab.title)
-                        .font(.body.weight(.semibold))
+                        .font(.provider(.body, weight: .semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .tag(tab)
@@ -312,7 +312,7 @@ struct ProviderCampusManagerDashboardView: View {
     private var adminCampusSwitcherHeader: some View {
         HStack(spacing: 8) {
             Text("Admin view")
-                .font(.caption2.weight(.bold))
+                .font(.provider(.caption2, weight: .bold))
                 .textCase(.uppercase)
                 .foregroundStyle(Color.lavaShellCreamSecondary)
 
@@ -339,10 +339,10 @@ struct ProviderCampusManagerDashboardView: View {
             } label: {
                 HStack(spacing: 6) {
                     Text(effectiveCampusDisplayName)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.provider(.subheadline, weight: .semibold))
                         .lineLimit(1)
                     Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption2.weight(.semibold))
+                        .font(.provider(.caption2, weight: .semibold))
                 }
                 .foregroundStyle(Color.lavaShellCream)
                 .padding(.horizontal, 12)
@@ -371,7 +371,7 @@ struct ProviderCampusManagerDashboardView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(row.displayName)
                     if let loc = row.locationLine, !loc.isEmpty {
-                        Text(loc).font(.caption)
+                        Text(loc).font(.provider(.caption))
                     }
                 }
                 Spacer()
@@ -393,7 +393,7 @@ struct ProviderCampusManagerDashboardView: View {
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 Text(effectiveCampusDisplayName)
-                    .font(.title3.weight(.semibold))
+                    .font(.provider(.title3, weight: .semibold))
 
                 designatedManagerRow
 
@@ -413,12 +413,12 @@ struct ProviderCampusManagerDashboardView: View {
                     HStack {
                         ProgressView().controlSize(.small)
                         Text("Loading campus metrics…")
-                            .font(.footnote)
+                            .font(.provider(.footnote))
                             .foregroundStyle(Color.lavaShellCreamSecondary)
                     }
                 } else {
                     Text("Campus metrics aren't available right now.")
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 }
             }
@@ -437,12 +437,12 @@ struct ProviderCampusManagerDashboardView: View {
                 .frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Campus Manager")
-                    .font(.caption2.weight(.semibold))
+                    .font(.provider(.caption2, weight: .semibold))
                     .textCase(.uppercase)
                     .foregroundStyle(Color.lavaShellCreamTertiary)
                 HStack(spacing: 6) {
                     Text(info.name)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.provider(.subheadline, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCream)
                     if info.isCurrentUser {
                         tag(text: "YOU", tint: Color.providerOlive)
@@ -508,13 +508,13 @@ struct ProviderCampusManagerDashboardView: View {
             VStack(alignment: .leading, spacing: 14) {
                 if let platformServicesError {
                     Text(platformServicesError)
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(.red)
                 }
 
                 HStack {
                     Text("Show deleted")
-                        .font(.subheadline.weight(.medium))
+                        .font(.provider(.subheadline, weight: .medium))
                     Spacer()
                     Toggle("", isOn: $showDeletedPlatformServices)
                         .labelsHidden()
@@ -531,7 +531,7 @@ struct ProviderCampusManagerDashboardView: View {
                     }
                 } label: {
                     Label(showAddServiceCard ? "Cancel add" : "Add Service", systemImage: showAddServiceCard ? "xmark.circle.fill" : "plus.circle.fill")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.provider(.subheadline, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .background(Color.providerOlive.opacity(0.85), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -548,21 +548,21 @@ struct ProviderCampusManagerDashboardView: View {
                             .textFieldStyle(.roundedBorder)
                         HStack {
                             Text("$")
-                                .font(.headline.weight(.bold))
+                                .font(.provider(.headline, weight: .bold))
                             TextField("Base price", text: $addServicePrice)
                                 .keyboardType(.decimalPad)
                                 .textFieldStyle(.roundedBorder)
                         }
                         if let addServiceError, !addServiceError.isEmpty {
                             Text(addServiceError)
-                                .font(.caption)
+                                .font(.provider(.caption))
                                 .foregroundStyle(.red)
                         }
                         Button {
                             Task { await submitAddService() }
                         } label: {
                             Text("Save service")
-                                .font(.subheadline.weight(.semibold))
+                                .font(.provider(.subheadline, weight: .semibold))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 10)
                                 .background(Color.providerOlive.opacity(0.45), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -581,12 +581,12 @@ struct ProviderCampusManagerDashboardView: View {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
                         Text("Loading services…")
-                            .font(.footnote)
+                            .font(.provider(.footnote))
                             .foregroundStyle(Color.lavaShellCreamSecondary)
                     }
                 } else if platformServices.isEmpty {
                     Text("No services yet. Add a service type to match your campus offerings.")
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 } else {
                     LazyVGrid(
@@ -611,7 +611,7 @@ struct ProviderCampusManagerDashboardView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 6) {
                 Text(svc.name)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.provider(.subheadline, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -623,7 +623,7 @@ struct ProviderCampusManagerDashboardView: View {
                                 editingPriceText = "\(baseDollars)"
                             } label: {
                                 Image(systemName: "pencil")
-                                    .font(.caption.weight(.semibold))
+                                    .font(.provider(.caption, weight: .semibold))
                                     .foregroundStyle(Color.lavaShellCream.opacity(0.65))
                                     .padding(6)
                             }
@@ -633,7 +633,7 @@ struct ProviderCampusManagerDashboardView: View {
                                 servicePendingDelete = svc
                             } label: {
                                 Image(systemName: "trash")
-                                    .font(.caption.weight(.semibold))
+                                    .font(.provider(.caption, weight: .semibold))
                                     .foregroundStyle(Color.lavaShellCream.opacity(0.65))
                                     .padding(6)
                             }
@@ -652,7 +652,7 @@ struct ProviderCampusManagerDashboardView: View {
                         if busy { ProgressView().controlSize(.mini) }
                         Image(systemName: "arrow.uturn.backward")
                         Text("Restore service")
-                            .font(.caption.weight(.semibold))
+                            .font(.provider(.caption, weight: .semibold))
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
@@ -665,11 +665,11 @@ struct ProviderCampusManagerDashboardView: View {
             if isEditingPrice {
                 HStack(spacing: 4) {
                     Text("$")
-                        .font(.headline.weight(.bold))
+                        .font(.provider(.headline, weight: .bold))
                         .foregroundStyle(Color.lavaShellCream.opacity(0.55))
                     TextField("Price", text: $editingPriceText)
                         .keyboardType(.numberPad)
-                        .font(.headline.weight(.bold))
+                        .font(.provider(.headline, weight: .bold))
                         .foregroundStyle(Color.lavaShellCream)
                         .frame(width: 56)
                         .padding(.vertical, 4)
@@ -683,7 +683,7 @@ struct ProviderCampusManagerDashboardView: View {
                     Button("Save") {
                         Task { await saveInlineBasePrice(svc) }
                     }
-                    .font(.caption.weight(.semibold))
+                    .font(.provider(.caption, weight: .semibold))
                     .buttonStyle(.borderedProminent)
                     .tint(.providerOlive)
                     .disabled(busy)
@@ -691,22 +691,22 @@ struct ProviderCampusManagerDashboardView: View {
                         editingPriceServiceId = nil
                         editingPriceText = ""
                     }
-                    .font(.caption.weight(.semibold))
+                    .font(.provider(.caption, weight: .semibold))
                     .buttonStyle(.bordered)
                     .disabled(busy)
                 }
             } else {
                 HStack(spacing: 4) {
                     Text("$")
-                        .font(.headline.weight(.bold))
+                        .font(.provider(.headline, weight: .bold))
                         .foregroundStyle(Color.lavaShellCream.opacity(0.55))
                     Text("\(baseDollars)")
-                        .font(.headline.weight(.bold))
+                        .font(.provider(.headline, weight: .bold))
                         .foregroundStyle(Color.lavaShellCream)
                 }
                 if let rangeLabel = platformServiceBarberRangeLabel(svc) {
                     Text(rangeLabel)
-                        .font(.caption2)
+                        .font(.provider(.caption2))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 }
             }
@@ -859,14 +859,14 @@ struct ProviderCampusManagerDashboardView: View {
             VStack(spacing: 10) {
                 if let togglingError {
                     Text(togglingError)
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(.red)
                 }
                 ForEach(barbers) { barber in
                     barberRow(barber)
                 }
                 if isLoading, barbers.isEmpty {
-                    HStack { ProgressView().controlSize(.small); Text("Loading barbers…").font(.footnote).foregroundStyle(Color.lavaShellCreamSecondary) }
+                    HStack { ProgressView().controlSize(.small); Text("Loading barbers…").font(.provider(.footnote)).foregroundStyle(Color.lavaShellCreamSecondary) }
                 }
             }
         }
@@ -890,7 +890,7 @@ struct ProviderCampusManagerDashboardView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
                     Text("Show all")
-                        .font(.subheadline.weight(.medium))
+                        .font(.provider(.subheadline, weight: .medium))
                     Spacer(minLength: 8)
                     Toggle("", isOn: Binding(
                         get: { !applicationsShowOnlyActionable },
@@ -902,7 +902,7 @@ struct ProviderCampusManagerDashboardView: View {
 
                 if let applicationsError, !applicationsError.isEmpty {
                     Text(applicationsError)
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(.red)
                 }
 
@@ -910,14 +910,14 @@ struct ProviderCampusManagerDashboardView: View {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
                         Text("Loading applications…")
-                            .font(.footnote)
+                            .font(.provider(.footnote))
                             .foregroundStyle(Color.lavaShellCreamSecondary)
                     }
                 } else if visibleApplications.isEmpty {
                     Text(applicationsShowOnlyActionable
                         ? "No pending applications right now. New submissions will appear here for review."
                         : "No applications have been submitted to this campus yet.")
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 } else {
                     VStack(spacing: 10) {
@@ -961,7 +961,7 @@ struct ProviderCampusManagerDashboardView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(app.displayName)
-                                .font(.subheadline.weight(.semibold))
+                                .font(.provider(.subheadline, weight: .semibold))
                                 .foregroundStyle(Color.lavaShellCream)
                             if app.origin == .guest {
                                 tag(text: "GUEST", tint: Color.orange.opacity(0.7))
@@ -969,7 +969,7 @@ struct ProviderCampusManagerDashboardView: View {
                         }
                         if let email = app.email, !email.isEmpty {
                             Text(email)
-                                .font(.caption)
+                                .font(.provider(.caption))
                                 .foregroundStyle(Color.lavaShellCreamSecondary)
                                 .lineLimit(1)
                         }
@@ -994,14 +994,14 @@ struct ProviderCampusManagerDashboardView: View {
                                 Text(relativeShort(when))
                             }
                         }
-                        .font(.caption2)
+                        .font(.provider(.caption2))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                     }
                     Spacer(minLength: 8)
                     VStack(alignment: .trailing, spacing: 6) {
                         applicationStatusBadge(app)
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption.weight(.semibold))
+                            .font(.provider(.caption, weight: .semibold))
                             .foregroundStyle(Color.lavaShellCreamSecondary)
                     }
                 }
@@ -1076,10 +1076,10 @@ struct ProviderCampusManagerDashboardView: View {
     private func applicationFactCell(title: String, value: String?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(.caption2)
+                .font(.provider(.caption2))
                 .foregroundStyle(Color.lavaShellCreamTertiary)
             Text(value?.isEmpty == false ? value! : "—")
-                .font(.caption.weight(.semibold))
+                .font(.provider(.caption, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCream)
                 .lineLimit(2)
         }
@@ -1100,11 +1100,11 @@ struct ProviderCampusManagerDashboardView: View {
     private func applicationParagraph(title: String, text: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.caption2.weight(.semibold))
+                .font(.provider(.caption2, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCreamTertiary)
                 .textCase(.uppercase)
             Text(text)
-                .font(.footnote)
+                .font(.provider(.footnote))
                 .foregroundStyle(Color.lavaShellCream)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1123,7 +1123,7 @@ struct ProviderCampusManagerDashboardView: View {
         if emailURL != nil || phoneURL != nil || smsURL != nil {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Contact")
-                    .font(.caption2.weight(.semibold))
+                    .font(.provider(.caption2, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
                     .textCase(.uppercase)
                 HStack(spacing: 8) {
@@ -1151,7 +1151,7 @@ struct ProviderCampusManagerDashboardView: View {
     private func contactPill(systemImage: String, label: String) -> some View {
         HStack(spacing: 4) {
             Image(systemName: systemImage)
-            Text(label).font(.caption.weight(.semibold))
+            Text(label).font(.provider(.caption, weight: .semibold))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -1209,7 +1209,7 @@ struct ProviderCampusManagerDashboardView: View {
                 }
             } else {
                 Text(app.statusEnum == .approved ? "Approved" : "Rejected")
-                    .font(.footnote.weight(.semibold))
+                    .font(.provider(.footnote, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             }
             Spacer(minLength: 0)
@@ -1230,7 +1230,7 @@ struct ProviderCampusManagerDashboardView: View {
             HStack(spacing: 6) {
                 Image(systemName: systemImage)
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.provider(.subheadline, weight: .semibold))
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
@@ -1251,7 +1251,7 @@ struct ProviderCampusManagerDashboardView: View {
         case .pending, .none: Color.orange.opacity(0.55)
         }
         return Text(label)
-            .font(.caption2.weight(.semibold))
+            .font(.provider(.caption2, weight: .semibold))
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(tint, in: Capsule())
@@ -1362,20 +1362,20 @@ struct ProviderCampusManagerDashboardView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(barber.displayName)
-                            .font(.subheadline.weight(.semibold))
+                            .font(.provider(.subheadline, weight: .semibold))
                         if barber.isCampusManager == true {
                             tag(text: "CM", tint: Color.providerOlive)
                         }
                     }
                     Text(barber.email ?? "—")
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                     HStack(spacing: 8) {
                         Text("\(barber.completedBookings ?? 0) booking\(barber.completedBookings == 1 ? "" : "s")")
                         Text("·")
                         Text(dollarString(centsLike: Double(barber.totalVolumeCents ?? 0)))
                     }
-                    .font(.caption2)
+                    .font(.provider(.caption2))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
                 Spacer()
@@ -1399,7 +1399,7 @@ struct ProviderCampusManagerDashboardView: View {
             HStack(spacing: 4) {
                 Image(systemName: isOn ? "eye" : "eye.slash")
                 Text(isOn ? "Visible" : "Hidden")
-                    .font(.caption.weight(.semibold))
+                    .font(.provider(.caption, weight: .semibold))
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -1430,7 +1430,7 @@ struct ProviderCampusManagerDashboardView: View {
 
                 if bookings.isEmpty {
                     Text(isLoading ? "Loading bookings…" : "No bookings for this filter.")
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 } else {
                     ForEach(bookings.prefix(50)) { b in
@@ -1438,7 +1438,7 @@ struct ProviderCampusManagerDashboardView: View {
                     }
                     if bookings.count > 50 {
                         Text("Showing first 50 of \(bookings.count). Open the web dashboard for full filtering.")
-                            .font(.caption2)
+                            .font(.provider(.caption2))
                             .foregroundStyle(Color.lavaShellCreamTertiary)
                     }
                 }
@@ -1450,22 +1450,22 @@ struct ProviderCampusManagerDashboardView: View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(b.consumerDisplayName)
-                    .font(.title3.weight(.semibold))
+                    .font(.provider(.title3, weight: .semibold))
                 Text(b.barberDisplayName)
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                 Text(b.serviceDisplayName)
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                 if let t = b.scheduledTime {
                     Text(t, style: .date)
-                        .font(.caption2)
+                        .font(.provider(.caption2))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                     + Text(" · ")
-                        .font(.caption2)
+                        .font(.provider(.caption2))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                     + Text(t, style: .time)
-                        .font(.caption2)
+                        .font(.provider(.caption2))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
             }
@@ -1601,10 +1601,10 @@ struct ProviderCampusManagerDashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.title3.weight(.semibold))
+                    .font(.provider(.title3, weight: .semibold))
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 }
             }
@@ -1625,10 +1625,10 @@ struct ProviderCampusManagerDashboardView: View {
     private func metricCell(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(.caption2)
+                .font(.provider(.caption2))
                 .foregroundStyle(Color.lavaShellCreamTertiary)
             Text(value)
-                .font(.subheadline.weight(.semibold))
+                .font(.provider(.subheadline, weight: .semibold))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
@@ -1640,7 +1640,7 @@ struct ProviderCampusManagerDashboardView: View {
 
     private func tag(text: String, tint: Color) -> some View {
         Text(text)
-            .font(.caption2.weight(.bold))
+            .font(.provider(.caption2, weight: .bold))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(tint.opacity(0.6), in: Capsule())
@@ -1655,7 +1655,7 @@ struct ProviderCampusManagerDashboardView: View {
         default: Color.gray.opacity(0.6)
         }
         return Text(status.replacingOccurrences(of: "_", with: " "))
-            .font(.caption2.weight(.semibold))
+            .font(.provider(.caption2, weight: .semibold))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(tint, in: Capsule())

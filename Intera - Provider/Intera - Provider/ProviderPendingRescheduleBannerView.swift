@@ -63,7 +63,7 @@ final class ProviderPendingRescheduleBannerView: UIView {
         card.translatesAutoresizingMaskIntoConstraints = false
 
         titleLabel.text = "Schedule change pending approval"
-        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.font = .provider(size: 15, weight: .semibold)
         titleLabel.textColor = ProviderAppearance.primaryText
         titleLabel.numberOfLines = 0
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -73,7 +73,7 @@ final class ProviderPendingRescheduleBannerView: UIView {
         bodyStack.translatesAutoresizingMaskIntoConstraints = false
 
         approveButton.setTitle("Approve", for: .normal)
-        approveButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+        approveButton.titleLabel?.font = .provider(size: 15, weight: .semibold)
         approveButton.backgroundColor = ProviderChatDesignTokens.Color.statusGreen
         approveButton.setTitleColor(.white, for: .normal)
         approveButton.layer.cornerRadius = 10
@@ -81,7 +81,7 @@ final class ProviderPendingRescheduleBannerView: UIView {
         approveButton.addTarget(self, action: #selector(approveTapped), for: .touchUpInside)
 
         declineButton.setTitle("Decline", for: .normal)
-        declineButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+        declineButton.titleLabel?.font = .provider(size: 15, weight: .semibold)
         declineButton.backgroundColor = ProviderAppearance.elevatedSurface
         declineButton.setTitleColor(ProviderAppearance.primaryText, for: .normal)
         declineButton.layer.cornerRadius = 10
@@ -126,12 +126,12 @@ final class ProviderPendingRescheduleBannerView: UIView {
     private func detailRow(title: String, value: String, emphasized: Bool = false) -> UIView {
         let titleLabel = UILabel()
         titleLabel.text = title
-        titleLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        titleLabel.font = .provider(size: 12, weight: .medium)
         titleLabel.textColor = ProviderAppearance.secondaryText
 
         let valueLabel = UILabel()
         valueLabel.text = value
-        valueLabel.font = .systemFont(ofSize: 14, weight: emphasized ? .semibold : .regular)
+        valueLabel.font = .provider(size: 14, weight: emphasized ? .semibold : .regular)
         valueLabel.textColor = ProviderAppearance.primaryText
         valueLabel.numberOfLines = 0
 

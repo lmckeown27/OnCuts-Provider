@@ -125,12 +125,12 @@ struct ProviderConsumerEnrollmentView: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         Image(systemName: copy.symbol)
-                            .font(.system(size: 34))
+                            .font(.provider(size: 34))
                             .foregroundStyle(copy.tint)
                         Text(copy.title)
-                            .font(.title2.weight(.semibold))
+                            .font(.provider(.title2, weight: .semibold))
                         Text(copy.description)
-                            .font(.body)
+                            .font(.provider(.body))
                             .foregroundStyle(Color.lavaShellCreamSecondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -140,10 +140,10 @@ struct ProviderConsumerEnrollmentView: View {
                     if let createdAt = existingApplication.createdAt, !createdAt.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Submitted on")
-                                .font(.caption.weight(.semibold))
+                                .font(.provider(.caption, weight: .semibold))
                                 .foregroundStyle(Color.lavaShellCreamTertiary)
                             Text(formattedSubmittedDate(createdAt))
-                                .font(.body.weight(.medium))
+                                .font(.provider(.body, weight: .medium))
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(16)
@@ -157,7 +157,7 @@ struct ProviderConsumerEnrollmentView: View {
                             resetWizardForReapply()
                         } label: {
                             Text("Submit a new application")
-                                .font(.headline)
+                                .font(.provider(.headline))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
                                 .background(Color.providerOlive, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -166,7 +166,7 @@ struct ProviderConsumerEnrollmentView: View {
                         .buttonStyle(.plain)
                     } else {
                         Text("Pull down to refresh for updates.")
-                            .font(.footnote)
+                            .font(.provider(.footnote))
                             .foregroundStyle(Color.lavaShellCreamTertiary)
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
@@ -184,11 +184,11 @@ struct ProviderConsumerEnrollmentView: View {
     private var supportSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Questions about your application?")
-                .font(.footnote)
+                .font(.provider(.footnote))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
             Link(destination: URL(string: "mailto:campuscuthelp@gmail.com?subject=Barber%20Application%20Issue")!) {
                 Label("campuscuthelp@gmail.com", systemImage: "envelope")
-                    .font(.footnote.weight(.medium))
+                    .font(.provider(.footnote, weight: .medium))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -204,7 +204,7 @@ struct ProviderConsumerEnrollmentView: View {
 
                 if let errorText {
                     Text(errorText)
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(.red)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(14)
@@ -250,7 +250,7 @@ struct ProviderConsumerEnrollmentView: View {
         VStack(alignment: .leading, spacing: 10) {
             if let title {
                 Text(title)
-                    .font(.subheadline.weight(.bold))
+                    .font(.provider(.subheadline, weight: .bold))
                     .foregroundStyle(Color.lavaShellCream)
             }
             VStack(alignment: .leading, spacing: 12) {
@@ -288,9 +288,9 @@ struct ProviderConsumerEnrollmentView: View {
     private var wizardHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Apply to join CampusCuts as a barber")
-                .font(.title3.weight(.semibold))
+                .font(.provider(.title3, weight: .semibold))
             Text("Step \(wizardStep) of \(totalWizardSteps)")
-                .font(.footnote)
+                .font(.provider(.footnote))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
             ProgressView(value: Double(wizardStep), total: Double(totalWizardSteps))
                 .tint(.providerOlive)
@@ -332,7 +332,7 @@ struct ProviderConsumerEnrollmentView: View {
 
             enrollmentSection("Tools") {
                 Text("Do you need barber tools?")
-                    .font(.subheadline.weight(.medium))
+                    .font(.provider(.subheadline, weight: .medium))
                 HStack(spacing: 12) {
                     toolsChoiceButton(title: "Yes", isSelected: needsTools) {
                         needsTools = true
@@ -369,7 +369,7 @@ struct ProviderConsumerEnrollmentView: View {
         enrollmentCard {
             enrollmentSection("Barber license") {
                 Text("Do you have a current barber or cosmetology license?")
-                    .font(.subheadline.weight(.medium))
+                    .font(.provider(.subheadline, weight: .medium))
                 HStack(spacing: 12) {
                     toolsChoiceButton(title: "Yes", isSelected: licenseDeclared == true) {
                         licenseDeclared = true
@@ -384,11 +384,11 @@ struct ProviderConsumerEnrollmentView: View {
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled(true)
                     Text("Include the issuing state or prefix if your license has one (e.g. CA-1234567).")
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 } else if licenseDeclared == false {
                     Text("Some states require proof of licensure before barbering. A campus manager may still ask for documentation.")
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
             }
@@ -407,10 +407,10 @@ struct ProviderConsumerEnrollmentView: View {
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: licenseAttestation ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 22))
+                    .font(.provider(size: 22))
                     .foregroundStyle(licenseAttestation ? Color.providerOlive : Color.lavaShellCreamTertiary)
                 Text("I attest that the license information I've provided is accurate to the best of my knowledge. A campus manager may verify it before approval.")
-                    .font(.footnote)
+                    .font(.provider(.footnote))
                     .foregroundStyle(Color.lavaShellCream)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -431,14 +431,14 @@ struct ProviderConsumerEnrollmentView: View {
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: selectedCampusId.isEmpty ? "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 22))
+                    .font(.provider(size: 22))
                     .foregroundStyle(selectedCampusId.isEmpty ? Color.providerOlive : Color.lavaShellCreamTertiary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("No campus yet")
-                        .font(.body.weight(.semibold))
+                        .font(.provider(.body, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCream)
                     Text("You can still apply; a manager may assign your campus later.")
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
                 Spacer(minLength: 0)
@@ -474,9 +474,9 @@ struct ProviderConsumerEnrollmentView: View {
                     .tint(Color.lavaShellCream)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(loadingTitleForNearestCampus)
-                        .font(.subheadline.weight(.medium))
+                        .font(.provider(.subheadline, weight: .medium))
                     Text("Using your device location to match a CampusCuts campus.")
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
                 Spacer(minLength: 0)
@@ -486,7 +486,7 @@ struct ProviderConsumerEnrollmentView: View {
         case .suggestions(let matches):
             VStack(alignment: .leading, spacing: 10) {
                 Text("Tap a campus if you have one, or choose “No campus yet” above.")
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
                 ForEach(matches, id: \.campus.id) { match in
                     campusSuggestionRow(match)
@@ -496,10 +496,10 @@ struct ProviderConsumerEnrollmentView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Text("Don’t see your campus?")
-                            .font(.footnote)
+                            .font(.provider(.footnote))
                             .foregroundStyle(Color.lavaShellCream)
                         Text("Search for it")
-                            .font(.footnote.weight(.semibold))
+                            .font(.provider(.footnote, weight: .semibold))
                             .foregroundStyle(Color.lavaShellCream)
                             .underline()
                         Spacer(minLength: 0)
@@ -518,7 +518,7 @@ struct ProviderConsumerEnrollmentView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                     Text(reason)
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(Color.lavaShellCream)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -527,7 +527,7 @@ struct ProviderConsumerEnrollmentView: View {
                         Task { await detectNearestCampusIfNeeded(forceRetry: true) }
                     } label: {
                         Text("Try again")
-                            .font(.footnote.weight(.semibold))
+                            .font(.provider(.footnote, weight: .semibold))
                             .foregroundStyle(Color.lavaShellCream)
                             .padding(.vertical, 8)
                             .padding(.horizontal, 14)
@@ -543,7 +543,7 @@ struct ProviderConsumerEnrollmentView: View {
                             openLocationSettings()
                         } label: {
                             Text("Open Settings")
-                                .font(.footnote.weight(.semibold))
+                                .font(.provider(.footnote, weight: .semibold))
                                 .foregroundStyle(Color.lavaShellCream)
                                 .padding(.vertical, 8)
                                 .padding(.horizontal, 14)
@@ -559,7 +559,7 @@ struct ProviderConsumerEnrollmentView: View {
                         enterManualCampusSearch()
                     } label: {
                         Text("Search manually")
-                            .font(.footnote.weight(.semibold))
+                            .font(.provider(.footnote, weight: .semibold))
                             .foregroundStyle(Color.providerOlive)
                             .padding(.vertical, 8)
                             .padding(.horizontal, 14)
@@ -578,19 +578,19 @@ struct ProviderConsumerEnrollmentView: View {
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 22))
+                    .font(.provider(size: 22))
                     .foregroundStyle(isSelected ? Color.providerOlive : Color.lavaShellCreamTertiary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(match.campus.displayName)
-                        .font(.body.weight(.semibold))
+                        .font(.provider(.body, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCream)
                     if let line = match.campus.locationLine {
                         Text(line)
-                            .font(.caption)
+                            .font(.provider(.caption))
                             .foregroundStyle(Color.lavaShellCreamSecondary)
                     }
                     Text(formattedDistance(match.distance))
-                        .font(.caption2)
+                        .font(.provider(.caption2))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
                 Spacer(minLength: 0)
@@ -618,15 +618,15 @@ struct ProviderConsumerEnrollmentView: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Type your campus name")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.provider(.subheadline, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
                 Text("Search by school, city, or state.")
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
 
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 17, weight: .medium))
+                        .font(.provider(size: 17, weight: .medium))
                         .foregroundStyle(campusSearchText.isEmpty ? Color.lavaShellCreamTertiary : Color.providerOlive)
                     TextField(
                         "",
@@ -635,7 +635,7 @@ struct ProviderConsumerEnrollmentView: View {
                             .foregroundStyle(Color.lavaShellCreamTertiary)
                     )
                     .textFieldStyle(.plain)
-                    .font(.body)
+                    .font(.provider(.body))
                     .foregroundStyle(Color.lavaShellCream)
                     .autocorrectionDisabled(true)
                     .textInputAutocapitalization(.words)
@@ -668,16 +668,16 @@ struct ProviderConsumerEnrollmentView: View {
                 HStack {
                     ProgressView().controlSize(.small)
                     Text("Loading campuses…")
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
             } else if campusSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text("Start typing to find your campus.")
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
             } else if filteredCampuses.isEmpty {
                 Text("No campuses match your search.")
-                    .font(.footnote)
+                    .font(.provider(.footnote))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             } else {
                 ForEach(filteredCampuses) { campus in
@@ -690,7 +690,7 @@ struct ProviderConsumerEnrollmentView: View {
                     leaveManualCampusSearch()
                 } label: {
                     Label("Back to nearby campuses", systemImage: "location.fill")
-                        .font(.footnote.weight(.semibold))
+                        .font(.provider(.footnote, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCream)
                         .underline()
                 }
@@ -708,15 +708,15 @@ struct ProviderConsumerEnrollmentView: View {
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 22))
+                    .font(.provider(size: 22))
                     .foregroundStyle(isSelected ? Color.providerOlive : Color.lavaShellCreamTertiary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(campus.displayName)
-                        .font(.body.weight(.semibold))
+                        .font(.provider(.body, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCream)
                     if let line = campus.locationLine {
                         Text(line)
-                            .font(.caption)
+                            .font(.provider(.caption))
                             .foregroundStyle(Color.lavaShellCreamSecondary)
                     }
                 }
@@ -959,7 +959,7 @@ struct ProviderConsumerEnrollmentView: View {
                     withAnimation { wizardStep += 1 }
                 } label: {
                     Text("Continue")
-                        .font(.headline)
+                        .font(.provider(.headline))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(Color.providerOlive.opacity(canProceedCurrentStep ? 1 : 0.45), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -977,7 +977,7 @@ struct ProviderConsumerEnrollmentView: View {
                                 .tint(Color.lavaShellCream)
                         } else {
                             Text("Submit application")
-                                .font(.headline)
+                                .font(.provider(.headline))
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -1044,7 +1044,7 @@ struct ProviderConsumerEnrollmentView: View {
     private func toolsChoiceButton(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
+                .font(.provider(.subheadline, weight: .semibold))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
                 .background(
@@ -1066,10 +1066,10 @@ struct ProviderConsumerEnrollmentView: View {
     private func reviewRow(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(.provider(.caption, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCreamTertiary)
             Text(value)
-                .font(.body)
+                .font(.provider(.body))
         }
         .padding(.vertical, 2)
     }

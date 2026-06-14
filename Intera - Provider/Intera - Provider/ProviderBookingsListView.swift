@@ -37,20 +37,20 @@ struct ProviderBookingsListView: View {
                             NavigationLink(value: booking) {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(booking.consumerDisplayName)
-                                        .font(.title3.weight(.semibold))
+                                        .font(.provider(.title3, weight: .semibold))
                                         .foregroundStyle(Color.lavaShellCream)
                                     Text(booking.serviceDisplayName)
-                                        .font(.subheadline)
+                                        .font(.provider(.subheadline))
                                         .foregroundStyle(Color.lavaShellCreamSecondary)
                                     HStack {
                                         Text(booking.statusUpper)
-                                            .font(.caption.weight(.semibold))
+                                            .font(.provider(.caption, weight: .semibold))
                                             .padding(.horizontal, 8)
                                             .padding(.vertical, 4)
                                             .background(.thinMaterial, in: Capsule())
                                         Spacer(minLength: 0)
                                         Text(booking.formattedSchedule())
-                                            .font(.caption)
+                                            .font(.provider(.caption))
                                             .foregroundStyle(Color.lavaShellCreamSecondary)
                                     }
                                 }

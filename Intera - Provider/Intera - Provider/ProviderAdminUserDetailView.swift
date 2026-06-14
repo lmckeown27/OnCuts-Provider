@@ -15,7 +15,7 @@ struct ProviderAdminUserDetailView: View {
                 profileCard
                 if let errorText {
                     Text(errorText)
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(.red)
                         .padding(.horizontal, 12)
                 }
@@ -40,16 +40,16 @@ struct ProviderAdminUserDetailView: View {
                     .frame(width: 56, height: 56)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(user.displayName)
-                        .font(.title3.weight(.semibold))
+                        .font(.provider(.title3, weight: .semibold))
                     Text(user.prettyRole)
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                     if let cn = user.campusName, !cn.isEmpty {
-                        Text(cn).font(.caption2).foregroundStyle(Color.lavaShellCreamTertiary)
+                        Text(cn).font(.provider(.caption2)).foregroundStyle(Color.lavaShellCreamTertiary)
                     }
                     if user.isActive == false {
                         Text("Blocked")
-                            .font(.caption2.weight(.bold))
+                            .font(.provider(.caption2, weight: .bold))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Color.red.opacity(0.7), in: Capsule())
@@ -67,7 +67,7 @@ struct ProviderAdminUserDetailView: View {
         ) {
             if bookings.isEmpty {
                 Text(isLoading ? "Loading bookings…" : "No bookings yet.")
-                    .font(.footnote)
+                    .font(.provider(.footnote))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             } else {
                 VStack(spacing: 10) {
@@ -76,7 +76,7 @@ struct ProviderAdminUserDetailView: View {
                     }
                     if bookings.count > 50 {
                         Text("Showing first 50 of \(bookings.count). Refine on the web dashboard for more.")
-                            .font(.caption2)
+                            .font(.provider(.caption2))
                             .foregroundStyle(Color.lavaShellCreamTertiary)
                     }
                 }
@@ -88,7 +88,7 @@ struct ProviderAdminUserDetailView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(b.barberDisplayName)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.provider(.subheadline, weight: .semibold))
                 Spacer()
                 statusBadge((b.status ?? "").uppercased())
             }
@@ -101,20 +101,20 @@ struct ProviderAdminUserDetailView: View {
                     Text("·"); Text(pm.capitalized)
                 }
             }
-            .font(.caption)
+            .font(.provider(.caption))
             .foregroundStyle(Color.lavaShellCreamSecondary)
             if let t = b.scheduledTime {
                 Text(t, format: .dateTime.month().day().year().hour().minute())
-                    .font(.caption2)
+                    .font(.provider(.caption2))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
             }
             if let r = b.reviewRating {
                 HStack(spacing: 4) {
-                    Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
-                    Text(String(format: "%.1f", r)).font(.caption2)
+                    Image(systemName: "star.fill").font(.provider(.caption2)).foregroundStyle(.yellow)
+                    Text(String(format: "%.1f", r)).font(.provider(.caption2))
                     if let text = b.reviewText, !text.isEmpty {
                         Text("· \(text)")
-                            .font(.caption2)
+                            .font(.provider(.caption2))
                             .foregroundStyle(Color.lavaShellCreamSecondary)
                             .lineLimit(2)
                     }
@@ -155,10 +155,10 @@ struct ProviderAdminUserDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.title3.weight(.semibold))
+                    .font(.provider(.title3, weight: .semibold))
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 }
             }
@@ -185,7 +185,7 @@ struct ProviderAdminUserDetailView: View {
         default: Color.gray.opacity(0.6)
         }
         return Text(status.replacingOccurrences(of: "_", with: " "))
-            .font(.caption2.weight(.semibold))
+            .font(.provider(.caption2, weight: .semibold))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(tint, in: Capsule())

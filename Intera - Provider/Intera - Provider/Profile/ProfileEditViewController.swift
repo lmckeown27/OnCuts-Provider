@@ -48,7 +48,7 @@ private func editableFieldPlaceholder(_ text: String) -> NSAttributedString {
         string: text,
         attributes: [
             .foregroundColor: EditableFieldChrome.fieldPlaceholder,
-            .font: UIFont.preferredFont(forTextStyle: .body),
+            .font: UIFont.providerPreferred(forTextStyle: .body),
         ]
     )
 }
@@ -98,7 +98,7 @@ final class ProfileEditViewController: UIViewController, UITextFieldDelegate, UI
     private let deletePasswordErrorLabel: UILabel = {
         let l = UILabel()
         l.translatesAutoresizingMaskIntoConstraints = false
-        l.font = .preferredFont(forTextStyle: .caption1)
+        l.font = .providerPreferred(forTextStyle: .caption1)
         l.textColor = .systemRed
         l.numberOfLines = 0
         l.isHidden = true
@@ -167,8 +167,8 @@ final class ProfileEditViewController: UIViewController, UITextFieldDelegate, UI
         c.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 18, bottom: 10, trailing: 18)
         c.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
             var o = incoming
-            let base = o.font ?? UIFont.preferredFont(forTextStyle: .subheadline)
-            o.font = UIFont.systemFont(ofSize: base.pointSize, weight: .semibold)
+            let base = o.font ?? UIFont.providerPreferred(forTextStyle: .subheadline)
+            o.font = UIFont.provider(size: base.pointSize, weight: .semibold)
             return o
         }
         let b = UIButton(configuration: c)
@@ -182,7 +182,7 @@ final class ProfileEditViewController: UIViewController, UITextFieldDelegate, UI
         t.attributedPlaceholder = editableFieldPlaceholder("Your name")
         t.borderStyle = .none
         t.backgroundColor = .clear
-        t.font = .preferredFont(forTextStyle: .body)
+        t.font = .providerPreferred(forTextStyle: .body)
         t.textColor = EditableFieldChrome.fieldText
         t.tintColor = EditableFieldChrome.fieldTint
         t.clearButtonMode = .never
@@ -192,7 +192,7 @@ final class ProfileEditViewController: UIViewController, UITextFieldDelegate, UI
     private let bioTextView: UITextView = {
         let v = UITextView()
         v.translatesAutoresizingMaskIntoConstraints = false
-        v.font = .preferredFont(forTextStyle: .body)
+        v.font = .providerPreferred(forTextStyle: .body)
         v.backgroundColor = .clear
         v.textContainerInset = UIEdgeInsets(top: 10, left: 8, bottom: 10, right: 8)
         v.textColor = EditableFieldChrome.fieldText
@@ -205,7 +205,7 @@ final class ProfileEditViewController: UIViewController, UITextFieldDelegate, UI
     private let bioCountLabel: UILabel = {
         let l = UILabel()
         l.translatesAutoresizingMaskIntoConstraints = false
-        l.font = .preferredFont(forTextStyle: .caption2)
+        l.font = .providerPreferred(forTextStyle: .caption2)
         l.textColor = .secondaryLabel
         l.textAlignment = .right
         return l
@@ -215,7 +215,7 @@ final class ProfileEditViewController: UIViewController, UITextFieldDelegate, UI
         let l = UILabel()
         l.translatesAutoresizingMaskIntoConstraints = false
         l.text = "@"
-        l.font = .preferredFont(forTextStyle: .body)
+        l.font = .providerPreferred(forTextStyle: .body)
         l.textColor = .secondaryLabel
         return l
     }()
@@ -226,7 +226,7 @@ final class ProfileEditViewController: UIViewController, UITextFieldDelegate, UI
         t.attributedPlaceholder = editableFieldPlaceholder("username")
         t.borderStyle = .none
         t.backgroundColor = .clear
-        t.font = .preferredFont(forTextStyle: .body)
+        t.font = .providerPreferred(forTextStyle: .body)
         t.textColor = EditableFieldChrome.fieldText
         t.tintColor = EditableFieldChrome.fieldTint
         t.autocapitalizationType = .none
@@ -547,7 +547,7 @@ final class ProfileEditViewController: UIViewController, UITextFieldDelegate, UI
         let warning = UILabel()
         warning.text =
             "This action is permanent and cannot be undone. All your data, bookings, and account information will be permanently deleted."
-        warning.font = .preferredFont(forTextStyle: .subheadline)
+        warning.font = .providerPreferred(forTextStyle: .subheadline)
         warning.textColor = .systemRed
         warning.numberOfLines = 0
 
@@ -556,14 +556,14 @@ final class ProfileEditViewController: UIViewController, UITextFieldDelegate, UI
         if canDeleteWithoutPassword {
             let deviceNote = UILabel()
             deviceNote.text = "Confirm with Face ID, Touch ID, or your device passcode."
-            deviceNote.font = .preferredFont(forTextStyle: .caption1)
+            deviceNote.font = .providerPreferred(forTextStyle: .caption1)
             deviceNote.textColor = .secondaryLabel
             deviceNote.numberOfLines = 0
             rows.append(deviceNote)
         } else {
             let passLabel = UILabel()
             passLabel.text = "Enter your password to confirm"
-            passLabel.font = .preferredFont(forTextStyle: .subheadline)
+            passLabel.font = .providerPreferred(forTextStyle: .subheadline)
             passLabel.textColor = .label
             rows.append(passLabel)
 
@@ -575,7 +575,7 @@ final class ProfileEditViewController: UIViewController, UITextFieldDelegate, UI
 
         let confirmLabel = UILabel()
         confirmLabel.text = "Type DELETE to confirm"
-        confirmLabel.font = .preferredFont(forTextStyle: .subheadline)
+        confirmLabel.font = .providerPreferred(forTextStyle: .subheadline)
         confirmLabel.textColor = .label
         rows.append(confirmLabel)
         rows.append(wrapEditableTextField(deleteConfirmField))
@@ -598,13 +598,13 @@ final class ProfileEditViewController: UIViewController, UITextFieldDelegate, UI
     private func visibilityCard() -> UIView {
         let title = UILabel()
         title.text = "Hide my profile from consumers"
-        title.font = .preferredFont(forTextStyle: .body)
+        title.font = .providerPreferred(forTextStyle: .body)
         title.textColor = .label
         title.numberOfLines = 0
 
         let sub = UILabel()
         sub.text = "Your barber card will not appear in search results"
-        sub.font = .preferredFont(forTextStyle: .caption1)
+        sub.font = .providerPreferred(forTextStyle: .caption1)
         sub.textColor = .secondaryLabel
         sub.numberOfLines = 0
 
@@ -644,14 +644,14 @@ final class ProfileEditViewController: UIViewController, UITextFieldDelegate, UI
 
         let t = UILabel()
         t.text = title
-        t.font = .systemFont(ofSize: 18, weight: .bold)
+        t.font = .provider(size: 18, weight: .bold)
         t.textColor = .label
         v.addArrangedSubview(t)
 
         if let subtitle, !subtitle.isEmpty {
             let s = UILabel()
             s.text = subtitle
-            s.font = .preferredFont(forTextStyle: .subheadline)
+            s.font = .providerPreferred(forTextStyle: .subheadline)
             s.textColor = .secondaryLabel
             s.numberOfLines = 0
             v.addArrangedSubview(s)
@@ -714,7 +714,7 @@ final class ProfileEditViewController: UIViewController, UITextFieldDelegate, UI
     }
 
     private func tagChipWidth(for title: String) -> CGFloat {
-        let font = UIFont.preferredFont(forTextStyle: .subheadline)
+        let font = UIFont.providerPreferred(forTextStyle: .subheadline)
         let attrs = [NSAttributedString.Key.font: font]
         let size = (title as NSString).size(withAttributes: attrs)
         return ceil(size.width) + 28
@@ -723,7 +723,7 @@ final class ProfileEditViewController: UIViewController, UITextFieldDelegate, UI
     private func makeSpecialtyButton(_ title: String) -> UIButton {
         let b = UIButton(type: .system)
         b.setTitle(title, for: .normal)
-        b.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
+        b.titleLabel?.font = .providerPreferred(forTextStyle: .subheadline)
         b.titleLabel?.lineBreakMode = .byTruncatingTail
         b.layer.cornerRadius = 16
         b.layer.masksToBounds = true

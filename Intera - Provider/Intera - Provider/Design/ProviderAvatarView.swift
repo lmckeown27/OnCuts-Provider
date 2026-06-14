@@ -27,7 +27,7 @@ struct AvatarView: View {
 
     private var initialsView: some View {
         Text(initials(fallbackName))
-            .font(.caption.weight(.bold))
+            .font(.provider(.caption, weight: .bold))
             .foregroundStyle(Color.lavaShellCream)
     }
 

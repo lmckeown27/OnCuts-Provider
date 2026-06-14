@@ -118,7 +118,7 @@ struct ProviderAvailabilityEditorView: View {
 
     private func inlineBanner(text: String, tint: Color) -> some View {
         Text(text)
-            .font(.footnote.weight(.semibold))
+            .font(.provider(.footnote, weight: .semibold))
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -144,11 +144,11 @@ struct ProviderAvailabilityEditorView: View {
                             .fill(s.connected ? Color.green : Color.lavaShellCream.opacity(0.35))
                             .frame(width: 9, height: 9)
                         Text(s.connected ? "Connected" : "Not connected")
-                            .font(.subheadline.weight(.semibold))
+                            .font(.provider(.subheadline, weight: .semibold))
                         Spacer()
                         if let at = s.connectedAt, s.connected {
                             Text(at.formatted(date: .abbreviated, time: .omitted))
-                                .font(.caption)
+                                .font(.provider(.caption))
                                 .foregroundStyle(Color.lavaShellCreamSecondary)
                         }
                     }
@@ -165,7 +165,7 @@ struct ProviderAvailabilityEditorView: View {
                             }
                         )) {
                             Text("Sync busy events as blocks")
-                                .font(.subheadline)
+                                .font(.provider(.subheadline))
                         }
                         .tint(.providerOlive)
                     }
@@ -193,7 +193,7 @@ struct ProviderAvailabilityEditorView: View {
             }
             if let calendarError {
                 Text(calendarError)
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(.red)
             }
         }
@@ -215,12 +215,12 @@ struct ProviderAvailabilityEditorView: View {
             }
             if let weeklyValidationError {
                 Text(weeklyValidationError)
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(.red)
             }
             if let weeklyError {
                 Text(weeklyError)
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(.red)
             }
             if weeklyDirty, weeklyValidationError == nil {
@@ -250,10 +250,10 @@ struct ProviderAvailabilityEditorView: View {
                 let entry = weekly[day]
                 HStack {
                     Text(day.displayName)
-                        .font(.headline)
+                        .font(.provider(.headline))
                     Spacer()
                     Text(entry.enabled ? weeklyIntervalSummary(entry) : "Not available")
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(
                             entry.enabled ? Color.lavaShellCreamSecondary : Color.lavaShellCreamTertiary
                         )
@@ -295,7 +295,7 @@ struct ProviderAvailabilityEditorView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(day.displayName)
-                    .font(.headline)
+                    .font(.provider(.headline))
                 Spacer()
                 Toggle("", isOn: Binding(
                     get: { dayBinding.wrappedValue.enabled },
@@ -320,13 +320,13 @@ struct ProviderAvailabilityEditorView: View {
                     addInterval(day: day)
                 } label: {
                     Label("Add time slot", systemImage: "plus.circle")
-                        .font(.caption.weight(.semibold))
+                        .font(.provider(.caption, weight: .semibold))
                         .foregroundStyle(Color.providerOlive)
                 }
                 .buttonStyle(.plain)
             } else {
                 Text("Not available")
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
             }
         }
@@ -378,11 +378,11 @@ struct ProviderAvailabilityEditorView: View {
                 sectionLoadingIndicator
             } else if let blocksError {
                 Text(blocksError)
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(.red)
             } else if timeBlocks.isEmpty {
                 Text("No upcoming blocks.")
-                    .font(.footnote)
+                    .font(.provider(.footnote))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             } else {
                 VStack(spacing: 8) {
@@ -405,13 +405,13 @@ struct ProviderAvailabilityEditorView: View {
         HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(Self.prettyDate(block.blockDate))
-                    .font(.subheadline.weight(.semibold))
+                    .font(.provider(.subheadline, weight: .semibold))
                 Text("\(Self.pretty12h(block.startTime)) – \(Self.pretty12h(block.endTime))")
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                 if let reason = block.reason, !reason.isEmpty {
                     Text(reason)
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
             }
@@ -453,10 +453,10 @@ struct ProviderAvailabilityEditorView: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.title3.weight(.semibold))
+                    .font(.provider(.title3, weight: .semibold))
                 if let subtitle {
                     Text(subtitle)
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 }
             }

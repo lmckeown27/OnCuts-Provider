@@ -129,10 +129,10 @@ struct AuthEntryView: View {
                     } label: {
                         VStack(alignment: .center, spacing: 6) {
                             Text("Sign in manually")
-                                .font(.headline)
+                                .font(.provider(.headline))
                                 .multilineTextAlignment(.center)
                             Text("Use your email and password")
-                                .font(.caption)
+                                .font(.provider(.caption))
                                 .foregroundStyle(Color.lavaShellCreamSecondary)
                                 .multilineTextAlignment(.center)
                         }
@@ -152,7 +152,7 @@ struct AuthEntryView: View {
                         authPath.append(AuthDestination.createAccount)
                     } label: {
                         Text("Create account")
-                            .font(.headline)
+                            .font(.provider(.headline))
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
@@ -163,7 +163,7 @@ struct AuthEntryView: View {
 
                     if authPath.isEmpty, let errorText {
                         Text(errorText)
-                            .font(.footnote)
+                            .font(.provider(.footnote))
                             .foregroundStyle(.red)
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: .infinity, alignment: .center)
@@ -204,9 +204,9 @@ struct AuthEntryView: View {
                 Spacer(minLength: 0)
                 HStack(spacing: 4) {
                     Text("Continue with")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.provider(size: 11, weight: .semibold))
                     Image(systemName: "apple.logo")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.provider(size: 15, weight: .semibold))
                     if isBusy {
                         ProgressView()
                             .tint(.white)
@@ -242,7 +242,7 @@ struct AuthEntryView: View {
                 Spacer(minLength: 0)
                 HStack(spacing: 5) {
                     Text("Continue with")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.provider(size: 11, weight: .semibold))
                         .foregroundStyle(Color(white: 0.22))
                     InteraGoogleGMark(size: 20)
                     if isBusy {
@@ -291,7 +291,7 @@ struct AuthEntryView: View {
                 Section {
                     Text(errorText)
                         .foregroundStyle(.red)
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                 }
             }
         }
@@ -314,7 +314,7 @@ struct AuthEntryView: View {
                 Section {
                     Text(errorText)
                         .foregroundStyle(.red)
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                 }
             }
         }
@@ -481,7 +481,7 @@ struct AuthEntryView: View {
         case .verifyEmail:
             Section {
                 Text("Enter the verification code sent to \(verificationEmail).")
-                    .font(.footnote)
+                    .font(.provider(.footnote))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             }
             Section {
@@ -521,7 +521,7 @@ struct AuthEntryView: View {
                 .accessibilityValue(acceptedTerms ? "Accepted" : "Not accepted")
             VStack(alignment: .leading, spacing: 8) {
                 Text("I agree to the Terms of Service and Privacy Policy.")
-                    .font(.subheadline)
+                    .font(.provider(.subheadline))
                     .foregroundStyle(Color.lavaShellCream)
                     .fixedSize(horizontal: false, vertical: true)
                 // Separate rows: multiple `Button`s in one Form `HStack` often route taps to the wrong action.
@@ -529,14 +529,14 @@ struct AuthEntryView: View {
                     presentedLegalDocument = .terms
                 }
                 .buttonStyle(.borderless)
-                .font(.subheadline.weight(.semibold))
+                .font(.provider(.subheadline, weight: .semibold))
                 .foregroundStyle(Color.providerOlive)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Button("Privacy Policy") {
                     presentedLegalDocument = .privacy
                 }
                 .buttonStyle(.borderless)
-                .font(.subheadline.weight(.semibold))
+                .font(.provider(.subheadline, weight: .semibold))
                 .foregroundStyle(Color.providerOlive)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

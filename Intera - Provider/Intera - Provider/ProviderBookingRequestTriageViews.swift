@@ -87,25 +87,25 @@ struct ProviderExpandableRequestTriageCard: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.row.customerName ?? "Customer")
-                        .font(.title3.weight(.semibold))
+                        .font(.provider(.title3, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCream)
                     Text(item.row.serviceDisplayName)
-                        .font(.subheadline)
+                        .font(.provider(.subheadline))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 4) {
                     if let price = item.row.price {
                         Text(price, format: .currency(code: "USD"))
-                            .font(.headline)
+                            .font(.provider(.headline))
                             .foregroundStyle(Color.lavaShellCream)
                     }
                     Text("\(item.durationMinutes) min")
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 }
                 Image(systemName: "chevron.down")
-                    .font(.caption.weight(.semibold))
+                    .font(.provider(.caption, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream.opacity(0.6))
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
                     .animation(ProviderRequestSheetMetrics.triageCardSpring, value: isExpanded)
@@ -122,14 +122,14 @@ struct ProviderExpandableRequestTriageCard: View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Scheduled for")
-                    .font(.caption2.weight(.semibold))
+                    .font(.provider(.caption2, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                     .textCase(.uppercase)
                 Text(scheduledDateHeadline(for: displayStart))
-                    .font(.subheadline.weight(.bold))
+                    .font(.provider(.subheadline, weight: .bold))
                     .foregroundStyle(Color.lavaShellCream)
                 Text(scheduledTimeHeadline(for: displayStart))
-                    .font(.footnote.weight(.semibold))
+                    .font(.provider(.footnote, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream.opacity(0.9))
             }
 
@@ -181,14 +181,14 @@ struct ProviderExpandableRequestTriageCard: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                 Text("Conflict")
             }
-            .font(.caption.weight(.bold))
+            .font(.provider(.caption, weight: .bold))
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .foregroundStyle(Color.red.opacity(0.95))
             .background(Color.red.opacity(0.18), in: Capsule())
         } else {
             Text("Slot open")
-                .font(.caption.weight(.bold))
+                .font(.provider(.caption, weight: .bold))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .foregroundStyle(Color.providerOlive)
@@ -213,7 +213,7 @@ struct ProviderExpandableRequestTriageCard: View {
 
                 if let scheduleEditError {
                     Text(scheduleEditError)
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(.red.opacity(0.9))
                 }
 
@@ -234,17 +234,17 @@ struct ProviderExpandableRequestTriageCard: View {
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(scheduledDateHeadline(for: item.requestedStart))
-                        .font(.title3.weight(.semibold))
+                        .font(.provider(.title3, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCream)
                     Text(scheduledTimeHeadline(for: displayStart))
-                        .font(.subheadline.weight(.semibold))
+                        .font(.provider(.subheadline, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 if item.surroundingSchedule.isEmpty {
                     Text("Schedule context unavailable for this time.")
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 } else {
                     VStack(spacing: 8) {
@@ -297,7 +297,7 @@ struct ProviderRequestScheduleContextRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Text(item.timeLabel)
-                .font(.caption.weight(.bold))
+                .font(.provider(.caption, weight: .bold))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
                 .frame(width: 58, alignment: .leading)
 
@@ -306,7 +306,7 @@ struct ProviderRequestScheduleContextRow: View {
                     .fill(badgeColor)
                     .frame(width: 6, height: 6)
                 Text(item.title)
-                    .font(.footnote)
+                    .font(.provider(.footnote))
                     .fontWeight(item.type == .proposed ? .semibold : .regular)
                     .foregroundStyle(textColor)
                     .lineLimit(2)

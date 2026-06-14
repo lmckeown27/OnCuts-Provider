@@ -307,7 +307,7 @@ struct ProviderScheduleDashboardView: View {
                     cancelInlineAvailabilityEditing()
                 } label: {
                     Text("Cancel")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.provider(.subheadline, weight: .semibold))
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .padding(.vertical, 10)
                         .background(
@@ -328,7 +328,7 @@ struct ProviderScheduleDashboardView: View {
                     Task { await saveInlineWeeklySchedule() }
                 } label: {
                     Text(savingInlineWeekly ? "Saving…" : "Save")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.provider(.subheadline, weight: .semibold))
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .padding(.vertical, 10)
                         .background(
@@ -353,7 +353,7 @@ struct ProviderScheduleDashboardView: View {
                         .fontWeight(.semibold)
                     Spacer()
                     Image(systemName: "pencil")
-                        .font(.caption.weight(.semibold))
+                        .font(.provider(.caption, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
                 .padding(.horizontal, 14)
@@ -375,7 +375,7 @@ struct ProviderScheduleDashboardView: View {
 
     private var summaryLine: some View {
         Text(summaryText)
-            .font(.subheadline)
+            .font(.provider(.subheadline))
             .foregroundStyle(Color.lavaShellCreamSecondary)
             .frame(maxWidth: .infinity)
             .multilineTextAlignment(.center)
@@ -441,16 +441,16 @@ struct ProviderScheduleDashboardView: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Awaiting Payment")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.provider(.subheadline, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCream)
                     Text(booking.consumerDisplayName)
-                        .font(.headline)
+                        .font(.provider(.headline))
                         .foregroundStyle(Color.lavaShellCream)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.provider(.subheadline, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             }
             .padding(.horizontal, 14)
@@ -494,7 +494,7 @@ struct ProviderScheduleDashboardView: View {
                     }
                 } label: {
                     Text(preset.title)
-                        .font(.caption.weight(.semibold))
+                        .font(.provider(.caption, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 9)
                         .foregroundStyle(
@@ -526,7 +526,7 @@ struct ProviderScheduleDashboardView: View {
         Group {
             if !session.hasProviderProfile {
                 Text("Link your CampusCuts barber profile on the web to load appointments here.")
-                    .font(.footnote)
+                    .font(.provider(.footnote))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 8)
@@ -589,19 +589,19 @@ struct ProviderScheduleDashboardView: View {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Loading weekly schedule…")
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 }
                 .padding(.vertical, 4)
             } else if let inlineWeeklyLoadError {
                 Text(inlineWeeklyLoadError)
-                    .font(.footnote)
+                    .font(.provider(.footnote))
                     .foregroundStyle(.red.opacity(0.9))
             } else {
                 inlineDayScheduleEditorCard
                 if let inlineSaveError {
                     Text(inlineSaveError)
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(.red.opacity(0.9))
                 }
             }
@@ -627,20 +627,20 @@ struct ProviderScheduleDashboardView: View {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Loading availability…")
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 }
                 .padding(.vertical, 4)
             } else if let availabilityErrorText, isDayZoomTier {
                 Text(availabilityErrorText)
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             }
             if dayEnabled {
                 let orphans = orphanTimeBlocks(slots: slots)
                 if !orphans.isEmpty {
                     Text("Other blocked times")
-                        .font(.caption.weight(.semibold))
+                        .font(.provider(.caption, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                     ForEach(orphans) { block in
                         blockedTimeRow(block: block)
@@ -648,12 +648,12 @@ struct ProviderScheduleDashboardView: View {
                 }
                 if effectiveZoomTier == .day {
                     Text("Tap a booking for details. Hold to change its time. Pinch to zoom in for minute-level detail.")
-                        .font(.caption2)
+                        .font(.provider(.caption2))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
                 if let trailing = bookingsOutsideAvailability(slots: slots, dayBookings: dayBookings), !trailing.isEmpty {
                     Text("Outside your set availability")
-                        .font(.caption.weight(.semibold))
+                        .font(.provider(.caption, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                         .padding(.top, 4)
                     ForEach(trailing) { b in
@@ -665,7 +665,7 @@ struct ProviderScheduleDashboardView: View {
                 dayOffMessage(dayBookings: dayBookings)
             } else if let errorText, dayBookings.isEmpty {
                 Text(errorText)
-                    .font(.footnote)
+                    .font(.provider(.footnote))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             }
         }
@@ -740,7 +740,7 @@ struct ProviderScheduleDashboardView: View {
                 stepDate(-1)
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.body.weight(.semibold))
+                    .font(.provider(.body, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
                     .frame(width: 40, height: 40)
                     .background { scheduleControlCircleBackground }
@@ -751,7 +751,7 @@ struct ProviderScheduleDashboardView: View {
             if isDayZoomTier {
                 Button(action: openMonthViewForSelectedDay) {
                     Text(periodTitle)
-                        .font(.headline)
+                        .font(.provider(.headline))
                         .multilineTextAlignment(.center)
                         .foregroundStyle(Color.lavaShellCream)
                         .contentShape(Rectangle())
@@ -761,7 +761,7 @@ struct ProviderScheduleDashboardView: View {
                 .accessibilityHint("Opens the monthly schedule for \(periodTitle)")
             } else {
                 Text(periodTitle)
-                    .font(.headline)
+                    .font(.provider(.headline))
                     .multilineTextAlignment(.center)
             }
             Spacer()
@@ -769,7 +769,7 @@ struct ProviderScheduleDashboardView: View {
                 stepDate(1)
             } label: {
                 Image(systemName: "chevron.right")
-                    .font(.body.weight(.semibold))
+                    .font(.provider(.body, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
                     .frame(width: 40, height: 40)
                     .background { scheduleControlCircleBackground }
@@ -837,16 +837,16 @@ struct ProviderScheduleDashboardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Image(systemName: "hand.raised.fill")
-                        .font(.subheadline)
+                        .font(.provider(.subheadline))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                     Text("Blocked")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.provider(.subheadline, weight: .semibold))
                 }
                 Text("\(pretty12hBlockTime(block.startTime)) – \(pretty12hBlockTime(block.endTime))")
-                    .font(.subheadline.weight(.medium))
+                    .font(.provider(.subheadline, weight: .medium))
                 if let reason = block.reason, !reason.isEmpty {
                     Text(reason)
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
             }
@@ -858,7 +858,7 @@ struct ProviderScheduleDashboardView: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: "trash")
-                        .font(.body.weight(.medium))
+                        .font(.provider(.body, weight: .medium))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 }
             }
@@ -875,22 +875,22 @@ struct ProviderScheduleDashboardView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(b.scheduledTime?.formatted(date: .omitted, time: .shortened) ?? "Time TBD")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.provider(.subheadline, weight: .semibold))
                 Spacer()
                 Text(b.scheduleSlotTitle)
-                    .font(.caption2.weight(.bold))
+                    .font(.provider(.caption2, weight: .bold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(b.statusDisplayTint, in: Capsule())
             }
             Text(b.consumerDisplayName)
-                .font(.title3.weight(.semibold))
+                .font(.provider(.title3, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCream)
             Text(b.serviceDisplayName)
-                .font(.subheadline)
+                .font(.provider(.subheadline))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
             Text(b.barberDisplayName)
-                .font(.caption)
+                .font(.provider(.caption))
                 .foregroundStyle(Color.lavaShellCreamTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -902,22 +902,22 @@ struct ProviderScheduleDashboardView: View {
     private func dayOffMessage(dayBookings: [SimpleBookingDTO]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("You're not available on \(weekdayName(for: selectedDay))s.")
-                .font(.footnote)
+                .font(.provider(.footnote))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
             if !timeBlocksOnSelectedDay.isEmpty {
                 Text("Blocked times on this day")
-                    .font(.caption.weight(.semibold))
+                    .font(.provider(.caption, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
                 ForEach(timeBlocksOnSelectedDay) { block in
                     blockedTimeRow(block: block)
                 }
                 Text("You can remove blocks below. Tap an available hour to add a block when you are not editing weekly hours.")
-                    .font(.caption2)
+                    .font(.provider(.caption2))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
             }
             if !dayBookings.isEmpty {
                 Text("Existing bookings on this day:")
-                    .font(.caption.weight(.semibold))
+                    .font(.provider(.caption, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
                 ForEach(dayBookings) { b in
                     Button {
@@ -1091,7 +1091,7 @@ struct ProviderScheduleDashboardView: View {
 
         return VStack(alignment: .leading, spacing: 12) {
             Text("Weekly schedule")
-                .font(.caption.weight(.semibold))
+                .font(.provider(.caption, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
 
             inlineDayAvailabilityToggleRow(
@@ -1102,7 +1102,7 @@ struct ProviderScheduleDashboardView: View {
 
             if selectedDaySchedule.enabled {
                 Text("Booking hours")
-                    .font(.caption.weight(.semibold))
+                    .font(.provider(.caption, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
 
                 ForEach(selectedDaySchedule.intervals) { interval in
@@ -1112,7 +1112,7 @@ struct ProviderScheduleDashboardView: View {
                     addIntervalForSelectedWeekday()
                 } label: {
                     Label("Add time slot", systemImage: "plus.circle.fill")
-                        .font(.caption.weight(.semibold))
+                        .font(.provider(.caption, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCream)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
@@ -1131,7 +1131,7 @@ struct ProviderScheduleDashboardView: View {
             }
             if let inlineValidationError {
                 Text(inlineValidationError)
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(.red.opacity(0.92))
             }
         }
@@ -1154,19 +1154,19 @@ struct ProviderScheduleDashboardView: View {
     ) -> some View {
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: isEnabled ? "calendar.badge.checkmark" : "calendar.badge.minus")
-                .font(.title3)
+                .font(.provider(.title3))
                 .foregroundStyle(isEnabled ? Color.providerOlive : Color.lavaShellCreamTertiary)
                 .frame(width: 28)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Open for bookings every \(dayName)")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.provider(.subheadline, weight: .semibold))
                 Text(
                     isEnabled
                         ? "Clients can request appointments during the hours below."
                         : "This weekday is a day off. Turn on to set when you're available."
                 )
-                .font(.caption)
+                .font(.provider(.caption))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -1600,6 +1600,11 @@ struct ProviderScheduleDashboardView: View {
         case .week:
             let weekIntervals = availabilityIntervalsForVisibleWeek().flatMap { $0 }
             return ProviderScheduleTimelineBounds.range(for: weekIntervals)
+        case .day, .minute:
+            if let exact = ProviderScheduleTimelineBounds.exactRange(for: displayIntervals) {
+                return exact
+            }
+            return (0, 1)
         default:
             return ProviderScheduleTimelineBounds.range(for: displayIntervals)
         }

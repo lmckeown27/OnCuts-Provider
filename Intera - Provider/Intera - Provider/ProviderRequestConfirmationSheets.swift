@@ -186,13 +186,13 @@ struct ProviderApproveBookingConfirmSheet: View {
         VStack(alignment: .leading, spacing: 6) {
           ScaledSheetText(
             text: "Confirm Appointment Slot",
-            font: .system(size: 20, weight: .bold),
+            font: .provider(size: 20, weight: .bold),
             color: ProviderRequestSheetColors.titleText,
             lineLimit: 2
           )
           ScaledSheetText(
             text: "This locks \(customerName) into your \(scheduleSummary) calendar.",
-            font: .system(size: 14, weight: .regular),
+            font: .provider(size: 14, weight: .regular),
             color: ProviderRequestSheetColors.bodyText,
             lineLimit: 4
           )
@@ -204,7 +204,7 @@ struct ProviderApproveBookingConfirmSheet: View {
 
         Button(action: onApprove) {
           Text("Approve")
-            .font(.system(size: 17, weight: .bold))
+            .font(.provider(size: 17, weight: .bold))
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .frame(height: ProviderRequestSheetMetrics.buttonHeight)
@@ -253,7 +253,7 @@ struct ProviderDeclineReasonPickerSheet: View {
       VStack(alignment: .leading, spacing: 0) {
         ScaledSheetText(
           text: "Select Reason for Decline",
-          font: .system(size: 17, weight: .semibold),
+          font: .provider(size: 17, weight: .semibold),
           color: ProviderRequestSheetColors.titleText,
           lineLimit: 2
         )
@@ -283,7 +283,7 @@ struct ProviderDeclineReasonPickerSheet: View {
 
         Button(action: onDecline) {
           Text("Decline")
-            .font(.system(size: 17, weight: .bold))
+            .font(.provider(size: 17, weight: .bold))
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .frame(height: ProviderRequestSheetMetrics.buttonHeight)
@@ -311,22 +311,22 @@ struct ProviderDeclineReasonPickerSheet: View {
       } label: {
         HStack(spacing: 6) {
           Image(systemName: "chevron.left")
-            .font(.system(size: 13, weight: .semibold))
+            .font(.provider(size: 13, weight: .semibold))
           Text("Back to reasons")
-            .font(.system(size: 14, weight: .medium))
+            .font(.provider(size: 14, weight: .medium))
         }
         .foregroundStyle(ProviderRequestSheetColors.bodyText)
       }
       .buttonStyle(.plain)
 
       Text("Describe why you’re declining")
-        .font(.system(size: 14, weight: .semibold))
+        .font(.provider(size: 14, weight: .semibold))
         .foregroundStyle(ProviderRequestSheetColors.titleText)
 
       TextField("Type your reason…", text: $otherReasonText, axis: .vertical)
         .lineLimit(3 ... 5)
         .textFieldStyle(.plain)
-        .font(.system(size: 15))
+        .font(.provider(size: 15))
         .foregroundStyle(ProviderRequestSheetColors.titleText)
         .padding(12)
         .frame(minHeight: 88, alignment: .topLeading)
@@ -357,13 +357,13 @@ struct ProviderDeclineReasonPickerSheet: View {
       HStack(spacing: 6) {
         ScaledSheetText(
           text: reason.rawValue,
-          font: .system(size: 13, weight: isSelected ? .semibold : .medium),
+          font: .provider(size: 13, weight: isSelected ? .semibold : .medium),
           color: isSelected ? ProviderRequestSheetColors.declineOrange : ProviderRequestSheetColors.bodyText,
           lineLimit: 2
         )
         Spacer(minLength: 0)
         Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
-          .font(.system(size: 14))
+          .font(.provider(size: 14))
           .foregroundStyle(isSelected ? ProviderRequestSheetColors.declineOrange : ProviderRequestSheetColors.mutedText)
       }
       .padding(.horizontal, 10)
@@ -396,20 +396,20 @@ struct ProviderSubmitDeclineConfirmSheet: View {
       VStack(alignment: .leading, spacing: 0) {
         HStack(alignment: .top, spacing: 12) {
           Image(systemName: "exclamationmark.triangle.fill")
-            .font(.system(size: 26))
+            .font(.provider(size: 26))
             .foregroundStyle(ProviderRequestSheetColors.lavaRed)
             .accessibilityHidden(true)
 
           VStack(alignment: .leading, spacing: 6) {
             ScaledSheetText(
               text: "Submit Request Rejection?",
-              font: .system(size: 20, weight: .bold),
+              font: .provider(size: 20, weight: .bold),
               color: ProviderRequestSheetColors.titleText,
               lineLimit: 2
             )
             ScaledSheetText(
               text: "This cancels the inquiry and alerts \(customerName) via SMS.",
-              font: .system(size: 14, weight: .regular),
+              font: .provider(size: 14, weight: .regular),
               color: ProviderRequestSheetColors.bodyText,
               lineLimit: 4
             )
@@ -422,7 +422,7 @@ struct ProviderSubmitDeclineConfirmSheet: View {
 
         Button(action: onSubmit) {
           Text("Submit Rejection")
-            .font(.system(size: 17, weight: .bold))
+            .font(.provider(size: 17, weight: .bold))
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .frame(height: ProviderRequestSheetMetrics.buttonHeight)

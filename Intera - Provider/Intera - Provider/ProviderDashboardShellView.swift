@@ -167,7 +167,7 @@ struct ProviderDashboardShellView: View {
                 .overlay(alignment: .topTrailing) {
                     if unreadConversationCount > 0 {
                         Text(unreadConversationCount > 99 ? "99+" : "\(unreadConversationCount)")
-                            .font(.caption2.weight(.bold))
+                            .font(.provider(.caption2, weight: .bold))
                             .padding(4)
                             .background(Color.red.opacity(0.92), in: Capsule())
                             .offset(x: 6, y: -6)
@@ -181,7 +181,7 @@ struct ProviderDashboardShellView: View {
 
             if let roleLabel = headerRoleStatusText {
                 Text(roleLabel)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.provider(.subheadline, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
@@ -216,7 +216,7 @@ struct ProviderDashboardShellView: View {
     private var requestsTrayButton: some View {
         Button(action: presentBookingsInbox) {
             Image(systemName: "tray.full.fill")
-                .font(.body.weight(.semibold))
+                .font(.provider(.body, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCream)
                 .frame(width: 36, height: 36)
                 .background(Color.providerOlive.opacity(0.35), in: Circle())
@@ -255,7 +255,7 @@ struct ProviderDashboardShellView: View {
     private func requestsPendingCountBadge(_ count: Int) -> some View {
         let label = count > 99 ? "99+" : "\(count)"
         let text = Text(label)
-            .font(.system(size: 11, weight: .bold))
+            .font(.provider(size: 11, weight: .bold))
             .foregroundStyle(.white)
 
         if count > 9 {
@@ -329,7 +329,7 @@ struct ProviderDashboardShellView: View {
     private func profileMenuActionButton(_ title: String, role: ButtonRole? = nil, action: @escaping () -> Void) -> some View {
         Button(role: role, action: action) {
             Text(title)
-                .font(.body.weight(.semibold))
+                .font(.provider(.body, weight: .semibold))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 2)
         }

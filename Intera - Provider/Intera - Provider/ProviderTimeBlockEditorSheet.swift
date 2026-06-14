@@ -59,7 +59,7 @@ struct ProviderTimeBlockEditorSheet: View {
                 if let errorText {
                     Section {
                         Text(errorText)
-                            .font(.caption)
+                            .font(.provider(.caption))
                             .foregroundStyle(.red)
                     }
                 }

@@ -298,7 +298,7 @@ struct ProviderRequestsInboxContent: View {
         VStack(spacing: 8) {
             if let requestsErrorText, triageItems.isEmpty {
                 Text(requestsErrorText)
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                     .bookingsListCardRow(
                         contentWidth: nestedContentWidth(containerWidth: containerWidth),
@@ -349,7 +349,7 @@ struct ProviderRequestsInboxContent: View {
     @ViewBuilder
     private func bookingsErrorRow(text: String, containerWidth: CGFloat) -> some View {
         Text(text)
-            .font(.subheadline)
+            .font(.provider(.subheadline))
             .foregroundStyle(Color.lavaShellCreamSecondary)
             .bookingsListCardRow(
                 contentWidth: containerWidth * Self.bookingsContentWidthRatio,
@@ -361,7 +361,7 @@ struct ProviderRequestsInboxContent: View {
     @ViewBuilder
     private func bookingsEmptyHintRow(containerWidth: CGFloat) -> some View {
         Text("No other bookings yet.")
-            .font(.subheadline)
+            .font(.provider(.subheadline))
             .foregroundStyle(Color.lavaShellCreamSecondary)
             .bookingsListCardRow(
                 contentWidth: containerWidth * Self.bookingsContentWidthRatio,

@@ -135,22 +135,13 @@ enum ProviderAppearance {
         UITableView.appearance().separatorColor = separator
 
         UICollectionView.appearance().backgroundColor = .clear
-
-        let nav = UINavigationBarAppearance()
-        nav.configureWithTransparentBackground()
-        nav.titleTextAttributes = [.foregroundColor: primaryText]
-        nav.largeTitleTextAttributes = [.foregroundColor: primaryText]
-        UINavigationBar.appearance().standardAppearance = nav
-        UINavigationBar.appearance().scrollEdgeAppearance = nav
-        UINavigationBar.appearance().compactAppearance = nav
-        UINavigationBar.appearance().compactScrollEdgeAppearance = nav
         UITabBar.appearance().isTranslucent = true
+
+        ProviderTypography.configureGlobalUIKitAppearance()
 
         let seg = UISegmentedControl.appearance()
         seg.backgroundColor = segmentedBackground
         seg.selectedSegmentTintColor = oliveFill
-        seg.setTitleTextAttributes([.foregroundColor: segmentedNormalTitle], for: .normal)
-        seg.setTitleTextAttributes([.foregroundColor: segmentedSelectedTitle], for: .selected)
     }
 }
 

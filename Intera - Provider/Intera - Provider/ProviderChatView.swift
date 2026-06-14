@@ -35,7 +35,7 @@ struct ProviderChatView: View {
                     Task { await send() }
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
-                        .font(.title2)
+                        .font(.provider(.title2))
                         .symbolRenderingMode(.hierarchical)
                 }
                 .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)

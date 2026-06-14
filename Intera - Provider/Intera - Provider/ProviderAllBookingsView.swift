@@ -36,19 +36,19 @@ struct ProviderBookingsSectionDropdownHeader: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
+                    .font(.provider(.caption, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
 
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.provider(.subheadline, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
                     .multilineTextAlignment(.leading)
 
                 Spacer(minLength: 0)
 
                 Text("\(count)")
-                    .font(.caption.weight(.bold))
+                    .font(.provider(.caption, weight: .bold))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -229,21 +229,21 @@ struct ProviderBookingsDropdownListContent: View {
     private func bookingRow(_ booking: SimpleBookingDTO) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(booking.consumerDisplayName)
-                .font(.title3.weight(.semibold))
+                .font(.provider(.title3, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCream)
             Text(booking.serviceDisplayName)
-                .font(.subheadline)
+                .font(.provider(.subheadline))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
             HStack {
                 Text(booking.statusDisplayTitle)
-                    .font(.caption.weight(.semibold))
+                    .font(.provider(.caption, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(booking.statusDisplayTint, in: Capsule())
                 Spacer(minLength: 0)
                 Text(booking.formattedSchedule())
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             }
         }
@@ -256,15 +256,15 @@ struct ProviderBookingsDropdownListContent: View {
 
         return VStack(alignment: .leading, spacing: 6) {
             Text(booking.consumerDisplayName)
-                .font(.title3.weight(.semibold))
+                .font(.provider(.title3, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCream)
             Text(booking.serviceDisplayName)
-                .font(.subheadline)
+                .font(.provider(.subheadline))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
 
             HStack {
                 Text(booking.statusDisplayTitle)
-                    .font(.caption.weight(.semibold))
+                    .font(.provider(.caption, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -274,10 +274,10 @@ struct ProviderBookingsDropdownListContent: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Current: \(booking.formattedSchedule())")
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                 Text("Requested: \(proposed)")
-                    .font(.caption.weight(.semibold))
+                    .font(.provider(.caption, weight: .semibold))
                     .foregroundStyle(Color.providerOlive)
             }
         }

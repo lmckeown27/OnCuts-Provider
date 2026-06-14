@@ -102,7 +102,7 @@ struct ProviderAdminDashboardView: View {
                 campusPickerCard
                 if let errorText {
                     Text(errorText)
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(.red)
                         .padding(.horizontal, 12)
                 }
@@ -251,7 +251,7 @@ struct ProviderAdminDashboardView: View {
                 if selectedCampusId != nil {
                     HStack(spacing: 10) {
                         Text(selectedCampusName)
-                            .font(.subheadline.weight(.semibold))
+                            .font(.provider(.subheadline, weight: .semibold))
                             .foregroundStyle(Color.lavaShellCream)
                             .lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -262,7 +262,7 @@ struct ProviderAdminDashboardView: View {
                             Task { await loadScopedData() }
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .font(.title3)
+                                .font(.provider(.title3))
                                 .symbolRenderingMode(.hierarchical)
                                 .foregroundStyle(Color.lavaShellCreamTertiary)
                         }
@@ -316,7 +316,7 @@ struct ProviderAdminDashboardView: View {
         return Group {
             if campuses.isEmpty {
                 Text(isLoading ? "Loading campuses…" : "No campuses available.")
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                     .padding(.vertical, 6)
             } else {
@@ -331,7 +331,7 @@ struct ProviderAdminDashboardView: View {
                             Image(systemName: "globe")
                                 .foregroundStyle(Color.lavaShellCreamTertiary)
                             Text("All campuses")
-                                .font(.subheadline.weight(.semibold))
+                                .font(.provider(.subheadline, weight: .semibold))
                             Spacer(minLength: 8)
                             if selectedCampusId == nil {
                                 Image(systemName: "checkmark.circle.fill")
@@ -348,7 +348,7 @@ struct ProviderAdminDashboardView: View {
 
                     if rows.isEmpty, !qTrim.isEmpty {
                         Text("No campuses match “\(qTrim)”.")
-                            .font(.caption)
+                            .font(.provider(.caption))
                             .foregroundStyle(Color.lavaShellCreamSecondary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 12)
@@ -409,12 +409,12 @@ struct ProviderAdminDashboardView: View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(c.displayName)
-                    .font(.subheadline.weight(.medium))
+                    .font(.provider(.subheadline, weight: .medium))
                     .foregroundStyle(Color.lavaShellCream)
                     .multilineTextAlignment(.leading)
                 if let line = c.locationLine, !line.isEmpty {
                     Text(line)
-                        .font(.caption2)
+                        .font(.provider(.caption2))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
             }
@@ -499,7 +499,7 @@ struct ProviderAdminDashboardView: View {
     private func metricsTimelineChartView(points: [MetricPlotPoint]) -> some View {
         if points.isEmpty {
             Text("No data in this range yet (uses paid booking timestamps).")
-                .font(.footnote)
+                .font(.provider(.footnote))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
                 .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
         } else {
@@ -601,11 +601,11 @@ struct ProviderAdminDashboardView: View {
         if hasStripeAnalyticsFields(p) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Stripe analytics")
-                    .font(.caption.weight(.semibold))
+                    .font(.provider(.caption, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                     .padding(.top, 6)
                 Text("Estimated from booking card volume and platform fees (same model as the web admin).")
-                    .font(.caption2)
+                    .font(.provider(.caption2))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
 
                 LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 10) {
@@ -647,7 +647,7 @@ struct ProviderAdminDashboardView: View {
             VStack(spacing: 10) {
                 if barbers.isEmpty {
                     Text(isLoading ? "Loading barbers…" : "No barbers found for this scope.")
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 } else {
                     ForEach(barbers) { barber in
@@ -669,12 +669,12 @@ struct ProviderAdminDashboardView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(barber.displayName)
-                            .font(.subheadline.weight(.semibold))
+                            .font(.provider(.subheadline, weight: .semibold))
                         if barber.isCampusManager == true { tag(text: "CM", tint: Color.providerOlive) }
                         if barber.isActive == false { tag(text: "Hidden", tint: Color.red.opacity(0.7)) }
                     }
                     Text(barber.email ?? "—")
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                     HStack(spacing: 8) {
                         if let cn = barber.campusName { Text(cn); Text("·") }
@@ -682,13 +682,13 @@ struct ProviderAdminDashboardView: View {
                         Text("·")
                         Text(dollarString(centsLike: Double(barber.totalVolumeCents ?? 0)))
                     }
-                    .font(.caption2)
+                    .font(.provider(.caption2))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
                     stripeBadges(barber)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
             }
             .padding(12)
@@ -740,7 +740,7 @@ struct ProviderAdminDashboardView: View {
                 )
                 if filteredUsers.isEmpty {
                     Text(isLoading ? "Loading users…" : "No matching users.")
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 } else {
                     ForEach(filteredUsers.prefix(100)) { user in
@@ -748,7 +748,7 @@ struct ProviderAdminDashboardView: View {
                     }
                     if filteredUsers.count > 100 {
                         Text("Showing first 100. Refine your search to narrow results.")
-                            .font(.caption2)
+                            .font(.provider(.caption2))
                             .foregroundStyle(Color.lavaShellCreamTertiary)
                     }
                 }
@@ -778,11 +778,11 @@ struct ProviderAdminDashboardView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(user.displayName)
-                            .font(.subheadline.weight(.semibold))
+                            .font(.provider(.subheadline, weight: .semibold))
                         if user.isActive == false { tag(text: "Blocked", tint: Color.red.opacity(0.7)) }
                     }
                     Text(user.email ?? "—")
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                     HStack(spacing: 6) {
                         Text(user.prettyRole)
@@ -791,12 +791,12 @@ struct ProviderAdminDashboardView: View {
                             Text(campus)
                         }
                     }
-                    .font(.caption2)
+                    .font(.provider(.caption2))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.caption)
+                    .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
             }
             .padding(12)
@@ -836,7 +836,7 @@ struct ProviderAdminDashboardView: View {
 
                 if let reportsError, !reportsError.isEmpty {
                     Text(reportsError)
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(.red)
                 }
 
@@ -844,7 +844,7 @@ struct ProviderAdminDashboardView: View {
                     loadingRow("Loading reports…")
                 } else if moderationReports.isEmpty {
                     Text(emptyReportsMessage)
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 } else {
                     VStack(spacing: 10) {
@@ -885,40 +885,40 @@ struct ProviderAdminDashboardView: View {
                         reportStatusBadge(report)
                         if let reason = report.reason?.trimmingCharacters(in: .whitespacesAndNewlines), !reason.isEmpty {
                             Text(reason.replacingOccurrences(of: "_", with: " ").capitalized)
-                                .font(.caption.weight(.semibold))
+                                .font(.provider(.caption, weight: .semibold))
                                 .foregroundStyle(Color.lavaShellCream)
                         }
                         Spacer(minLength: 0)
                         if let when = report.createdAt {
                             Text(relativeShort(when))
-                                .font(.caption2)
+                                .font(.provider(.caption2))
                                 .foregroundStyle(Color.lavaShellCreamTertiary)
                         }
                     }
                     Text("Reported: \(report.reportedUserDisplayName)")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.provider(.subheadline, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCream)
                     if let email = report.reportedUserEmail, !email.isEmpty {
                         Text(email)
-                            .font(.caption)
+                            .font(.provider(.caption))
                             .foregroundStyle(Color.lavaShellCreamSecondary)
                             .lineLimit(1)
                     }
                     Text("Reporter: \(report.reporterDisplayName)")
-                        .font(.caption2)
+                        .font(.provider(.caption2))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
             }
 
             if let descr = report.description?.trimmingCharacters(in: .whitespacesAndNewlines), !descr.isEmpty {
                 Text(descr)
-                    .font(.footnote)
+                    .font(.provider(.footnote))
                     .foregroundStyle(Color.lavaShellCream)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let preview = report.subjectContent?.trimmingCharacters(in: .whitespacesAndNewlines), !preview.isEmpty {
                 Text("“\(preview)”")
-                    .font(.footnote.italic())
+                    .font(.provider(.footnote)).italic()
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(8)
@@ -933,11 +933,11 @@ struct ProviderAdminDashboardView: View {
             {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Resolution notes")
-                        .font(.caption2.weight(.semibold))
+                        .font(.provider(.caption2, weight: .semibold))
                         .textCase(.uppercase)
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                     Text(notes)
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCream)
                 }
             }
@@ -946,7 +946,7 @@ struct ProviderAdminDashboardView: View {
                 reportActionRow(report, isBusy: isBusy)
             } else if let action = report.resolutionAction, !action.isEmpty {
                 Text("Action: \(action.replacingOccurrences(of: "_", with: " ").capitalized)")
-                    .font(.caption2)
+                    .font(.provider(.caption2))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
             }
         }
@@ -984,7 +984,7 @@ struct ProviderAdminDashboardView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "ellipsis.circle")
                     Text("More")
-                        .font(.caption.weight(.semibold))
+                        .font(.provider(.caption, weight: .semibold))
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -1010,7 +1010,7 @@ struct ProviderAdminDashboardView: View {
             HStack(spacing: 4) {
                 Image(systemName: action.systemImage)
                 Text(action.displayLabel)
-                    .font(.caption.weight(.semibold))
+                    .font(.provider(.caption, weight: .semibold))
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -1030,7 +1030,7 @@ struct ProviderAdminDashboardView: View {
         case .none: Color.gray.opacity(0.55)
         }
         return Text(label)
-            .font(.caption2.weight(.semibold))
+            .font(.provider(.caption2, weight: .semibold))
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .background(tint, in: Capsule())
@@ -1053,7 +1053,7 @@ struct ProviderAdminDashboardView: View {
 
                 if let bannedError, !bannedError.isEmpty {
                     Text(bannedError)
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(.red)
                 }
 
@@ -1063,7 +1063,7 @@ struct ProviderAdminDashboardView: View {
                     Text(bannedCategoryFilter == .all
                         ? "No users are currently banned."
                         : "No banned \(bannedCategoryFilter.chipLabel.lowercased()) right now.")
-                        .font(.footnote)
+                        .font(.provider(.footnote))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 } else {
                     VStack(spacing: 10) {
@@ -1093,7 +1093,7 @@ struct ProviderAdminDashboardView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(user.displayName)
-                            .font(.subheadline.weight(.semibold))
+                            .font(.provider(.subheadline, weight: .semibold))
                             .foregroundStyle(Color.lavaShellCream)
                         tag(text: "BANNED", tint: Color.red.opacity(0.7))
                         if let count = user.openReportCount, count > 0 {
@@ -1102,7 +1102,7 @@ struct ProviderAdminDashboardView: View {
                     }
                     if let email = user.email, !email.isEmpty {
                         Text(email)
-                            .font(.caption)
+                            .font(.provider(.caption))
                             .foregroundStyle(Color.lavaShellCreamSecondary)
                             .lineLimit(1)
                     }
@@ -1117,11 +1117,11 @@ struct ProviderAdminDashboardView: View {
                             Text(relativeShort(when))
                         }
                     }
-                    .font(.caption2)
+                    .font(.provider(.caption2))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
                     if let listing = user.barberListingStateLabel {
                         Text(listing)
-                            .font(.caption2)
+                            .font(.provider(.caption2))
                             .foregroundStyle(Color.lavaShellCreamTertiary)
                     }
                 }
@@ -1136,7 +1136,7 @@ struct ProviderAdminDashboardView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.uturn.backward.circle")
                         Text("Unban")
-                            .font(.caption.weight(.semibold))
+                            .font(.provider(.caption, weight: .semibold))
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
@@ -1206,7 +1206,7 @@ struct ProviderAdminDashboardView: View {
                         selection.wrappedValue = option
                     } label: {
                         Text(label(option))
-                            .font(.caption.weight(.semibold))
+                            .font(.provider(.caption, weight: .semibold))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                             .background(
@@ -1411,10 +1411,10 @@ struct ProviderAdminDashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.title3.weight(.semibold))
+                    .font(.provider(.title3, weight: .semibold))
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.caption)
+                        .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
                 }
             }
@@ -1435,10 +1435,10 @@ struct ProviderAdminDashboardView: View {
     private func metricCell(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(.caption2)
+                .font(.provider(.caption2))
                 .foregroundStyle(Color.lavaShellCreamTertiary)
             Text(value)
-                .font(.subheadline.weight(.semibold))
+                .font(.provider(.subheadline, weight: .semibold))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
@@ -1450,7 +1450,7 @@ struct ProviderAdminDashboardView: View {
 
     private func tag(text: String, tint: Color) -> some View {
         Text(text)
-            .font(.caption2.weight(.bold))
+            .font(.provider(.caption2, weight: .bold))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(tint.opacity(0.6), in: Capsule())
@@ -1459,7 +1459,7 @@ struct ProviderAdminDashboardView: View {
     private func loadingRow(_ msg: String) -> some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text(msg).font(.footnote).foregroundStyle(Color.lavaShellCreamSecondary)
+            Text(msg).font(.provider(.footnote)).foregroundStyle(Color.lavaShellCreamSecondary)
         }
     }
 

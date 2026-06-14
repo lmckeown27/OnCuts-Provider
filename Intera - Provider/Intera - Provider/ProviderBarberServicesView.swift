@@ -24,7 +24,7 @@ struct ProviderBarberServicesView: View {
             } else if let loadError {
                 VStack(spacing: 12) {
                     Text(loadError)
-                        .font(.subheadline)
+                        .font(.provider(.subheadline))
                         .multilineTextAlignment(.center)
                         .foregroundStyle(Color.lavaShellCream.opacity(0.85))
                     Button("Try again") {
@@ -37,7 +37,7 @@ struct ProviderBarberServicesView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if rows.isEmpty {
                 Text("No campus services are configured yet. A Campus Manager or Admin can add services in the dashboard.")
-                    .font(.subheadline)
+                    .font(.provider(.subheadline))
                     .foregroundStyle(Color.lavaShellCream.opacity(0.85))
                     .multilineTextAlignment(.center)
                     .padding(24)
@@ -47,7 +47,7 @@ struct ProviderBarberServicesView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         if let toast {
                             Text(toast)
-                                .font(.caption.weight(.semibold))
+                                .font(.provider(.caption, weight: .semibold))
                                 .foregroundStyle(Color.lavaShellCream)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
@@ -55,7 +55,7 @@ struct ProviderBarberServicesView: View {
                         }
 
                         Text("Select services and set your prices. Offerings and base prices come from your campus service list.")
-                            .font(.subheadline)
+                            .font(.provider(.subheadline))
                             .foregroundStyle(Color.lavaShellCream.opacity(0.8))
 
                         LazyVGrid(
@@ -98,7 +98,7 @@ struct ProviderBarberServicesView: View {
                     Task { await toggleOffered(slug: r.slug) }
                 } label: {
                     Image(systemName: r.isOffered ? "checkmark.square.fill" : "square")
-                        .font(.title3)
+                        .font(.provider(.title3))
                         .foregroundStyle(r.isOffered ? Color.providerOlive : Color.lavaShellCream.opacity(0.45))
                 }
                 .buttonStyle(.plain)
@@ -106,12 +106,12 @@ struct ProviderBarberServicesView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(r.name)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.provider(.subheadline, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCream)
                         .fixedSize(horizontal: false, vertical: true)
                     if !r.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text(r.description)
-                            .font(.caption2)
+                            .font(.provider(.caption2))
                             .foregroundStyle(Color.lavaShellCream.opacity(0.55))
                             .lineLimit(3)
                     }
@@ -122,12 +122,12 @@ struct ProviderBarberServicesView: View {
             if r.isOffered {
                 HStack(spacing: 8) {
                     Text("$")
-                        .font(.headline.weight(.bold))
+                        .font(.provider(.headline, weight: .bold))
                         .foregroundStyle(Color.lavaShellCream.opacity(0.55))
 
                     TextField("Price", text: row.priceText)
                         .keyboardType(.numberPad)
-                        .font(.headline.weight(.bold))
+                        .font(.provider(.headline, weight: .bold))
                         .foregroundStyle(Color.lavaShellCream)
                         .frame(minWidth: 48, maxWidth: 72)
                         .padding(.horizontal, 6)
@@ -151,7 +151,7 @@ struct ProviderBarberServicesView: View {
                             Task { await commitPrice(slug: r.slug) }
                         } label: {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.title2)
+                                .font(.provider(.title2))
                                 .symbolRenderingMode(.palette)
                                 .foregroundStyle(Color.lavaShellCream, Color.providerOlive)
                         }
@@ -163,7 +163,7 @@ struct ProviderBarberServicesView: View {
                             resetPriceDraft(slug: r.slug)
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .font(.title3)
+                                .font(.provider(.title3))
                                 .foregroundStyle(Color.lavaShellCream.opacity(0.45))
                         }
                         .buttonStyle(.plain)
@@ -174,12 +174,12 @@ struct ProviderBarberServicesView: View {
 
                 if r.priceNeedsCommit {
                     Text("Tap the checkmark to save this price.")
-                        .font(.caption2)
+                        .font(.provider(.caption2))
                         .foregroundStyle(Color.lavaShellCream.opacity(0.6))
                 }
             } else {
                 Text("+ Add")
-                    .font(.caption.weight(.semibold))
+                    .font(.provider(.caption, weight: .semibold))
                     .foregroundStyle(Color.providerOlive)
             }
         }
