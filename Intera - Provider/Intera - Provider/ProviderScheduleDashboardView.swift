@@ -65,6 +65,7 @@ struct ProviderScheduleDashboardView: View {
     @State private var inlineSaveError: String?
 
     @State private var timeChangeProposal: ScheduleAppointmentTimeChangeProposal?
+    @State private var blockedTimeChangeConfirmationPending = false
     @State private var isApplyingTimeChange = false
     @State private var timeChangeErrorText: String?
     @State private var movePromptBooking: SimpleBookingDTO?
@@ -220,6 +221,7 @@ struct ProviderScheduleDashboardView: View {
             activeMoveDragBookingID = nil
             movePromptBooking = nil
             timeChangeProposal = nil
+            blockedTimeChangeConfirmationPending = false
         }
         .onChange(of: effectiveZoomTier) { _, tier in
             if tier == .month {
@@ -227,7 +229,14 @@ struct ProviderScheduleDashboardView: View {
                 activeMoveDragBookingID = nil
                 movePromptBooking = nil
                 timeChangeProposal = nil
+                blockedTimeChangeConfirmationPending = false
             }
+        }
+        .task(id: weekTimeBlocksPrefetchToken) {
+            await prefetchVisibleWeekTimeBlocksIfNeeded()
+        }
+        .onChange(of: timeChangeProposal?.id) { _, _ in
+            blockedTimeChangeConfirmationPending = false
         }
         .toolbar(.hidden, for: .navigationBar)
         /// With `providerLavaScreenChrome()` on the shell, a **material** nav bar background can still
@@ -398,7 +407,21 @@ struct ProviderScheduleDashboardView: View {
 
     @ViewBuilder
     private var scheduleBookingMoveActionPanel: some View {
-        if let proposal = timeChangeProposal {
+        if blockedTimeChangeConfirmationPending, let proposal = timeChangeProposal {
+            scheduleMoveActionCard(
+                title: "Blocked time",
+                bullets: blockedTimeChangeConfirmBullets(for: proposal),
+                primaryTitle: isApplyingTimeChange ? "Saving…" : "Move anyway",
+                secondaryTitle: "Cancel",
+                isPrimaryDisabled: isApplyingTimeChange,
+                onPrimary: {
+                    Task { await applyPendingTimeChange() }
+                },
+                onSecondary: {
+                    blockedTimeChangeConfirmationPending = false
+                }
+            )
+        } else if let proposal = timeChangeProposal {
             scheduleMoveActionCard(
                 title: "Confirm time change",
                 bullets: confirmTimeChangeBullets(for: proposal),
@@ -406,10 +429,15 @@ struct ProviderScheduleDashboardView: View {
                 secondaryTitle: "Cancel",
                 isPrimaryDisabled: isApplyingTimeChange,
                 onPrimary: {
-                    Task { await applyPendingTimeChange() }
+                    if requiresBlockedTimeMoveConfirmation(for: proposal) {
+                        blockedTimeChangeConfirmationPending = true
+                    } else {
+                        Task { await applyPendingTimeChange() }
+                    }
                 },
                 onSecondary: {
                     timeChangeProposal = nil
+                    blockedTimeChangeConfirmationPending = false
                     editingMoveBookingID = nil
                     activeMoveDragBookingID = nil
                 }
@@ -459,9 +487,49 @@ struct ProviderScheduleDashboardView: View {
         let toTime = proposal.proposedTime.formatted(date: .omitted, time: .shortened)
         return [
             "\(proposal.booking.consumerDisplayName) · \(proposal.booking.serviceDisplayName): \(fromTime) → \(toTime)",
-            "Tap the booking again to drag to a different slot",
-            "Confirm to save the new time"
+            "Tap the booking again to drag to a different slot"
         ]
+    }
+
+    private func blockedTimeChangeConfirmBullets(for proposal: ScheduleAppointmentTimeChangeProposal) -> [String] {
+        let toDate = proposal.proposedTime.formatted(date: .abbreviated, time: .omitted)
+        let toTime = proposal.proposedTime.formatted(date: .omitted, time: .shortened)
+        let bookingLabel = "\(proposal.booking.consumerDisplayName) · \(proposal.booking.serviceDisplayName)"
+
+        if isEntireDayBlockedOff(for: proposal.proposedTime) {
+            return [
+                "That day is blocked off (\(toDate))",
+                "Move \(bookingLabel) to a blocked day anyway?"
+            ]
+        }
+
+        return [
+            "That date and time is blocked off (\(toDate) · \(toTime))",
+            "Move \(bookingLabel) to blocked time anyway?"
+        ]
+    }
+
+    private func requiresBlockedTimeMoveConfirmation(for proposal: ScheduleAppointmentTimeChangeProposal) -> Bool {
+        if overlappingTimeBlock(for: proposal) != nil { return true }
+        return isEntireDayBlockedOff(for: proposal.proposedTime)
+    }
+
+    private func overlappingTimeBlock(for proposal: ScheduleAppointmentTimeChangeProposal) -> BarberTimeBlockDTO? {
+        let key = dayKey(for: proposal.proposedTime)
+        let blocks = timeBlocksByDay[key] ?? []
+        guard let appointment = ScheduleCanvasAppointment.from(booking: proposal.booking, calendar: mondayCalendar) else {
+            return nil
+        }
+
+        let proposedComponents = mondayCalendar.dateComponents([.hour, .minute], from: proposal.proposedTime)
+        let startMinute = (proposedComponents.hour ?? 0) * 60 + (proposedComponents.minute ?? 0)
+        let endMinute = startMinute + appointment.durationMinutes
+
+        return blocks.first { block in
+            let blockStart = minutesFromHHMM(block.startTime)
+            let blockEnd = minutesFromHHMM(block.endTime)
+            return startMinute < blockEnd && endMinute > blockStart
+        }
     }
 
     private func scheduleMoveActionCard(
@@ -551,6 +619,7 @@ struct ProviderScheduleDashboardView: View {
         .animation(.easeInOut(duration: 0.2), value: movePromptBooking?.id)
         .animation(.easeInOut(duration: 0.2), value: timeChangeProposal?.id)
         .animation(.easeInOut(duration: 0.2), value: editingMoveBookingID)
+        .animation(.easeInOut(duration: 0.2), value: blockedTimeChangeConfirmationPending)
     }
 
     // MARK: - Awaiting Payment banner
@@ -717,6 +786,7 @@ struct ProviderScheduleDashboardView: View {
                     timelineEndMinute: bounds.end,
                     availabilityIntervals: intervals,
                     weekDayAvailabilityIntervals: availabilityIntervalsForVisibleWeek(),
+                    weekDayEntirelyBlockedOff: entireDaysBlockedOffForVisibleWeek(),
                     weekDayTimeBlocks: timeBlocksForVisibleWeek(),
                     timeBlocks: timeBlocksOnSelectedDay,
                     blockTimeTapsEnabled: !isEditingAvailability && (display?.available ?? false),
@@ -855,6 +925,7 @@ struct ProviderScheduleDashboardView: View {
                 notes: pending.booking.notes
             )
             timeChangeProposal = nil
+            blockedTimeChangeConfirmationPending = false
             editingMoveBookingID = nil
             activeMoveDragBookingID = nil
             NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
@@ -1792,12 +1863,63 @@ struct ProviderScheduleDashboardView: View {
         }
     }
 
+    private func entireDaysBlockedOffForVisibleWeek() -> [Bool] {
+        (0 ..< 7).map { offset in
+            guard let day = mondayCalendar.date(byAdding: .day, value: offset, to: weekStartMonday) else {
+                return false
+            }
+            return isEntireDayBlockedOff(for: day)
+        }
+    }
+
+    /// True only when a day is explicitly off — disabled in the weekly schedule or marked unavailable for that date.
+    private func isEntireDayBlockedOff(for day: Date) -> Bool {
+        if isEditingAvailability, let schedule = inlineWeeklySchedule {
+            return !schedule[weeklyDayKey(for: day)].enabled
+        }
+
+        let key = dayKey(for: day)
+        if let data = availabilityByDay[key] {
+            if let raw = data.date?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+                if normalizedBlockDate(raw) == key {
+                    if data.available == false { return true }
+                    if (data.intervals ?? []).isEmpty { return true }
+                    return false
+                }
+            }
+        }
+
+        guard let schedule = cachedWeeklySchedule else { return false }
+        return !schedule[weeklyDayKey(for: day)].enabled
+    }
+
     private func timeBlocksForVisibleWeek() -> [[BarberTimeBlockDTO]] {
         (0 ..< 7).map { offset in
             guard let day = mondayCalendar.date(byAdding: .day, value: offset, to: weekStartMonday) else {
                 return []
             }
             return (timeBlocksByDay[dayKey(for: day)] ?? []).sorted { $0.startTime < $1.startTime }
+        }
+    }
+
+    private var weekTimeBlocksPrefetchToken: String {
+        "\(weekOffset)|\(session.barberProfile?.id ?? "none")|\(effectiveZoomTier == .week)"
+    }
+
+    private func prefetchVisibleWeekTimeBlocksIfNeeded() async {
+        guard session.hasProviderProfile, let barberId = session.barberProfile?.id else { return }
+        guard effectiveZoomTier == .week else { return }
+
+        await withTaskGroup(of: Void.self) { group in
+            for offset in 0 ..< 7 {
+                guard let day = mondayCalendar.date(byAdding: .day, value: offset, to: weekStartMonday) else {
+                    continue
+                }
+                let key = dayKey(for: day)
+                group.addTask {
+                    await prefetchSingleDayScheduleIfNeeded(barberId: barberId, date: day, dayKey: key)
+                }
+            }
         }
     }
 

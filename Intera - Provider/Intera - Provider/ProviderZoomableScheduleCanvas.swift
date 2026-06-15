@@ -144,6 +144,8 @@ struct ProviderZoomableScheduleCanvas: View {
     let availabilityIntervals: [BarberAvailabilityIntervalDTO]
     /// Per-day availability intervals for the visible week (Mon–Sun), used for bookable-slot grid lines.
     let weekDayAvailabilityIntervals: [[BarberAvailabilityIntervalDTO]]
+    /// Per-day flags for weekdays explicitly turned off in the weekly schedule (or date overrides).
+    let weekDayEntirelyBlockedOff: [Bool]
     /// Per-day time blocks for the visible week (Mon–Sun), used when validating weekly drag moves.
     let weekDayTimeBlocks: [[BarberTimeBlockDTO]]
     let timeBlocks: [BarberTimeBlockDTO]
@@ -505,6 +507,7 @@ struct ProviderZoomableScheduleCanvas: View {
                     startMinute: timelineStartMinute,
                     endMinute: timelineEndMinute,
                     dayAvailabilityIntervals: weekDayAvailabilityIntervals,
+                    dayEntirelyBlockedOff: weekDayEntirelyBlockedOff,
                     dayTimeBlocks: weekDayTimeBlocks,
                     onDayTap: onWeekDayTap,
                     onBookingTap: onBookingTap,
@@ -1068,17 +1071,23 @@ private struct SchedulePreciseTimelineCanvas: View {
                     for: app,
                     blockHeight: height,
                     isMoveSession: isMoveSession,
+                    isDragActive: isDragActive,
                     canRequestMove: canMove && editingMoveBookingID == nil
                 )
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    .background(appointmentColor(for: app.booking, isMoveSession: isMoveSession))
+                    .background(appointmentColor(for: app.booking, isDragActive: isDragActive, isParkedForMove: isMoveSession && !isDragActive))
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .overlay {
                         if isMoveSession {
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .strokeBorder(Color.lavaShellCreamSecondary.opacity(0.45), lineWidth: 1.5)
+                                .strokeBorder(
+                                    isDragActive
+                                        ? Color.lavaShellCreamSecondary.opacity(0.45)
+                                        : Color.providerOlive.opacity(0.95),
+                                    lineWidth: 2
+                                )
                         }
                     }
                     .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -1112,7 +1121,8 @@ private struct SchedulePreciseTimelineCanvas: View {
                 isOpenSlot(
                     startMinute: minute,
                     durationMinutes: app.durationMinutes,
-                    excludingAppointmentID: app.id
+                    excludingAppointmentID: app.id,
+                    allowBlockedTime: true
                 )
             }
         }
@@ -1156,7 +1166,8 @@ private struct SchedulePreciseTimelineCanvas: View {
         if isOpenSlot(
             startMinute: snapped,
             durationMinutes: app.durationMinutes,
-            excludingAppointmentID: app.id
+            excludingAppointmentID: app.id,
+            allowBlockedTime: true
         ) {
             return snapped
         }
@@ -1309,7 +1320,12 @@ private struct SchedulePreciseTimelineCanvas: View {
         return true
     }
 
-    private func isOpenSlot(startMinute: Int, durationMinutes: Int, excludingAppointmentID: String) -> Bool {
+    private func isOpenSlot(
+        startMinute: Int,
+        durationMinutes: Int,
+        excludingAppointmentID: String,
+        allowBlockedTime: Bool = false
+    ) -> Bool {
         let endMinute = startMinute + durationMinutes
 
         for other in appointments where other.id != excludingAppointmentID {
@@ -1319,11 +1335,13 @@ private struct SchedulePreciseTimelineCanvas: View {
             }
         }
 
-        for block in timeBlocks {
-            let blockStart = minutesFromHHMM(block.startTime)
-            let blockEnd = minutesFromHHMM(block.endTime)
-            if startMinute < blockEnd && endMinute > blockStart {
-                return false
+        if !allowBlockedTime {
+            for block in timeBlocks {
+                let blockStart = minutesFromHHMM(block.startTime)
+                let blockEnd = minutesFromHHMM(block.endTime)
+                if startMinute < blockEnd && endMinute > blockStart {
+                    return false
+                }
             }
         }
 
@@ -1345,12 +1363,17 @@ private struct SchedulePreciseTimelineCanvas: View {
         for app: ScheduleCanvasAppointment,
         blockHeight: CGFloat,
         isMoveSession: Bool,
+        isDragActive: Bool,
         canRequestMove: Bool
     ) -> some View {
         if isMoveSession {
             Image(systemName: "arrow.up.and.down")
                 .font(.provider(size: moveModeIconSize(for: blockHeight), weight: .semibold))
-                .foregroundStyle(Color.lavaShellCreamSecondary.opacity(0.88))
+                .foregroundStyle(
+                    isDragActive
+                        ? Color.lavaShellCreamSecondary.opacity(0.88)
+                        : Color.lavaShellCream.opacity(0.92)
+                )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .allowsHitTesting(false)
         } else {
@@ -1575,16 +1598,19 @@ private struct SchedulePreciseTimelineCanvas: View {
         return trimmed
     }
 
-    private func appointmentColor(for booking: SimpleBookingDTO, isMoveSession: Bool) -> Color {
-        if isMoveSession {
+    private func appointmentColor(for booking: SimpleBookingDTO, isDragActive: Bool, isParkedForMove: Bool) -> Color {
+        if isDragActive {
             return Color.lavaShellCreamSecondary.opacity(0.22)
         }
 
         if ProviderBookingStatusDisplay.isScheduleCompleted(status: booking.status) {
-            return Color.green.opacity(0.32)
+            return Color.green.opacity(isParkedForMove ? 0.38 : 0.32)
         }
         if ProviderBookingStatusDisplay.isScheduleBooked(status: booking.status) {
-            return Color.providerOlive.opacity(0.44)
+            return Color.providerOlive.opacity(isParkedForMove ? 0.52 : 0.44)
+        }
+        if isParkedForMove {
+            return Color.providerOlive.opacity(0.38)
         }
         return Color.providerScheduleCardFill
     }
@@ -1694,9 +1720,9 @@ private struct ScheduleDraggableAppointmentBlock<Content: View>: View {
             .zIndex(isDragActive ? 3 : (isMoveSession ? 2 : (isPressingForMove ? 2 : 0)))
             .scaleEffect(scaleForInteractionState)
             .shadow(
-                color: Color.black.opacity(isDragActive ? 0.32 : (isPressingForMove ? 0.18 : 0)),
-                radius: isDragActive ? 10 : (isPressingForMove ? 6 : 0),
-                y: isDragActive ? 5 : (isPressingForMove ? 3 : 0)
+                color: Color.black.opacity(isPressingForMove ? 0.18 : 0),
+                radius: isPressingForMove ? 6 : 0,
+                y: isPressingForMove ? 3 : 0
             )
             .transaction { transaction in
                 if isPanActive {
@@ -1745,7 +1771,6 @@ private struct ScheduleDraggableAppointmentBlock<Content: View>: View {
     }
 
     private var scaleForInteractionState: CGFloat {
-        if isDragActive { return 1.03 }
         if isPressingForMove { return 0.98 }
         return 1
     }

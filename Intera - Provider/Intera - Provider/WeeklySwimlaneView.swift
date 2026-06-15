@@ -61,6 +61,24 @@ private enum WeeklySwimlaneInteraction {
     static var moveHoldHighlightDelay: Double { moveHoldDuration * 0.42 }
 }
 
+private enum WeeklySwimlaneDragLayout {
+    static let viewportEdgeInset: CGFloat = 4
+
+    /// Width of the left/right edge band where horizontal auto-scroll speed ramps with pointer depth.
+    static let horizontalEdgeScrollZone: CGFloat = 96
+    /// Max scroll speed (pt/s) when the pointer is flush with the viewport edge.
+    static let horizontalEdgeScrollMaxPointsPerSecond: CGFloat = 120
+    /// Extra speed when the pointer is pushed past the viewport edge (up to this intensity multiplier).
+    static let horizontalEdgeScrollOvershootCap: CGFloat = 1.4
+
+    /// Vertical edge band and speed (time axis).
+    static let verticalEdgeScrollZone: CGFloat = 72
+    static let verticalEdgeScrollMaxPointsPerSecond: CGFloat = 96
+    static let verticalEdgeScrollOvershootCap: CGFloat = 1.25
+    /// Smooths vertical edge speed changes only; horizontal tracks pointer depth directly.
+    static let verticalEdgeScrollIntensitySmoothingRate: CGFloat = 5
+}
+
 // MARK: - Weekly swimlane
 
 struct WeeklySwimlaneView: View {
@@ -71,6 +89,7 @@ struct WeeklySwimlaneView: View {
     let startMinute: Int
     let endMinute: Int
     let dayAvailabilityIntervals: [[BarberAvailabilityIntervalDTO]]
+    let dayEntirelyBlockedOff: [Bool]
     let dayTimeBlocks: [[BarberTimeBlockDTO]]
     let onDayTap: (Date) -> Void
     let onBookingTap: (SimpleBookingDTO) -> Void
@@ -161,8 +180,11 @@ struct WeeklySwimlaneView: View {
                 .frame(width: WeeklySwimlaneLayout.timeGutterWidth)
 
             ForEach(0 ..< 7, id: \.self) { offset in
-                dayHeader(for: dayDate(offset: offset))
-                    .frame(width: WeeklySwimlaneLayout.dayColumnWidth)
+                dayHeader(
+                    for: dayDate(offset: offset),
+                    isBlockedOff: isEntireDayBlockedOff(for: offset)
+                )
+                .frame(width: WeeklySwimlaneLayout.dayColumnWidth)
             }
 
             Color.clear
@@ -189,6 +211,8 @@ struct WeeklySwimlaneView: View {
                         WeeklySwimlaneDayTrackView(
                             day: dayDate(offset: offset),
                             availabilityIntervals: availabilityIntervals(for: offset),
+                            isEntireDayBlockedOff: isEntireDayBlockedOff(for: offset),
+                            timeBlocks: dayTimeBlocks.indices.contains(offset) ? dayTimeBlocks[offset] : [],
                             startMinute: startMinute,
                             endMinute: endMinute,
                             pointsPerMinute: pointsPerMinute,
@@ -217,6 +241,8 @@ struct WeeklySwimlaneView: View {
                     pointsPerMinute: pointsPerMinute,
                     dayColumnStride: dayColumnStride,
                     trackHeight: contentTrackHeight,
+                    viewportWidth: viewportSize.width,
+                    viewportHeight: trackAreaHeight,
                     appointmentDragEnabled: appointmentDragEnabled,
                     editingMoveBookingID: $editingMoveBookingID,
                     activeMoveDragBookingID: $activeMoveDragBookingID,
@@ -242,7 +268,7 @@ struct WeeklySwimlaneView: View {
     }
 
     @ViewBuilder
-    private func dayHeader(for day: Date) -> some View {
+    private func dayHeader(for day: Date, isBlockedOff: Bool) -> some View {
         let isToday = calendar.isDateInToday(day)
 
         Button {
@@ -250,19 +276,28 @@ struct WeeklySwimlaneView: View {
                 onDayTap(day)
             }
         } label: {
-            VStack(spacing: 3) {
-                Text(day.formatted(.dateTime.weekday(.abbreviated)))
-                    .font(.provider(.caption, weight: .semibold))
-                    .foregroundStyle(isToday ? Color.lavaShellCream : Color.lavaShellCreamSecondary)
-                Text(day.formatted(.dateTime.day()))
-                    .font(.provider(.subheadline, weight: isToday ? .bold : .semibold))
-                    .foregroundStyle(isToday ? Color.providerOlive : Color.lavaShellCream)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background {
-                if isToday {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.providerOlive.opacity(0.14))
+            ZStack {
+                VStack(spacing: 3) {
+                    Text(day.formatted(.dateTime.weekday(.abbreviated)))
+                        .font(.provider(.caption, weight: .semibold))
+                        .foregroundStyle(isToday ? Color.lavaShellCream : Color.lavaShellCreamSecondary)
+                    Text(day.formatted(.dateTime.day()))
+                        .font(.provider(.subheadline, weight: isToday ? .bold : .semibold))
+                        .foregroundStyle(isToday ? Color.providerOlive : Color.lavaShellCream)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background {
+                    if isToday {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.providerOlive.opacity(0.14))
+                    }
+                }
+
+                if isBlockedOff {
+                    WeeklySwimlaneEntireDayBlockedOverlay(
+                        height: WeeklySwimlaneLayout.dayHeaderHeight,
+                        cornerRadius: 8
+                    )
                 }
             }
         }
@@ -275,6 +310,10 @@ struct WeeklySwimlaneView: View {
 
     private func availabilityIntervals(for offset: Int) -> [BarberAvailabilityIntervalDTO] {
         dayAvailabilityIntervals.indices.contains(offset) ? dayAvailabilityIntervals[offset] : []
+    }
+
+    private func isEntireDayBlockedOff(for offset: Int) -> Bool {
+        dayEntirelyBlockedOff.indices.contains(offset) ? dayEntirelyBlockedOff[offset] : false
     }
 
     private func appointments(for day: Date) -> [SwimlaneAppointment] {
@@ -321,6 +360,47 @@ private struct WeeklySwimlaneMoveResolver {
         let offsetX = CGFloat(proposed.dayIndex - positioned.dayIndex) * dayColumnStride
         let offsetY = CGFloat(proposed.startMinute - positioned.appointment.startMinute) * pointsPerMinute
         return CGPoint(x: offsetX, y: offsetY)
+    }
+
+    /// Resolves the snapped drag offset from the finger position in week-grid coordinates.
+    /// Grid origin is the top-leading corner of the appointments layer (not the scroll view).
+    func clampedDragOffsetFromGridPoint(
+        for positioned: WeeklyPositionedAppointment,
+        gridX: CGFloat,
+        gridY: CGFloat
+    ) -> CGPoint {
+        let rawDayIndex = Int(
+            round(
+                (gridX - WeeklySwimlaneLayout.timeGutterWidth - WeeklySwimlaneLayout.dayColumnWidth * 0.5)
+                    / dayColumnStride
+            )
+        )
+        let rawMinute = startMinute + Int(round(gridY / pointsPerMinute))
+        let resolved = resolvedOpenStart(
+            dayIndex: rawDayIndex,
+            proposedMinute: rawMinute,
+            durationMinutes: positioned.appointment.durationMinutes,
+            excludingAppointmentID: positioned.appointment.id
+        )
+        let offsetX = CGFloat(resolved.dayIndex - positioned.dayIndex) * dayColumnStride
+        let offsetY = CGFloat(resolved.startMinute - positioned.appointment.startMinute) * pointsPerMinute
+        return CGPoint(x: offsetX, y: offsetY)
+    }
+
+    @discardableResult
+    func handleDragEndedFromGridPoint(
+        for positioned: WeeklyPositionedAppointment,
+        gridX: CGFloat,
+        gridY: CGFloat,
+        onProposed: (SimpleBookingDTO, Date) -> Void
+    ) -> Bool {
+        let offset = clampedDragOffsetFromGridPoint(for: positioned, gridX: gridX, gridY: gridY)
+        return handleDragEnded(
+            for: positioned,
+            totalOffsetX: offset.x,
+            totalOffsetY: offset.y,
+            onProposed: onProposed
+        )
     }
 
     @discardableResult
@@ -374,7 +454,8 @@ private struct WeeklySwimlaneMoveResolver {
             dayIndex: clampedDay,
             startMinute: snapped,
             durationMinutes: durationMinutes,
-            excludingAppointmentID: excludingAppointmentID
+            excludingAppointmentID: excludingAppointmentID,
+            allowBlockedTime: true
         ) {
             return (clampedDay, snapped)
         }
@@ -407,7 +488,8 @@ private struct WeeklySwimlaneMoveResolver {
                         dayIndex: candidateDay,
                         startMinute: snapped,
                         durationMinutes: durationMinutes,
-                        excludingAppointmentID: excludingAppointmentID
+                        excludingAppointmentID: excludingAppointmentID,
+                        allowBlockedTime: true
                     ) {
                         return (candidateDay, snapped)
                     }
@@ -421,7 +503,8 @@ private struct WeeklySwimlaneMoveResolver {
                             dayIndex: candidateDay,
                             startMinute: snapped,
                             durationMinutes: durationMinutes,
-                            excludingAppointmentID: excludingAppointmentID
+                            excludingAppointmentID: excludingAppointmentID,
+                            allowBlockedTime: true
                         ) {
                             return (candidateDay, snapped)
                         }
@@ -436,7 +519,8 @@ private struct WeeklySwimlaneMoveResolver {
         dayIndex: Int,
         startMinute: Int,
         durationMinutes: Int,
-        excludingAppointmentID: String
+        excludingAppointmentID: String,
+        allowBlockedTime: Bool = false
     ) -> Bool {
         let endMinute = startMinute + durationMinutes
         guard startMinute >= self.startMinute, endMinute <= self.endMinute else { return false }
@@ -448,12 +532,14 @@ private struct WeeklySwimlaneMoveResolver {
             }
         }
 
-        let blocks = dayTimeBlocks.indices.contains(dayIndex) ? dayTimeBlocks[dayIndex] : []
-        for block in blocks {
-            let blockStart = minutesFromHHMM(block.startTime)
-            let blockEnd = minutesFromHHMM(block.endTime)
-            if startMinute < blockEnd && endMinute > blockStart {
-                return false
+        if !allowBlockedTime {
+            let blocks = dayTimeBlocks.indices.contains(dayIndex) ? dayTimeBlocks[dayIndex] : []
+            for block in blocks {
+                let blockStart = minutesFromHHMM(block.startTime)
+                let blockEnd = minutesFromHHMM(block.endTime)
+                if startMinute < blockEnd && endMinute > blockStart {
+                    return false
+                }
             }
         }
 
@@ -489,6 +575,8 @@ private struct WeeklySwimlaneAppointmentsLayer: View {
     let pointsPerMinute: CGFloat
     let dayColumnStride: CGFloat
     let trackHeight: CGFloat
+    let viewportWidth: CGFloat
+    let viewportHeight: CGFloat
     let appointmentDragEnabled: Bool
     @Binding var editingMoveBookingID: String?
     @Binding var activeMoveDragBookingID: String?
@@ -524,14 +612,16 @@ private struct WeeklySwimlaneAppointmentsLayer: View {
             top: cardTop,
             height: cardHeight,
             columnWidth: WeeklySwimlaneLayout.dayColumnWidth,
+            viewportWidth: viewportWidth,
+            viewportHeight: viewportHeight,
             isMoveSession: isMoveSession,
             isDragActive: isDragActive,
             canRequestMove: canMove && editingMoveBookingID == nil,
-            snapDragOffset: { offset in
-                moveResolver.clampedDragOffset(
+            snapDragOffsetFromGridPoint: { gridPoint in
+                moveResolver.clampedDragOffsetFromGridPoint(
                     for: positioned,
-                    totalOffsetX: offset.x,
-                    totalOffsetY: offset.y
+                    gridX: gridPoint.x,
+                    gridY: gridPoint.y
                 )
             },
             onTap: {
@@ -547,11 +637,11 @@ private struct WeeklySwimlaneAppointmentsLayer: View {
                 onBookingTap(appointment.booking)
             },
             onMoveRequested: { onMoveBookingRequested(appointment.booking) },
-            onDragEnded: { offset in
-                let moved = moveResolver.handleDragEnded(
+            onDragEndedAtGridPoint: { gridPoint in
+                let moved = moveResolver.handleDragEndedFromGridPoint(
                     for: positioned,
-                    totalOffsetX: offset.x,
-                    totalOffsetY: offset.y,
+                    gridX: gridPoint.x,
+                    gridY: gridPoint.y,
                     onProposed: onBookingTimeChangeProposed
                 )
                 if moved {
@@ -563,7 +653,8 @@ private struct WeeklySwimlaneAppointmentsLayer: View {
             WeeklySwimlaneAppointmentCardContent(
                 appointment: appointment,
                 cardHeight: cardHeight,
-                isInMoveMode: isMoveSession
+                isMoveSession: isMoveSession,
+                isDragActive: isDragActive
             )
         }
     }
@@ -627,6 +718,8 @@ private struct WeeklySwimlaneTimeGutterView: View {
 private struct WeeklySwimlaneDayTrackView: View {
     let day: Date
     let availabilityIntervals: [BarberAvailabilityIntervalDTO]
+    let isEntireDayBlockedOff: Bool
+    let timeBlocks: [BarberTimeBlockDTO]
     let startMinute: Int
     let endMinute: Int
     let pointsPerMinute: CGFloat
@@ -639,16 +732,34 @@ private struct WeeklySwimlaneDayTrackView: View {
             RoundedRectangle(cornerRadius: WeeklySwimlaneLayout.trackCornerRadius, style: .continuous)
                 .fill(Color.providerScheduleControlFill.opacity(0.55))
 
-            ForEach(availabilityIntervals.indices, id: \.self) { index in
-                let interval = availabilityIntervals[index]
-                let intervalStart = minutesFromHHMM(interval.start)
-                let intervalEnd = minutesFromHHMM(interval.end)
-                if intervalEnd > intervalStart {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.providerOlive.opacity(0.07))
-                        .frame(height: CGFloat(intervalEnd - intervalStart) * pointsPerMinute)
-                        .offset(y: CGFloat(intervalStart - startMinute) * pointsPerMinute)
+            if isEntireDayBlockedOff {
+                WeeklySwimlaneEntireDayBlockedOverlay(height: trackHeight)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 4)
+            } else {
+                ForEach(availabilityIntervals.indices, id: \.self) { index in
+                    let interval = availabilityIntervals[index]
+                    let intervalStart = minutesFromHHMM(interval.start)
+                    let intervalEnd = minutesFromHHMM(interval.end)
+                    if intervalEnd > intervalStart {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.providerOlive.opacity(0.07))
+                            .frame(height: CGFloat(intervalEnd - intervalStart) * pointsPerMinute)
+                            .offset(y: CGFloat(intervalStart - startMinute) * pointsPerMinute)
+                            .padding(.horizontal, 4)
+                    }
+                }
+
+                ForEach(timeBlocks) { block in
+                    let blockStart = minutesFromHHMM(block.startTime)
+                    let blockEnd = minutesFromHHMM(block.endTime)
+                    if blockEnd > blockStart {
+                        WeeklySwimlaneBlockedTimeOverlay(
+                            height: CGFloat(blockEnd - blockStart) * pointsPerMinute
+                        )
+                        .offset(y: CGFloat(blockStart - startMinute) * pointsPerMinute)
                         .padding(.horizontal, 4)
+                    }
                 }
             }
         }
@@ -671,12 +782,75 @@ private struct WeeklySwimlaneDayTrackView: View {
     }
 }
 
+// MARK: - Blocked time overlay
+
+private struct WeeklySwimlaneEntireDayBlockedOverlay: View {
+    let height: CGFloat
+    var cornerRadius: CGFloat = WeeklySwimlaneLayout.trackCornerRadius
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(Color.providerOlive.opacity(0.06))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.providerOlive.opacity(0.24), lineWidth: 0.5)
+            }
+            .overlay {
+                WeeklySwimlaneDiagonalCrossOut(lineColor: Color.providerOlive.opacity(0.44))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .frame(maxWidth: .infinity)
+            .frame(height: max(4, height))
+            .accessibilityLabel("Day blocked off")
+    }
+}
+
+private struct WeeklySwimlaneBlockedTimeOverlay: View {
+    let height: CGFloat
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(Color.lavaShellCreamSecondary.opacity(0.14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Color.lavaShellCreamSecondary.opacity(0.32), lineWidth: 0.5)
+            }
+            .overlay {
+                WeeklySwimlaneDiagonalCrossOut()
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .frame(height: max(4, height))
+            .accessibilityLabel("Blocked time")
+    }
+}
+
+private struct WeeklySwimlaneDiagonalCrossOut: View {
+    var lineColor: Color = Color.lavaShellCreamSecondary.opacity(0.38)
+
+    var body: some View {
+        GeometryReader { proxy in
+            let spacing: CGFloat = 7
+            Path { path in
+                var x = -proxy.size.height
+                while x < proxy.size.width + proxy.size.height {
+                    path.move(to: CGPoint(x: x, y: proxy.size.height))
+                    path.addLine(to: CGPoint(x: x + proxy.size.height, y: 0))
+                    x += spacing
+                }
+            }
+            .stroke(lineColor, lineWidth: 1)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 // MARK: - Appointment card
 
 private struct WeeklySwimlaneAppointmentCardContent: View {
     let appointment: SwimlaneAppointment
     let cardHeight: CGFloat
-    var isInMoveMode: Bool = false
+    var isMoveSession: Bool = false
+    var isDragActive: Bool = false
 
     private var usesCompactInitialsLabel: Bool {
         cardHeight <= 44
@@ -690,18 +864,26 @@ private struct WeeklySwimlaneAppointmentCardContent: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            if !isInMoveMode {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(Color.providerOlive.opacity(appointment.densityWeight))
-                    .frame(width: WeeklySwimlaneLayout.densityStripeWidth)
-            }
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(
+                    isMoveSession
+                        ? Color.lavaShellCreamSecondary.opacity(isDragActive ? 0.35 : appointment.densityWeight * 0.5)
+                        : Color.providerOlive.opacity(appointment.densityWeight)
+                )
+                .frame(width: WeeklySwimlaneLayout.densityStripeWidth)
 
             Group {
-                if isInMoveMode {
+                if isMoveSession {
                     Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
                         .font(.provider(size: moveModeIconSize(for: cardHeight), weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCreamSecondary.opacity(0.88))
+                        .foregroundStyle(
+                            isDragActive
+                                ? Color.lavaShellCreamSecondary.opacity(0.88)
+                                : Color.lavaShellCream.opacity(0.92)
+                        )
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 4)
                 } else {
                     VStack(alignment: usesCompactInitialsLabel ? .center : .leading, spacing: 2) {
                         Text(bookingPrimaryLabel)
@@ -732,20 +914,28 @@ private struct WeeklySwimlaneAppointmentCardContent: View {
         .frame(height: cardHeight, alignment: .topLeading)
         .background {
             RoundedRectangle(cornerRadius: WeeklySwimlaneLayout.cardCornerRadius, style: .continuous)
-                .fill(
-                    isInMoveMode
-                        ? Color.lavaShellCreamSecondary.opacity(0.22)
-                        : Color.providerOlive.opacity(0.26)
-                )
+                .fill(moveModeBackgroundColor)
         }
         .clipShape(RoundedRectangle(cornerRadius: WeeklySwimlaneLayout.cardCornerRadius, style: .continuous))
         .overlay {
-            if isInMoveMode {
+            if isMoveSession {
                 RoundedRectangle(cornerRadius: WeeklySwimlaneLayout.cardCornerRadius, style: .continuous)
-                    .strokeBorder(Color.lavaShellCreamSecondary.opacity(0.45), lineWidth: 1.5)
+                    .strokeBorder(
+                        isDragActive
+                            ? Color.lavaShellCreamSecondary.opacity(0.45)
+                            : Color.providerOlive.opacity(0.95),
+                        lineWidth: 2
+                    )
             }
         }
         .padding(.horizontal, WeeklySwimlaneLayout.cardHorizontalInset)
+    }
+
+    private var moveModeBackgroundColor: Color {
+        if isDragActive {
+            return Color.lavaShellCreamSecondary.opacity(0.22)
+        }
+        return Color.providerOlive.opacity(0.26)
     }
 
     private func moveModeIconSize(for cardHeight: CGFloat) -> CGFloat {
@@ -772,13 +962,15 @@ private struct WeeklyDraggableSwimlaneAppointmentCard<Content: View>: View {
     let top: CGFloat
     let height: CGFloat
     let columnWidth: CGFloat
+    let viewportWidth: CGFloat
+    let viewportHeight: CGFloat
     let isMoveSession: Bool
     let isDragActive: Bool
     let canRequestMove: Bool
-    let snapDragOffset: (CGPoint) -> CGPoint
+    let snapDragOffsetFromGridPoint: (CGPoint) -> CGPoint
     let onTap: () -> Void
     let onMoveRequested: () -> Void
-    let onDragEnded: (CGPoint) -> Bool
+    let onDragEndedAtGridPoint: (CGPoint) -> Bool
     @ViewBuilder let content: () -> Content
 
     @State private var liveDragOffset: CGPoint = .zero
@@ -802,7 +994,20 @@ private struct WeeklyDraggableSwimlaneAppointmentCard<Content: View>: View {
                 if isDragActive {
                     WeeklyUIKitPlaneDragOverlay(
                         onChanged: handleDragChanged,
-                        onEnded: handleDragEnded
+                        onEnded: handleDragEnded,
+                        onInteractionReset: handleDragInteractionReset,
+                        viewportWidth: viewportWidth,
+                        viewportHeight: viewportHeight,
+                        shouldAllowHorizontalEdgeScroll: { intensity, gridPoint, _ in
+                            allowsHorizontalEdgeScroll(intensity: intensity, gridPoint: gridPoint)
+                        },
+                        shouldAllowVerticalEdgeScroll: { intensity, gridPoint, scrollOffset in
+                            allowsVerticalEdgeScroll(
+                                intensity: intensity,
+                                gridPoint: gridPoint,
+                                scrollOffset: scrollOffset
+                            )
+                        }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if isMoveSession {
@@ -822,11 +1027,11 @@ private struct WeeklyDraggableSwimlaneAppointmentCard<Content: View>: View {
             }
             .offset(x: originX + dragDelta.x, y: top + dragDelta.y)
             .zIndex(isDragActive ? 3 : (isMoveSession ? 2 : (isPressingForMove ? 2 : 0)))
-            .scaleEffect(isDragActive ? 1.03 : (isPressingForMove ? 0.98 : 1))
+            .scaleEffect(isPressingForMove ? 0.98 : 1)
             .shadow(
-                color: Color.black.opacity(isDragActive ? 0.32 : (isPressingForMove ? 0.18 : 0)),
-                radius: isDragActive ? 10 : (isPressingForMove ? 6 : 0),
-                y: isDragActive ? 5 : (isPressingForMove ? 3 : 0)
+                color: Color.black.opacity(isPressingForMove ? 0.18 : 0),
+                radius: isPressingForMove ? 6 : 0,
+                y: isPressingForMove ? 3 : 0
             )
             .transaction { transaction in
                 if isPanActive {
@@ -845,31 +1050,103 @@ private struct WeeklyDraggableSwimlaneAppointmentCard<Content: View>: View {
             }
     }
 
-    private func handleDragChanged(_ translation: CGPoint) {
-        if !isPanActive {
-            isPanActive = true
-        }
-        let total = CGPoint(
-            x: persistedOffset.x + translation.x,
-            y: persistedOffset.y + translation.y
-        )
-        let clamped = snapDragOffset(total)
-        liveDragOffset = CGPoint(
-            x: clamped.x - persistedOffset.x,
-            y: clamped.y - persistedOffset.y
+    private var startDayIndex: Int {
+        Int(
+            round(
+                (originX - WeeklySwimlaneLayout.timeGutterWidth)
+                    / (WeeklySwimlaneLayout.dayColumnWidth + WeeklySwimlaneLayout.dayColumnSpacing)
+            )
         )
     }
 
-    private func handleDragEnded(_ translation: CGPoint) {
-        isPanActive = false
-        let total = CGPoint(
-            x: persistedOffset.x + translation.x,
-            y: persistedOffset.y + translation.y
+    private var dayColumnStride: CGFloat {
+        WeeklySwimlaneLayout.dayColumnWidth + WeeklySwimlaneLayout.dayColumnSpacing
+    }
+
+    private var maxDayOffsetX: CGFloat {
+        CGFloat(max(0, 6 - startDayIndex)) * dayColumnStride
+    }
+
+    private var minDayOffsetX: CGFloat {
+        CGFloat(-startDayIndex) * dayColumnStride
+    }
+
+    /// Weekly horizontal drag follows the finger freely between day columns; only Y uses day-view-style clamping.
+    private func freeHorizontalDragOffset(gridX: CGFloat) -> CGFloat {
+        let raw = gridX - columnWidth * 0.5 - originX
+        return min(max(raw, minDayOffsetX), maxDayOffsetX)
+    }
+
+    private func clampVerticalDragOffset(_ offsetY: CGFloat, scrollOffset: CGPoint) -> CGFloat {
+        let visible = visibleVerticalDragOffsetRange(scrollOffset: scrollOffset)
+        return min(max(offsetY, visible.minY), visible.maxY)
+    }
+
+    private func handleDragChanged(_ gridPoint: CGPoint, scrollOffset: CGPoint) {
+        if !isPanActive {
+            isPanActive = true
+        }
+        let slotOffset = snapDragOffsetFromGridPoint(gridPoint)
+        liveDragOffset = CGPoint(
+            x: freeHorizontalDragOffset(gridX: gridPoint.x) - persistedOffset.x,
+            y: clampVerticalDragOffset(slotOffset.y, scrollOffset: scrollOffset) - persistedOffset.y
         )
+    }
+
+    private func visibleVerticalDragOffsetRange(scrollOffset: CGPoint) -> (minY: CGFloat, maxY: CGFloat) {
+        let inset = WeeklySwimlaneDragLayout.viewportEdgeInset
+        let minY = scrollOffset.y + inset - top
+        let maxY = scrollOffset.y + viewportHeight - inset - top - height
+        return (minY, max(maxY, minY))
+    }
+
+    /// At Monday/Sunday the booking stays on that column (`freeHorizontalDragOffset`); the week grid may still pan.
+    private func allowsHorizontalEdgeScroll(intensity: CGFloat, gridPoint: CGPoint) -> Bool {
+        _ = intensity
+        _ = gridPoint
+        return true
+    }
+
+    private func allowsVerticalEdgeScroll(
+        intensity: CGFloat,
+        gridPoint: CGPoint,
+        scrollOffset: CGPoint
+    ) -> Bool {
+        let slotClamped = snapDragOffsetFromGridPoint(gridPoint)
+        let clampedY = clampVerticalDragOffset(slotClamped.y, scrollOffset: scrollOffset)
+        let inset = WeeklySwimlaneDragLayout.viewportEdgeInset
+
+        if intensity > 0, slotClamped.y >= clampedY - 0.5 {
+            let cardBottom = top + clampedY - scrollOffset.y + height
+            if cardBottom >= viewportHeight - inset - 1 {
+                return false
+            }
+        }
+        if intensity < 0, slotClamped.y <= clampedY + 0.5 {
+            let cardTop = top + clampedY - scrollOffset.y
+            if cardTop <= inset + 1 {
+                return false
+            }
+        }
+        return true
+    }
+
+    private func handleDragInteractionReset() {
+        guard !isPanActive else { return }
         liveDragOffset = .zero
-        let snapped = snapDragOffset(total)
-        if onDragEnded(snapped) {
-            persistedOffset = snapped
+    }
+
+    private func handleDragEnded(_ gridPoint: CGPoint, scrollOffset: CGPoint) {
+        isPanActive = false
+        liveDragOffset = .zero
+        let snapped = snapDragOffsetFromGridPoint(gridPoint)
+        let clampedX = min(max(snapped.x, minDayOffsetX), maxDayOffsetX)
+        let finalOffset = CGPoint(
+            x: clampedX,
+            y: clampVerticalDragOffset(snapped.y, scrollOffset: scrollOffset)
+        )
+        if onDragEndedAtGridPoint(gridPoint) {
+            persistedOffset = finalOffset
         }
     }
 
@@ -897,11 +1174,24 @@ private struct WeeklyDraggableSwimlaneAppointmentCard<Content: View>: View {
 // MARK: - UIKit plane drag
 
 private struct WeeklyUIKitPlaneDragOverlay: UIViewRepresentable {
-    var onChanged: (CGPoint) -> Void
-    var onEnded: (CGPoint) -> Void
+    var onChanged: (CGPoint, CGPoint) -> Void
+    var onEnded: (CGPoint, CGPoint) -> Void
+    var onInteractionReset: () -> Void
+    var viewportWidth: CGFloat
+    var viewportHeight: CGFloat
+    var shouldAllowHorizontalEdgeScroll: (CGFloat, CGPoint, CGPoint) -> Bool
+    var shouldAllowVerticalEdgeScroll: (CGFloat, CGPoint, CGPoint) -> Bool
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onChanged: onChanged, onEnded: onEnded)
+        Coordinator(
+            onChanged: onChanged,
+            onEnded: onEnded,
+            onInteractionReset: onInteractionReset,
+            viewportWidth: viewportWidth,
+            viewportHeight: viewportHeight,
+            shouldAllowHorizontalEdgeScroll: shouldAllowHorizontalEdgeScroll,
+            shouldAllowVerticalEdgeScroll: shouldAllowVerticalEdgeScroll
+        )
     }
 
     func makeUIView(context: Context) -> UIView {
@@ -927,6 +1217,11 @@ private struct WeeklyUIKitPlaneDragOverlay: UIViewRepresentable {
     func updateUIView(_ uiView: UIView, context: Context) {
         context.coordinator.onChanged = onChanged
         context.coordinator.onEnded = onEnded
+        context.coordinator.onInteractionReset = onInteractionReset
+        context.coordinator.viewportWidth = viewportWidth
+        context.coordinator.viewportHeight = viewportHeight
+        context.coordinator.shouldAllowHorizontalEdgeScroll = shouldAllowHorizontalEdgeScroll
+        context.coordinator.shouldAllowVerticalEdgeScroll = shouldAllowVerticalEdgeScroll
         context.coordinator.configureScrollViewInteraction(for: uiView)
     }
 
@@ -935,102 +1230,506 @@ private struct WeeklyUIKitPlaneDragOverlay: UIViewRepresentable {
     }
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        var onChanged: (CGPoint) -> Void
-        var onEnded: (CGPoint) -> Void
+        var onChanged: (CGPoint, CGPoint) -> Void
+        var onEnded: (CGPoint, CGPoint) -> Void
+        var onInteractionReset: () -> Void
+        var viewportWidth: CGFloat
+        var viewportHeight: CGFloat
+        var shouldAllowHorizontalEdgeScroll: (CGFloat, CGPoint, CGPoint) -> Bool
+        var shouldAllowVerticalEdgeScroll: (CGFloat, CGPoint, CGPoint) -> Bool
         weak var panRecognizer: UIPanGestureRecognizer?
-        weak var wiredScrollView: UIScrollView?
-        private var scrollOffsetObservation: NSKeyValueObservation?
-        private var dragStartTranslation: CGPoint = .zero
-        private var dragStartScrollOffset: CGPoint = .zero
 
-        init(onChanged: @escaping (CGPoint) -> Void, onEnded: @escaping (CGPoint) -> Void) {
+        private var scrollOffsetObservations: [NSKeyValueObservation] = []
+        /// Scroll views used for edge-scroll physics (only views that can actually scroll).
+        private weak var horizontalScrollView: UIScrollView?
+        private weak var verticalScrollView: UIScrollView?
+        /// Scroll views used to map finger location into week-grid coordinates.
+        private weak var horizontalCoordinateScrollView: UIScrollView?
+        private weak var verticalCoordinateScrollView: UIScrollView?
+        private var lastValidGridPoint: CGPoint?
+
+        private var edgeScrollDisplayLink: CADisplayLink?
+        private var targetHorizontalEdgeIntensity: CGFloat = 0
+        private var targetVerticalEdgeIntensity: CGFloat = 0
+        private var smoothedVerticalEdgeIntensity: CGFloat = 0
+        private weak var edgeScrollRecognizer: UIPanGestureRecognizer?
+
+        init(
+            onChanged: @escaping (CGPoint, CGPoint) -> Void,
+            onEnded: @escaping (CGPoint, CGPoint) -> Void,
+            onInteractionReset: @escaping () -> Void,
+            viewportWidth: CGFloat,
+            viewportHeight: CGFloat,
+            shouldAllowHorizontalEdgeScroll: @escaping (CGFloat, CGPoint, CGPoint) -> Bool,
+            shouldAllowVerticalEdgeScroll: @escaping (CGFloat, CGPoint, CGPoint) -> Bool
+        ) {
             self.onChanged = onChanged
             self.onEnded = onEnded
+            self.onInteractionReset = onInteractionReset
+            self.viewportWidth = viewportWidth
+            self.viewportHeight = viewportHeight
+            self.shouldAllowHorizontalEdgeScroll = shouldAllowHorizontalEdgeScroll
+            self.shouldAllowVerticalEdgeScroll = shouldAllowVerticalEdgeScroll
         }
 
         deinit {
+            stopEdgeScroll()
             teardownScrollViewInteraction()
         }
 
         func configureScrollViewInteraction(for view: UIView) {
-            guard let pan = panRecognizer,
-                  let scrollView = view.enclosingScrollView else { return }
+            guard let pan = panRecognizer else { return }
 
-            if wiredScrollView !== scrollView {
-                teardownScrollViewInteraction()
+            let scrollViews = view.enclosingScrollViews
+            guard !scrollViews.isEmpty else { return }
+
+            let horizontal = scrollViews.first(where: Self.canScrollHorizontally)
+            let vertical = scrollViews.first(where: Self.canScrollVertically)
+            let horizontalForCoordinates = horizontal ?? scrollViews.last
+            let verticalForCoordinates = vertical ?? scrollViews.first
+
+            let needsRewire = scrollOffsetObservations.isEmpty
+                || horizontalScrollView !== horizontal
+                || verticalScrollView !== vertical
+                || horizontalCoordinateScrollView !== horizontalForCoordinates
+                || verticalCoordinateScrollView !== verticalForCoordinates
+
+            guard needsRewire else { return }
+
+            teardownScrollViewInteraction()
+            horizontalScrollView = horizontal
+            verticalScrollView = vertical
+            horizontalCoordinateScrollView = horizontalForCoordinates
+            verticalCoordinateScrollView = verticalForCoordinates
+
+            for scrollView in scrollViews {
                 scrollView.panGestureRecognizer.require(toFail: pan)
-                wiredScrollView = scrollView
-                scrollOffsetObservation = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
+                let observation = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
                     self?.handleExternalScroll()
                 }
+                scrollOffsetObservations.append(observation)
             }
         }
 
         func teardownScrollViewInteraction() {
-            scrollOffsetObservation?.invalidate()
-            scrollOffsetObservation = nil
-            wiredScrollView = nil
+            scrollOffsetObservations.forEach { $0.invalidate() }
+            scrollOffsetObservations.removeAll()
+            horizontalScrollView = nil
+            verticalScrollView = nil
+            horizontalCoordinateScrollView = nil
+            verticalCoordinateScrollView = nil
+        }
+
+        private static func canScrollHorizontally(_ scrollView: UIScrollView) -> Bool {
+            scrollView.contentSize.width > scrollView.bounds.width + 1
+        }
+
+        private static func canScrollVertically(_ scrollView: UIScrollView) -> Bool {
+            scrollView.contentSize.height > scrollView.bounds.height + 1
+        }
+
+        private func currentScrollOffset() -> CGPoint {
+            CGPoint(
+                x: horizontalScrollView?.contentOffset.x ?? 0,
+                y: verticalScrollView?.contentOffset.y ?? 0
+            )
         }
 
         private func handleExternalScroll() {
             guard let pan = panRecognizer else { return }
             switch pan.state {
             case .began, .changed:
-                onChanged(currentTranslation(recognizer: pan))
+                notifyDragChange(recognizer: pan)
             default:
-                break
+                onInteractionReset()
             }
+        }
+
+        private func fingerGridPoint(recognizer: UIPanGestureRecognizer) -> CGPoint? {
+            guard let host = recognizer.view else { return nil }
+
+            if horizontalCoordinateScrollView == nil, verticalCoordinateScrollView == nil {
+                configureScrollViewInteraction(for: host)
+            }
+
+            let scrollViews = host.enclosingScrollViews
+            guard !scrollViews.isEmpty else { return nil }
+
+            let hScroll = horizontalCoordinateScrollView
+                ?? scrollViews.first(where: Self.canScrollHorizontally)
+                ?? scrollViews.last
+            let vScroll = verticalCoordinateScrollView
+                ?? scrollViews.first(where: Self.canScrollVertically)
+                ?? scrollViews.first
+
+            guard let hScroll else { return nil }
+
+            let fingerInHorizontal = recognizer.location(in: hScroll)
+            let x = fingerInHorizontal.x - WeeklySwimlaneLayout.outerPadding
+            let y: CGFloat
+            if let vScroll {
+                y = recognizer.location(in: vScroll).y
+            } else {
+                y = fingerInHorizontal.y
+                    - WeeklySwimlaneLayout.dayHeaderHeight
+                    - WeeklySwimlaneLayout.outerPadding
+            }
+
+            return CGPoint(x: x, y: y)
+        }
+
+        private func notifyDragChange(recognizer: UIPanGestureRecognizer) {
+            guard let gridPoint = fingerGridPoint(recognizer: recognizer) else { return }
+            lastValidGridPoint = gridPoint
+            onChanged(gridPoint, currentScrollOffset())
         }
 
         @objc func handlePan(_ recognizer: UIPanGestureRecognizer) {
+            if let host = recognizer.view {
+                configureScrollViewInteraction(for: host)
+            }
+
             switch recognizer.state {
             case .began:
-                dragStartTranslation = .zero
-                if let scrollView = recognizer.view?.enclosingScrollView {
-                    dragStartScrollOffset = scrollView.contentOffset
-                } else {
-                    dragStartScrollOffset = .zero
-                }
-                onChanged(.zero)
+                notifyDragChange(recognizer: recognizer)
             case .changed:
-                onChanged(currentTranslation(recognizer: recognizer))
+                notifyDragChange(recognizer: recognizer)
+                updateEdgeScroll(recognizer: recognizer)
             case .ended, .cancelled, .failed:
-                onEnded(currentTranslation(recognizer: recognizer))
-                dragStartScrollOffset = .zero
+                stopEdgeScroll()
+                let gridPoint = fingerGridPoint(recognizer: recognizer) ?? lastValidGridPoint
+                if let gridPoint {
+                    onEnded(gridPoint, currentScrollOffset())
+                }
+                lastValidGridPoint = nil
             default:
                 break
             }
         }
 
-        private func currentTranslation(recognizer: UIPanGestureRecognizer) -> CGPoint {
-            let fingerDelta = recognizer.translation(in: recognizer.view)
-            guard let scrollView = recognizer.view?.enclosingScrollView else {
-                return fingerDelta
-            }
-            let scrollDelta = CGPoint(
-                x: scrollView.contentOffset.x - dragStartScrollOffset.x,
-                y: scrollView.contentOffset.y - dragStartScrollOffset.y
-            )
+        private func fingerPositionInHorizontalViewport(_ recognizer: UIPanGestureRecognizer) -> CGPoint? {
+            guard let scrollView = horizontalScrollView else { return nil }
+            let fingerInWindow = recognizer.location(in: nil)
+            let viewportFrame = scrollView.convert(scrollView.bounds, to: nil)
             return CGPoint(
-                x: fingerDelta.x + scrollDelta.x,
-                y: fingerDelta.y + scrollDelta.y
+                x: fingerInWindow.x - viewportFrame.minX,
+                y: fingerInWindow.y - viewportFrame.minY
             )
+        }
+
+        private func fingerPositionInVerticalViewport(_ recognizer: UIPanGestureRecognizer) -> CGPoint? {
+            guard let scrollView = verticalScrollView else { return nil }
+            let fingerInWindow = recognizer.location(in: nil)
+            let viewportFrame = scrollView.convert(scrollView.bounds, to: nil)
+            return CGPoint(
+                x: fingerInWindow.x - viewportFrame.minX,
+                y: fingerInWindow.y - viewportFrame.minY
+            )
+        }
+
+        private func fingerPositionInViewport(_ recognizer: UIPanGestureRecognizer) -> CGPoint? {
+            fingerPositionInHorizontalViewport(recognizer)
+                ?? fingerPositionInVerticalViewport(recognizer)
+        }
+
+        /// Linear ramp: deeper into the left/right edge band = higher intensity (faster pan).
+        private func horizontalEdgeScrollIntensity(
+            fingerX: CGFloat,
+            viewportWidth: CGFloat,
+            canScrollLeft: () -> Bool,
+            canScrollRight: () -> Bool
+        ) -> CGFloat {
+            let zone = WeeklySwimlaneDragLayout.horizontalEdgeScrollZone
+            let overshootCap = WeeklySwimlaneDragLayout.horizontalEdgeScrollOvershootCap
+
+            if fingerX < zone {
+                guard canScrollLeft() else { return 0 }
+                let depthIntoEdge = zone - fingerX
+                guard depthIntoEdge > 0 else { return 0 }
+                let normalized = depthIntoEdge / zone
+                return -min(normalized, overshootCap)
+            }
+
+            if fingerX > viewportWidth - zone {
+                guard canScrollRight() else { return 0 }
+                let depthIntoEdge = fingerX - (viewportWidth - zone)
+                guard depthIntoEdge > 0 else { return 0 }
+                let normalized = depthIntoEdge / zone
+                return min(normalized, overshootCap)
+            }
+
+            return 0
+        }
+
+        private func verticalEdgeScrollIntensity(
+            fingerY: CGFloat,
+            viewportHeight: CGFloat,
+            canScrollUp: () -> Bool,
+            canScrollDown: () -> Bool
+        ) -> CGFloat {
+            let zone = WeeklySwimlaneDragLayout.verticalEdgeScrollZone
+            let overshootCap = WeeklySwimlaneDragLayout.verticalEdgeScrollOvershootCap
+
+            if fingerY < zone {
+                guard canScrollUp() else { return 0 }
+                let depthIntoEdge = zone - fingerY
+                guard depthIntoEdge > 0 else { return 0 }
+                let normalized = depthIntoEdge / zone
+                return -min(normalized, overshootCap)
+            }
+
+            if fingerY > viewportHeight - zone {
+                guard canScrollDown() else { return 0 }
+                let depthIntoEdge = fingerY - (viewportHeight - zone)
+                guard depthIntoEdge > 0 else { return 0 }
+                let normalized = depthIntoEdge / zone
+                return min(normalized, overshootCap)
+            }
+
+            return 0
+        }
+
+        private func refreshTargetEdgeIntensities(recognizer: UIPanGestureRecognizer) {
+            if let finger = fingerPositionInHorizontalViewport(recognizer),
+               let hScroll = horizontalScrollView {
+                let zone = WeeklySwimlaneDragLayout.horizontalEdgeScrollZone
+                guard hScroll.bounds.width > zone * 2 else {
+                    targetHorizontalEdgeIntensity = 0
+                    return
+                }
+                targetHorizontalEdgeIntensity = horizontalEdgeScrollIntensity(
+                    fingerX: finger.x,
+                    viewportWidth: hScroll.bounds.width,
+                    canScrollLeft: canScrollHorizontallyLeft,
+                    canScrollRight: canScrollHorizontallyRight
+                )
+            } else {
+                targetHorizontalEdgeIntensity = 0
+            }
+
+            if let finger = fingerPositionInVerticalViewport(recognizer),
+               let vScroll = verticalScrollView {
+                let zone = WeeklySwimlaneDragLayout.verticalEdgeScrollZone
+                guard vScroll.bounds.height > zone * 2 else {
+                    targetVerticalEdgeIntensity = 0
+                    return
+                }
+                targetVerticalEdgeIntensity = verticalEdgeScrollIntensity(
+                    fingerY: finger.y,
+                    viewportHeight: vScroll.bounds.height,
+                    canScrollUp: canScrollVerticallyUp,
+                    canScrollDown: canScrollVerticallyDown
+                )
+            } else {
+                targetVerticalEdgeIntensity = 0
+            }
+        }
+
+        private func smoothVerticalEdgeIntensity(current: CGFloat, target: CGFloat, deltaTime: CGFloat) -> CGFloat {
+            let rate = WeeklySwimlaneDragLayout.verticalEdgeScrollIntensitySmoothingRate
+            let alpha = min(1, rate * deltaTime)
+            return current + ((target - current) * alpha)
+        }
+
+        private func canScrollHorizontallyLeft() -> Bool {
+            guard let scrollView = horizontalScrollView else { return false }
+            let minX = -scrollView.adjustedContentInset.left
+            return scrollView.contentOffset.x > minX + 0.5
+        }
+
+        private func canScrollHorizontallyRight() -> Bool {
+            guard let scrollView = horizontalScrollView else { return false }
+            let minX = -scrollView.adjustedContentInset.left
+            let maxX = max(
+                minX,
+                scrollView.contentSize.width - scrollView.bounds.width + scrollView.adjustedContentInset.right
+            )
+            return scrollView.contentOffset.x < maxX - 0.5
+        }
+
+        private func canScrollVerticallyUp() -> Bool {
+            guard let scrollView = verticalScrollView else { return false }
+            let minY = -scrollView.adjustedContentInset.top
+            return scrollView.contentOffset.y > minY + 0.5
+        }
+
+        private func canScrollVerticallyDown() -> Bool {
+            guard let scrollView = verticalScrollView else { return false }
+            let minY = -scrollView.adjustedContentInset.top
+            let maxY = max(
+                minY,
+                scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
+            )
+            return scrollView.contentOffset.y < maxY - 0.5
+        }
+
+        private func updateEdgeScroll(recognizer: UIPanGestureRecognizer) {
+            refreshTargetEdgeIntensities(recognizer: recognizer)
+
+            if abs(targetHorizontalEdgeIntensity) <= 0.02, abs(targetVerticalEdgeIntensity) <= 0.02 {
+                stopEdgeScroll()
+                return
+            }
+
+            guard let gridPoint = fingerGridPoint(recognizer: recognizer) else { return }
+            let scrollOffset = currentScrollOffset()
+
+            if abs(targetHorizontalEdgeIntensity) > 0.02,
+               !shouldAllowHorizontalEdgeScroll(targetHorizontalEdgeIntensity, gridPoint, scrollOffset) {
+                targetHorizontalEdgeIntensity = 0
+            }
+            if abs(targetVerticalEdgeIntensity) > 0.02,
+               !shouldAllowVerticalEdgeScroll(targetVerticalEdgeIntensity, gridPoint, scrollOffset) {
+                targetVerticalEdgeIntensity = 0
+            }
+
+            if abs(targetHorizontalEdgeIntensity) > 0.02 || abs(targetVerticalEdgeIntensity) > 0.02 {
+                startEdgeScroll(recognizer: recognizer)
+            } else {
+                stopEdgeScroll()
+            }
+        }
+
+        private func startEdgeScroll(recognizer: UIPanGestureRecognizer) {
+            edgeScrollRecognizer = recognizer
+            guard edgeScrollDisplayLink == nil else { return }
+
+            let link = CADisplayLink(target: self, selector: #selector(edgeScrollTick(_:)))
+            link.add(to: .main, forMode: .common)
+            edgeScrollDisplayLink = link
+        }
+
+        private func stopEdgeScroll() {
+            edgeScrollDisplayLink?.invalidate()
+            edgeScrollDisplayLink = nil
+            targetHorizontalEdgeIntensity = 0
+            targetVerticalEdgeIntensity = 0
+            smoothedVerticalEdgeIntensity = 0
+            edgeScrollRecognizer = nil
+        }
+
+        @objc private func edgeScrollTick(_ link: CADisplayLink) {
+            guard let recognizer = edgeScrollRecognizer else {
+                stopEdgeScroll()
+                return
+            }
+
+            refreshTargetEdgeIntensities(recognizer: recognizer)
+
+            let deltaTime = max(link.duration, 1.0 / 120.0)
+            smoothedVerticalEdgeIntensity = smoothVerticalEdgeIntensity(
+                current: smoothedVerticalEdgeIntensity,
+                target: targetVerticalEdgeIntensity,
+                deltaTime: deltaTime
+            )
+
+            let horizontalIntensity = targetHorizontalEdgeIntensity
+            let verticalIntensity = smoothedVerticalEdgeIntensity
+
+            guard abs(horizontalIntensity) > 0.01 || abs(verticalIntensity) > 0.01 else {
+                stopEdgeScroll()
+                return
+            }
+
+            guard let gridPoint = fingerGridPoint(recognizer: recognizer) else {
+                stopEdgeScroll()
+                return
+            }
+            let scrollOffset = currentScrollOffset()
+            var didScroll = false
+
+            if abs(horizontalIntensity) > 0.01,
+               shouldAllowHorizontalEdgeScroll(horizontalIntensity, gridPoint, scrollOffset),
+               let scrollView = horizontalScrollView {
+                if horizontalIntensity < 0, !canScrollHorizontallyLeft() {
+                    targetHorizontalEdgeIntensity = 0
+                } else if horizontalIntensity > 0, !canScrollHorizontallyRight() {
+                    targetHorizontalEdgeIntensity = 0
+                } else {
+                    let speed = WeeklySwimlaneDragLayout.horizontalEdgeScrollMaxPointsPerSecond * abs(horizontalIntensity)
+                    let scrollDelta = (horizontalIntensity < 0 ? -speed : speed) * CGFloat(deltaTime)
+                    didScroll = abs(applyHorizontalScroll(scrollDelta, on: scrollView)) > 0.01 || didScroll
+                }
+            }
+
+            if abs(verticalIntensity) > 0.01,
+               shouldAllowVerticalEdgeScroll(verticalIntensity, gridPoint, scrollOffset),
+               let scrollView = verticalScrollView {
+                if verticalIntensity < 0, !canScrollVerticallyUp() {
+                    smoothedVerticalEdgeIntensity = 0
+                    targetVerticalEdgeIntensity = 0
+                } else if verticalIntensity > 0, !canScrollVerticallyDown() {
+                    smoothedVerticalEdgeIntensity = 0
+                    targetVerticalEdgeIntensity = 0
+                } else {
+                    let speed = WeeklySwimlaneDragLayout.verticalEdgeScrollMaxPointsPerSecond * abs(verticalIntensity)
+                    let scrollDelta = (verticalIntensity < 0 ? -speed : speed) * CGFloat(deltaTime)
+                    didScroll = abs(applyVerticalScroll(scrollDelta, on: scrollView)) > 0.01 || didScroll
+                }
+            }
+
+            if didScroll {
+                notifyDragChange(recognizer: recognizer)
+            } else if abs(targetHorizontalEdgeIntensity) <= 0.02,
+                      abs(targetVerticalEdgeIntensity) <= 0.02,
+                      abs(verticalIntensity) <= 0.01 {
+                stopEdgeScroll()
+            }
+        }
+
+        private func applyHorizontalScroll(_ delta: CGFloat, on scrollView: UIScrollView) -> CGFloat {
+            let minX = -scrollView.adjustedContentInset.left
+            let maxX = max(
+                minX,
+                scrollView.contentSize.width - scrollView.bounds.width + scrollView.adjustedContentInset.right
+            )
+            let proposed = scrollView.contentOffset.x + delta
+            let clamped = min(max(proposed, minX), maxX)
+            let applied = clamped - scrollView.contentOffset.x
+            if abs(applied) > 0.01 {
+                scrollView.contentOffset.x = clamped
+            }
+            return applied
+        }
+
+        private func applyVerticalScroll(_ delta: CGFloat, on scrollView: UIScrollView) -> CGFloat {
+            let minY = -scrollView.adjustedContentInset.top
+            let maxY = max(
+                minY,
+                scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
+            )
+            let proposed = scrollView.contentOffset.y + delta
+            let clamped = min(max(proposed, minY), maxY)
+            let applied = clamped - scrollView.contentOffset.y
+            if abs(applied) > 0.01 {
+                scrollView.contentOffset.y = clamped
+            }
+            return applied
         }
 
         func gestureRecognizer(
             _ gestureRecognizer: UIGestureRecognizer,
-            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+            shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
-            otherGestureRecognizer === wiredScrollView?.panGestureRecognizer
+            guard let scrollView = otherGestureRecognizer.view as? UIScrollView else { return false }
+            return horizontalScrollView === scrollView || verticalScrollView === scrollView
         }
     }
 }
 
 private extension UIView {
-    var enclosingScrollView: UIScrollView? {
+    var enclosingScrollViews: [UIScrollView] {
         sequence(first: self, next: { $0.superview })
             .compactMap { $0 as? UIScrollView }
-            .first
+            .reduce(into: [UIScrollView]()) { result, scrollView in
+                if !result.contains(where: { $0 === scrollView }) {
+                    result.append(scrollView)
+                }
+            }
+    }
+
+    var enclosingScrollView: UIScrollView? {
+        enclosingScrollViews.first
     }
 }
 
