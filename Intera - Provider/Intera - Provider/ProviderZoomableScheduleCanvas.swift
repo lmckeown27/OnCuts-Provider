@@ -460,16 +460,15 @@ struct ProviderZoomableScheduleCanvas: View {
             .scrollBounceBehavior(.basedOnSize, axes: .vertical)
             .contentShape(Rectangle())
         case .month:
-            ScrollView([.vertical, .horizontal], showsIndicators: false) {
-                canvasContent(in: viewportSize)
-                    .frame(minWidth: viewportSize.width, alignment: .topLeading)
-            }
-            .contentShape(Rectangle())
+            canvasContent(in: viewportSize)
+                .frame(width: viewportSize.width, height: viewportSize.height, alignment: .topLeading)
+                .clipped()
         case .day, .minute:
-            ScrollView([.vertical, .horizontal], showsIndicators: false) {
+            ScrollView(.vertical, showsIndicators: false) {
                 canvasContent(in: viewportSize)
-                    .frame(minWidth: viewportSize.width, alignment: .topLeading)
+                    .frame(width: viewportSize.width, alignment: .topLeading)
             }
+            .scrollBounceBehavior(.basedOnSize, axes: .vertical)
             .scrollPosition($timelineScrollPosition)
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
                 geometry.contentOffset.y
@@ -495,9 +494,10 @@ struct ProviderZoomableScheduleCanvas: View {
                         calendar: calendar
                     ),
                     selectedDate: selectedDay,
+                    availableHeight: size.height,
                     onDayTap: onMonthDayTap
                 )
-                .frame(width: size.width)
+                .frame(width: size.width, height: size.height, alignment: .top)
             case .week:
                 WeeklySwimlaneView(
                     calendar: calendar,

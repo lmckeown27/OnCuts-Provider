@@ -176,6 +176,7 @@ struct ProviderScheduleDashboardView: View {
                     .padding(.bottom, 24)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .scrollDisabled(effectiveZoomTier == .month)
             /// Default `ScrollView` content background is an opaque system fill — hide it so the root shell background shows through.
             .scrollContentBackground(.hidden)
             .scrollIndicators(.hidden)

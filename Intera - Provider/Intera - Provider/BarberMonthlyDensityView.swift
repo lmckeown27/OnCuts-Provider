@@ -77,11 +77,13 @@ struct BarberMonthlyDensityView: View {
     let monthAnchor: Date
     let workloads: [DailyWorkload]
     let selectedDate: Date
+    var availableHeight: CGFloat?
     let onDayTap: (Date) -> Void
 
-    private let cellHeight: CGFloat = 52
+    private let defaultCellHeight: CGFloat = 52
     private let gridSpacing: CGFloat = 6
     private let weekdayLabels = ["M", "T", "W", "T", "F", "S", "S"]
+    private let gridVerticalPadding: CGFloat = 20
 
     private var workloadByDay: [Date: DailyWorkload] {
         Dictionary(uniqueKeysWithValues: workloads.map { (calendar.startOfDay(for: $0.date), $0) })
@@ -102,6 +104,18 @@ struct BarberMonthlyDensityView: View {
         return cells
     }
 
+    private var gridRowCount: Int {
+        let itemCount = weekdayLabels.count + gridDays.count
+        return max(1, (itemCount + 6) / 7)
+    }
+
+    private var cellHeight: CGFloat {
+        guard let availableHeight else { return defaultCellHeight }
+        let spacingTotal = CGFloat(max(0, gridRowCount - 1)) * gridSpacing
+        let usableHeight = availableHeight - gridVerticalPadding - spacingTotal
+        return max(34, usableHeight / CGFloat(gridRowCount))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             LazyVGrid(
@@ -112,6 +126,7 @@ struct BarberMonthlyDensityView: View {
                     Text(label)
                         .font(.provider(.caption2, weight: .bold))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .frame(height: cellHeight)
                 }
 
                 ForEach(gridDays.indices, id: \.self) { index in
@@ -126,6 +141,7 @@ struct BarberMonthlyDensityView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     @ViewBuilder
