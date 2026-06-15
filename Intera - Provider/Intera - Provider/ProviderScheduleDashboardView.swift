@@ -88,6 +88,11 @@ struct ProviderScheduleDashboardView: View {
         effectiveZoomTier == .day || effectiveZoomTier == .minute
     }
 
+    /// Day, minute, and week share the taller schedule viewer; month stays compact.
+    private var usesTallScheduleViewer: Bool {
+        isDayZoomTier || effectiveZoomTier == .week
+    }
+
     /// Shared track behind the zoom preset rail and date navigation row.
     private var scheduleChromeTrackBackground: some View {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -217,7 +222,7 @@ struct ProviderScheduleDashboardView: View {
             timeChangeProposal = nil
         }
         .onChange(of: effectiveZoomTier) { _, tier in
-            if tier != .day && tier != .minute {
+            if tier == .month {
                 editingMoveBookingID = nil
                 activeMoveDragBookingID = nil
                 movePromptBooking = nil
@@ -274,11 +279,15 @@ struct ProviderScheduleDashboardView: View {
             // per booking the user has locally flipped to "Awaiting Payment" via the
             // detail screen. Hidden when the tracker has nothing to surface.
             awaitingPaymentBanner
-            summaryLine
-            zoomPresetBar
-            dateNavigationRow
-            if session.hasProviderProfile, isDayZoomTier {
-                manageAvailabilityOrEditControls
+            if isScheduleBookingMoveFlowActive {
+                scheduleBookingMoveActionPanel
+            } else {
+                summaryLine
+                zoomPresetBar
+                dateNavigationRow
+                if session.hasProviderProfile, isDayZoomTier {
+                    manageAvailabilityOrEditControls
+                }
             }
             VStack(alignment: .leading, spacing: 12) {
                 if isEditingAvailability && isDayZoomTier {
@@ -287,6 +296,8 @@ struct ProviderScheduleDashboardView: View {
                     zoomScheduleCanvas(canvasViewerHeight: canvasViewerHeight)
                     if isDayZoomTier {
                         dayScheduleSupplement
+                    } else if effectiveZoomTier == .week {
+                        weekScheduleSupplement
                     }
                 }
             }
@@ -379,6 +390,167 @@ struct ProviderScheduleDashboardView: View {
             .foregroundStyle(Color.lavaShellCreamSecondary)
             .frame(maxWidth: .infinity)
             .multilineTextAlignment(.center)
+    }
+
+    private var isScheduleBookingMoveFlowActive: Bool {
+        movePromptBooking != nil || timeChangeProposal != nil || editingMoveBookingID != nil
+    }
+
+    @ViewBuilder
+    private var scheduleBookingMoveActionPanel: some View {
+        if let proposal = timeChangeProposal {
+            scheduleMoveActionCard(
+                title: "Confirm time change",
+                bullets: confirmTimeChangeBullets(for: proposal),
+                primaryTitle: isApplyingTimeChange ? "Saving…" : "Confirm",
+                secondaryTitle: "Cancel",
+                isPrimaryDisabled: isApplyingTimeChange,
+                onPrimary: {
+                    Task { await applyPendingTimeChange() }
+                },
+                onSecondary: {
+                    timeChangeProposal = nil
+                    editingMoveBookingID = nil
+                    activeMoveDragBookingID = nil
+                }
+            )
+        } else if let booking = movePromptBooking {
+            scheduleMoveActionCard(
+                title: "Change appointment time?",
+                bullets: [
+                    "Tap Change time to start rescheduling",
+                    "Drag to an open slot",
+                    "Confirm the new time"
+                ],
+                primaryTitle: "Change time",
+                secondaryTitle: "Cancel",
+                isPrimaryDisabled: false,
+                onPrimary: {
+                    timeChangeProposal = nil
+                    editingMoveBookingID = booking.id
+                    activeMoveDragBookingID = booking.id
+                    movePromptBooking = nil
+                },
+                onSecondary: {
+                    movePromptBooking = nil
+                }
+            )
+        } else if editingMoveBookingID != nil {
+            scheduleMoveActionCard(
+                title: "Moving appointment",
+                bullets: [
+                    "Drag to an open slot",
+                    "After dropping, tap the booking again to drag elsewhere"
+                ],
+                primaryTitle: nil,
+                secondaryTitle: "Cancel",
+                isPrimaryDisabled: false,
+                onPrimary: {},
+                onSecondary: {
+                    editingMoveBookingID = nil
+                    activeMoveDragBookingID = nil
+                }
+            )
+        }
+    }
+
+    private func confirmTimeChangeBullets(for proposal: ScheduleAppointmentTimeChangeProposal) -> [String] {
+        let fromTime = proposal.originalTime.formatted(date: .omitted, time: .shortened)
+        let toTime = proposal.proposedTime.formatted(date: .omitted, time: .shortened)
+        return [
+            "\(proposal.booking.consumerDisplayName) · \(proposal.booking.serviceDisplayName): \(fromTime) → \(toTime)",
+            "Tap the booking again to drag to a different slot",
+            "Confirm to save the new time"
+        ]
+    }
+
+    private func scheduleMoveActionCard(
+        title: String,
+        bullets: [String],
+        primaryTitle: String?,
+        secondaryTitle: String,
+        isPrimaryDisabled: Bool,
+        onPrimary: @escaping () -> Void,
+        onSecondary: @escaping () -> Void
+    ) -> some View {
+        let secondaryButton = Button(action: onSecondary) {
+            Text(secondaryTitle)
+                .font(.provider(.subheadline, weight: .semibold))
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.providerScheduleControlFill)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(Color.providerScheduleControlStroke, lineWidth: 0.65)
+                        )
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .foregroundStyle(Color.lavaShellCream)
+        }
+        .buttonStyle(.plain)
+
+        func primaryButton(_ title: String) -> some View {
+            Button(action: onPrimary) {
+                Text(title)
+                    .font(.provider(.subheadline, weight: .semibold))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.providerOlive.opacity(isPrimaryDisabled ? 0.25 : 0.55))
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .foregroundStyle(Color.lavaShellCream)
+            }
+            .buttonStyle(.plain)
+            .disabled(isPrimaryDisabled)
+        }
+
+        return VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title)
+                    .font(.provider(.subheadline, weight: .bold))
+                    .foregroundStyle(Color.lavaShellCream)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(bullets.enumerated()), id: \.offset) { _, bullet in
+                        HStack(alignment: .top, spacing: 8) {
+                            Text("•")
+                                .font(.provider(.caption, weight: .bold))
+                                .foregroundStyle(Color.lavaShellCreamSecondary)
+                            Text(bullet)
+                                .font(.provider(.caption))
+                                .foregroundStyle(Color.lavaShellCreamSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+
+            if let primaryTitle {
+                HStack(spacing: 10) {
+                    secondaryButton
+                    primaryButton(primaryTitle)
+                }
+            } else {
+                secondaryButton
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.providerSchedulePromptCardFill)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color.providerOlive.opacity(0.55), lineWidth: 1)
+                }
+        }
+        .animation(.easeInOut(duration: 0.2), value: movePromptBooking?.id)
+        .animation(.easeInOut(duration: 0.2), value: timeChangeProposal?.id)
+        .animation(.easeInOut(duration: 0.2), value: editingMoveBookingID)
     }
 
     // MARK: - Awaiting Payment banner
@@ -545,6 +717,7 @@ struct ProviderScheduleDashboardView: View {
                     timelineEndMinute: bounds.end,
                     availabilityIntervals: intervals,
                     weekDayAvailabilityIntervals: availabilityIntervalsForVisibleWeek(),
+                    weekDayTimeBlocks: timeBlocksForVisibleWeek(),
                     timeBlocks: timeBlocksOnSelectedDay,
                     blockTimeTapsEnabled: !isEditingAvailability && (display?.available ?? false),
                     onBookingTap: { shellNavigator.pushBooking($0) },
@@ -555,21 +728,12 @@ struct ProviderScheduleDashboardView: View {
                     onWeekDayTap: { focusDay($0, scrollToFirstBooking: true) },
                     onMonthDayTap: { focusDay($0, scrollToFirstBooking: true) },
                     pendingScrollToBookingID: $pendingScrollToBookingID,
-                    canvasViewerHeight: isDayZoomTier ? canvasViewerHeight : nil,
-                    appointmentDragEnabled: isDayZoomTier && !isEditingAvailability,
+                    canvasViewerHeight: usesTallScheduleViewer ? canvasViewerHeight : nil,
+                    appointmentDragEnabled: usesTallScheduleViewer && !isEditingAvailability,
                     editingMoveBookingID: $editingMoveBookingID,
                     activeMoveDragBookingID: $activeMoveDragBookingID,
-                    movePromptBooking: $movePromptBooking,
                     timeChangeProposal: $timeChangeProposal,
-                    isApplyingTimeChange: isApplyingTimeChange,
-                    onConfirmTimeChange: {
-                        Task { await applyPendingTimeChange() }
-                    },
                     onMoveBookingRequested: { movePromptBooking = $0 },
-                    onCancelMoveEditing: {
-                        editingMoveBookingID = nil
-                        activeMoveDragBookingID = nil
-                    },
                     onBookingTimeChangeProposed: { booking, proposedTime in
                         timeChangeProposal = ScheduleAppointmentTimeChangeProposal(
                             booking: booking,
@@ -669,6 +833,13 @@ struct ProviderScheduleDashboardView: View {
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             }
         }
+    }
+
+    @ViewBuilder
+    private var weekScheduleSupplement: some View {
+        Text("Swipe left or right to view the rest of your week. Hold a booking to drag it to a new time or day, or tap for details.")
+            .font(.provider(.caption2))
+            .foregroundStyle(Color.lavaShellCreamTertiary)
     }
 
     private func applyPendingTimeChange() async {
@@ -1618,6 +1789,15 @@ struct ProviderScheduleDashboardView: View {
             let apiIntervals = cachedAvailabilityIntervals(for: day)
             if !apiIntervals.isEmpty { return apiIntervals }
             return weeklyTemplateIntervals(for: day)
+        }
+    }
+
+    private func timeBlocksForVisibleWeek() -> [[BarberTimeBlockDTO]] {
+        (0 ..< 7).map { offset in
+            guard let day = mondayCalendar.date(byAdding: .day, value: offset, to: weekStartMonday) else {
+                return []
+            }
+            return (timeBlocksByDay[dayKey(for: day)] ?? []).sorted { $0.startTime < $1.startTime }
         }
     }
 

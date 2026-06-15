@@ -361,6 +361,30 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
         return joined.isEmpty ? "Customer" : joined
     }
 
+    /// First + last initial for compact schedule labels (e.g. weekly swimlane cards).
+    var consumerInitials: String {
+        let first = consumer?.firstName?.trimmingCharacters(in: .whitespacesAndNewlines).first
+        let last = consumer?.lastName?.trimmingCharacters(in: .whitespacesAndNewlines).first
+        if let first, let last {
+            return "\(first)\(last)".uppercased()
+        }
+        if let first {
+            return String(first).uppercased()
+        }
+        if let last {
+            return String(last).uppercased()
+        }
+        return Self.initialsFromDisplayName(consumerDisplayName)
+    }
+
+    private static func initialsFromDisplayName(_ name: String) -> String {
+        let parts = name.split(separator: " ").map(String.init)
+        let chars = parts.prefix(2).compactMap(\.first)
+        let joined = String(chars).uppercased()
+        if !joined.isEmpty { return joined }
+        return name.first.map { String($0).uppercased() } ?? "?"
+    }
+
     /// Service provider (barber) display name.
     var barberDisplayName: String {
         if let flat = barberName?.trimmingCharacters(in: .whitespacesAndNewlines), !flat.isEmpty {
