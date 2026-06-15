@@ -157,7 +157,8 @@ struct ProviderDashboardShellView: View {
                 navigator.pushRoute(ProviderShellRoute.messages)
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "paperplane.fill")
+                    NavigationChatsIcon(unreadCount: unreadConversationCount)
+                        .frame(width: 18, height: 18)
                     Text("Chats")
                         .fontWeight(.semibold)
                 }
@@ -215,9 +216,8 @@ struct ProviderDashboardShellView: View {
 
     private var requestsTrayButton: some View {
         Button(action: presentBookingsInbox) {
-            Image(systemName: "tray.full.fill")
-                .font(.provider(.body, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream)
+            NavigationInboxIcon(unreadCount: bookingsTrayAttentionCount)
+                .frame(width: 22, height: 22)
                 .frame(width: 36, height: 36)
                 .background(Color.providerOlive.opacity(0.35), in: Circle())
                 .overlay(
