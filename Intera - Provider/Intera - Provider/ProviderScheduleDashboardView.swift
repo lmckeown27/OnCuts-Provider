@@ -49,7 +49,8 @@ struct ProviderScheduleDashboardView: View {
     @State private var showingBlockTimeSheet = false
     @State private var blockSheetDayStart: Date = .now
     @State private var blockSheetStart: Date = .now
-    @State private var blockSheetEnd: Date = .now
+    @State private var blockSheetBlocksEntireDay = true
+    @State private var blockSheetPresentationID = UUID()
     @State private var deletingBlockIds: Set<String> = []
 
     /// When set, the user is editing **this weekday’s** weekly intervals inline (Daily mode only).
@@ -92,6 +93,13 @@ struct ProviderScheduleDashboardView: View {
     /// Day, minute, and week share the taller schedule viewer; month stays compact.
     private var usesTallScheduleViewer: Bool {
         isDayZoomTier || effectiveZoomTier == .week
+    }
+
+    private var supportsManageAvailability: Bool {
+        switch effectiveZoomTier {
+        case .month, .week, .day, .minute:
+            return true
+        }
     }
 
     /// Shared track behind the zoom preset rail and date navigation row.
@@ -169,20 +177,27 @@ struct ProviderScheduleDashboardView: View {
             let canvasViewerHeight = ProviderScheduleZoom.canvasViewerHeight(
                 availableHeight: screenProxy.size.height
             )
-            ScrollView {
-                scheduleContent(canvasViewerHeight: canvasViewerHeight)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .padding(.bottom, 24)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .scrollDisabled(effectiveZoomTier == .month)
-            /// Default `ScrollView` content background is an opaque system fill — hide it so the root shell background shows through.
-            .scrollContentBackground(.hidden)
-            .scrollIndicators(.hidden)
-            .refreshable {
-                await loadBookings()
-                await refreshDayScheduleFromNetwork()
+            ZStack(alignment: .top) {
+                ScrollView {
+                    scheduleContent(canvasViewerHeight: canvasViewerHeight)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                        .padding(.bottom, 24)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .scrollDisabled(isEditingAvailability || (effectiveZoomTier == .month && !isEditingAvailability))
+                /// Default `ScrollView` content background is an opaque system fill — hide it so the root shell background shows through.
+                .scrollContentBackground(.hidden)
+                .scrollIndicators(.hidden)
+                .refreshable {
+                    await loadBookings()
+                    await refreshDayScheduleFromNetwork()
+                }
+
+                if isEditingAvailability {
+                    availabilityEditorFullScreenOverlay
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
         }
         /// Stable `id` avoids cancelling in-flight `bookings-simple` on every unrelated `body` refresh (which surfaces as **-999 cancelled** and cleared the list).
@@ -252,13 +267,19 @@ struct ProviderScheduleDashboardView: View {
                     navigationTitle: "Block time",
                     confirmButtonTitle: "Block",
                     initialDate: blockSheetDayStart,
-                    initialStart: blockSheetStart,
-                    initialEnd: blockSheetEnd,
+                    initialBlocksEntireDay: blockSheetBlocksEntireDay,
+                    initialStart: blockSheetBlocksEntireDay ? nil : blockSheetStart,
+                    bookings: ProviderScheduleBookingConflicts.upcomingBookings(
+                        from: scheduleBookings,
+                        calendar: mondayCalendar
+                    ),
+                    calendar: mondayCalendar,
                     onSaved: { _ in
                         Task { await refreshDayScheduleFromNetwork() }
                         NotificationCenter.default.post(name: .providerAvailabilityChanged, object: nil)
                     }
                 )
+                .id(blockSheetPresentationID)
             }
         }
         .alert(
@@ -295,91 +316,164 @@ struct ProviderScheduleDashboardView: View {
                 summaryLine
                 zoomPresetBar
                 dateNavigationRow
-                if session.hasProviderProfile, isDayZoomTier {
-                    manageAvailabilityOrEditControls
+                if session.hasProviderProfile, supportsManageAvailability, !isEditingAvailability {
+                    scheduleAvailabilityActionsRow
                 }
             }
             VStack(alignment: .leading, spacing: 12) {
-                if isEditingAvailability && isDayZoomTier {
-                    inlineAvailabilityEditorPanel
-                } else {
-                    zoomScheduleCanvas(canvasViewerHeight: canvasViewerHeight)
-                    if isDayZoomTier {
-                        dayScheduleSupplement
-                    } else if effectiveZoomTier == .week {
-                        weekScheduleSupplement
-                    }
-                }
+                scheduleCanvasRegion(canvasViewerHeight: canvasViewerHeight)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    @ViewBuilder
+    private func scheduleCanvasRegion(canvasViewerHeight: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            zoomScheduleCanvas(canvasViewerHeight: canvasViewerHeight)
+
+            if isDayZoomTier {
+                dayScheduleSupplement
+            } else if effectiveZoomTier == .week {
+                weekScheduleSupplement
+            }
+        }
+    }
+
+    private var availabilityEditorFullScreenOverlay: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            availabilityEditorActionBar
+
+            ScrollView(.vertical, showsIndicators: false) {
+                availabilityEditorOverlayContent
+                    .padding(.bottom, 28)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .safeAreaPadding(.bottom, 8)
+        .background {
+            Color(uiColor: ProviderAppearance.shellBase)
+                .ignoresSafeArea()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Availability editor")
+    }
+
+    private var availabilityEditorActionBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                cancelInlineAvailabilityEditing()
+            } label: {
+                Text("Cancel")
+                    .font(.provider(.subheadline, weight: .semibold))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.providerScheduleControlFill)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(Color.providerScheduleControlStroke, lineWidth: 0.65)
+                            )
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .foregroundStyle(Color.lavaShellCream)
+            }
+            .buttonStyle(.plain)
+            .disabled(savingInlineWeekly)
+
+            Button {
+                Task { await saveInlineWeeklySchedule() }
+            } label: {
+                Text(savingInlineWeekly ? "Saving…" : "Save")
+                    .font(.provider(.subheadline, weight: .semibold))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.providerOlive.opacity(
+                                (inlineWeeklyDirty && inlineValidationError == nil && !savingInlineWeekly) ? 0.45 : 0.18
+                            ))
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .foregroundStyle(Color.lavaShellCream)
+            }
+            .buttonStyle(.plain)
+            .disabled(!inlineWeeklyDirty || savingInlineWeekly || inlineValidationError != nil)
+        }
+    }
+
+    @ViewBuilder
+    private var availabilityEditorOverlayContent: some View {
+        if inlineWeeklyLoading {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Loading weekly schedule…")
+                    .font(.provider(.footnote))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8)
+        } else if let inlineWeeklyLoadError {
+            Text(inlineWeeklyLoadError)
+                .font(.provider(.footnote))
+                .foregroundStyle(.red.opacity(0.9))
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(WeeklyScheduleDayKey.allCases) { day in
+                    inlineWeeklyDayEditorCard(for: day)
+                }
+
+                if let inlineValidationError {
+                    Text(inlineValidationError)
+                        .font(.provider(.caption))
+                        .foregroundStyle(.red.opacity(0.92))
+                }
+                if let inlineSaveError {
+                    Text(inlineSaveError)
+                        .font(.provider(.caption))
+                        .foregroundStyle(.red.opacity(0.9))
+                }
+            }
+        }
+    }
+
     private var inlineWeeklyDirty: Bool {
         inlineWeeklySchedule != nil && inlineWeeklySchedule != originalInlineWeeklySchedule
     }
 
-    @ViewBuilder
-    private var manageAvailabilityOrEditControls: some View {
-        if isEditingAvailability {
-            HStack(spacing: 10) {
-                Button {
-                    cancelInlineAvailabilityEditing()
-                } label: {
-                    Text("Cancel")
-                        .font(.provider(.subheadline, weight: .semibold))
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Color.providerScheduleControlFill)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .strokeBorder(Color.providerScheduleControlStroke, lineWidth: 0.65)
-                                )
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .foregroundStyle(Color.lavaShellCream)
+    private var scheduleAvailabilityActionsRow: some View {
+        HStack(spacing: 10) {
+            scheduleActionButton(
+                title: "Edit Schedule",
+                action: beginInlineAvailabilityEditing
+            )
+            scheduleActionButton(
+                title: "Block time",
+                action: {
+                    prepareBlockSheetForSelectedDay()
+                    showingBlockTimeSheet = true
                 }
-                .buttonStyle(.plain)
-                .disabled(savingInlineWeekly)
+            )
+        }
+    }
 
-                Button {
-                    Task { await saveInlineWeeklySchedule() }
-                } label: {
-                    Text(savingInlineWeekly ? "Saving…" : "Save")
-                        .font(.provider(.subheadline, weight: .semibold))
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Color.providerOlive.opacity(
-                                    (inlineWeeklyDirty && inlineValidationError == nil && !savingInlineWeekly) ? 0.45 : 0.18
-                                ))
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .foregroundStyle(Color.lavaShellCream)
-                }
-                .buttonStyle(.plain)
-                .disabled(!inlineWeeklyDirty || savingInlineWeekly || inlineValidationError != nil)
-            }
-        } else {
-            Button {
-                beginInlineAvailabilityEditing()
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "slider.horizontal.3")
-                    Text("Manage availability")
-                        .fontWeight(.semibold)
-                    Spacer()
-                    Image(systemName: "pencil")
-                        .font(.provider(.caption, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
-                }
-                .padding(.horizontal, 14)
+    private func scheduleActionButton(
+        title: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.provider(.subheadline, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(Color.providerScheduleCardFill)
@@ -389,9 +483,8 @@ struct ProviderScheduleDashboardView: View {
                         )
                 )
                 .foregroundStyle(Color.lavaShellCream)
-            }
-            .buttonStyle(.plain)
         }
+        .buttonStyle(.plain)
     }
 
     private var summaryLine: some View {
@@ -788,6 +881,7 @@ struct ProviderScheduleDashboardView: View {
                     availabilityIntervals: intervals,
                     weekDayAvailabilityIntervals: availabilityIntervalsForVisibleWeek(),
                     weekDayEntirelyBlockedOff: entireDaysBlockedOffForVisibleWeek(),
+                    isDayEntirelyBlockedOff: isEntireDayBlockedOff(for:),
                     weekDayTimeBlocks: timeBlocksForVisibleWeek(),
                     timeBlocks: timeBlocksOnSelectedDay,
                     blockTimeTapsEnabled: !isEditingAvailability && (display?.available ?? false),
@@ -817,31 +911,63 @@ struct ProviderScheduleDashboardView: View {
         }
     }
 
-    @ViewBuilder
-    private var inlineAvailabilityEditorPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if inlineWeeklyLoading {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Loading weekly schedule…")
-                        .font(.provider(.footnote))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+    private func inlineWeeklyDayEditorCard(for day: WeeklyScheduleDayKey) -> some View {
+        let schedule = daySchedule(for: day)
+        let dayAvailabilityBinding = Binding(
+            get: { daySchedule(for: day).enabled },
+            set: { newVal in
+                var updated = daySchedule(for: day)
+                updated.enabled = newVal
+                if newVal, updated.intervals.isEmpty {
+                    updated.intervals = [ScheduleIntervalDTO(start: "09:00", end: "17:00")]
                 }
-                .padding(.vertical, 4)
-            } else if let inlineWeeklyLoadError {
-                Text(inlineWeeklyLoadError)
-                    .font(.provider(.footnote))
-                    .foregroundStyle(.red.opacity(0.9))
+                setDaySchedule(updated, for: day)
+            }
+        )
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Text(day.displayName)
+                    .font(.provider(.subheadline, weight: .semibold))
+                    .foregroundStyle(Color.lavaShellCream)
+
+                Spacer(minLength: 8)
+
+                Toggle("Available", isOn: dayAvailabilityBinding)
+                    .labelsHidden()
+                    .tint(.providerOlive)
+                    .accessibilityLabel("\(day.displayName) available for bookings")
+            }
+
+            if schedule.enabled {
+                ForEach(schedule.intervals) { interval in
+                    inlineIntervalRow(day: day, interval: interval)
+                }
+
+                Button {
+                    addInterval(for: day)
+                } label: {
+                    Text("Add hours")
+                        .font(.provider(.caption, weight: .semibold))
+                        .foregroundStyle(Color.providerOlive)
+                }
+                .buttonStyle(.plain)
             } else {
-                inlineDayScheduleEditorCard
-                if let inlineSaveError {
-                    Text(inlineSaveError)
-                        .font(.provider(.caption))
-                        .foregroundStyle(.red.opacity(0.9))
-                }
+                Text("Unavailable")
+                    .font(.provider(.caption))
+                    .foregroundStyle(Color.lavaShellCreamTertiary)
             }
         }
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.providerScheduleCardFill)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.providerOlive.opacity(0.55), lineWidth: 0.65)
+                )
+        )
     }
 
     @ViewBuilder
@@ -1085,7 +1211,7 @@ struct ProviderScheduleDashboardView: View {
                     Text("Blocked")
                         .font(.provider(.subheadline, weight: .semibold))
                 }
-                Text("\(pretty12hBlockTime(block.startTime)) – \(pretty12hBlockTime(block.endTime))")
+                Text(ProviderTimeBlockEditorSheet.displayTimeRange(startTime: block.startTime, endTime: block.endTime))
                     .font(.provider(.subheadline, weight: .medium))
                 if let reason = block.reason, !reason.isEmpty {
                     Text(reason)
@@ -1307,183 +1433,98 @@ struct ProviderScheduleDashboardView: View {
         )
     }
 
-    private var selectedDaySchedule: DayScheduleDTO {
-        inlineWeeklySchedule.map { $0[weeklyDayKeyForSelectedDay] } ?? .empty
+    private func daySchedule(for day: WeeklyScheduleDayKey) -> DayScheduleDTO {
+        inlineWeeklySchedule.map { $0[day] } ?? .empty
     }
 
-    private func setSelectedDaySchedule(_ day: DayScheduleDTO) {
+    private func setDaySchedule(_ day: DayScheduleDTO, for key: WeeklyScheduleDayKey) {
         guard var w = inlineWeeklySchedule else { return }
-        w[weeklyDayKeyForSelectedDay] = day
+        w[key] = day
         inlineWeeklySchedule = w
         recomputeInlineWeeklyValidation()
     }
 
-    private var inlineDayScheduleEditorCard: some View {
-        let dayName = weeklyDayKeyForSelectedDay.displayName
-        let dayAvailabilityBinding = Binding(
-            get: { selectedDaySchedule.enabled },
-            set: { newVal in
-                var d = selectedDaySchedule
-                d.enabled = newVal
-                if newVal, d.intervals.isEmpty {
-                    d.intervals = [ScheduleIntervalDTO(start: "09:00", end: "17:00")]
-                }
-                setSelectedDaySchedule(d)
-            }
-        )
-
-        return VStack(alignment: .leading, spacing: 12) {
-            Text("Weekly schedule")
-                .font(.provider(.caption, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
-
-            inlineDayAvailabilityToggleRow(
-                dayName: dayName,
-                isEnabled: selectedDaySchedule.enabled,
-                isOn: dayAvailabilityBinding
-            )
-
-            if selectedDaySchedule.enabled {
-                Text("Booking hours")
-                    .font(.provider(.caption, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-
-                ForEach(selectedDaySchedule.intervals) { interval in
-                    inlineIntervalRow(interval: interval)
-                }
-                Button {
-                    addIntervalForSelectedWeekday()
-                } label: {
-                    Label("Add time slot", systemImage: "plus.circle.fill")
-                        .font(.provider(.caption, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCream)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color.providerOlive.opacity(0.58))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .strokeBorder(Color.lavaShellCream.opacity(0.22), lineWidth: 0.6)
-                                )
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-                .buttonStyle(.plain)
-            }
-            if let inlineValidationError {
-                Text(inlineValidationError)
-                    .font(.provider(.caption))
-                    .foregroundStyle(.red.opacity(0.92))
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.providerScheduleCardFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(Color.providerOlive.opacity(0.55), lineWidth: 0.65)
-                )
-        )
+    private static func scheduleDateFromHHMM(_ hhmm: String) -> Date {
+        let parts = hhmm.split(separator: ":")
+        let h = parts.first.flatMap { Int($0) } ?? 9
+        let m = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+        var c = DateComponents()
+        c.hour = h
+        c.minute = m
+        return Calendar(identifier: .gregorian).date(from: c) ?? .now
     }
 
-    private func inlineDayAvailabilityToggleRow(
-        dayName: String,
-        isEnabled: Bool,
-        isOn: Binding<Bool>
-    ) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: isEnabled ? "calendar.badge.checkmark" : "calendar.badge.minus")
-                .font(.provider(.title3))
-                .foregroundStyle(isEnabled ? Color.providerOlive : Color.lavaShellCreamTertiary)
-                .frame(width: 28)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Open for bookings every \(dayName)")
-                    .font(.provider(.subheadline, weight: .semibold))
-                Text(
-                    isEnabled
-                        ? "Clients can request appointments during the hours below."
-                        : "This weekday is a day off. Turn on to set when you're available."
-                )
-                .font(.provider(.caption))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 8)
-
-            Toggle("", isOn: isOn)
-                .labelsHidden()
-                .tint(.providerOlive)
-                .accessibilityLabel("Open for bookings every \(dayName)")
-                .accessibilityHint(
-                    isEnabled
-                        ? "Turn off to mark \(dayName)s as unavailable."
-                        : "Turn on to add booking hours for \(dayName)s."
-                )
-                .accessibilityValue(isEnabled ? "On" : "Off")
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.providerScheduleControlFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.providerScheduleControlStroke, lineWidth: 0.65)
-                )
-        )
+    private static func scheduleHHMMFromDate(_ date: Date) -> String {
+        let cal = Calendar(identifier: .gregorian)
+        let h = cal.component(.hour, from: date)
+        let m = cal.component(.minute, from: date)
+        return String(format: "%02d:%02d", h, m)
     }
 
     @ViewBuilder
-    private func inlineIntervalRow(interval: ScheduleIntervalDTO) -> some View {
-        HStack(spacing: 10) {
-            DatePicker(
-                "Start",
-                selection: Binding(
-                    get: { Self.scheduleDateFromHHMM(interval.start) },
-                    set: { updateInlineInterval(intervalId: interval.id, start: Self.scheduleHHMMFromDate($0)) }
-                ),
-                displayedComponents: .hourAndMinute
+    private func inlineIntervalRow(day: WeeklyScheduleDayKey, interval: ScheduleIntervalDTO) -> some View {
+        HStack(spacing: 8) {
+            inlineScheduleTimePicker(
+                day: day,
+                intervalId: interval.id,
+                hhmm: interval.start,
+                label: "Start",
+                isStart: true
             )
-            .labelsHidden()
-            .datePickerStyle(.compact)
-            .accessibilityLabel("Start")
 
             Text("–")
                 .foregroundStyle(Color.lavaShellCreamSecondary)
 
-            DatePicker(
-                "End",
-                selection: Binding(
-                    get: { Self.scheduleDateFromHHMM(interval.end) },
-                    set: { updateInlineInterval(intervalId: interval.id, end: Self.scheduleHHMMFromDate($0)) }
-                ),
-                displayedComponents: .hourAndMinute
+            inlineScheduleTimePicker(
+                day: day,
+                intervalId: interval.id,
+                hhmm: interval.end,
+                label: "End",
+                isStart: false
             )
-            .labelsHidden()
-            .datePickerStyle(.compact)
-            .accessibilityLabel("End")
 
             Spacer(minLength: 0)
 
             Button {
-                removeInlineInterval(intervalId: interval.id)
+                removeInlineInterval(day: day, intervalId: interval.id)
             } label: {
                 Image(systemName: "trash")
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Remove time slot")
+            .accessibilityLabel("Remove hours")
         }
     }
 
-    private func addIntervalForSelectedWeekday() {
-        var current = selectedDaySchedule
+    private func inlineScheduleTimePicker(
+        day: WeeklyScheduleDayKey,
+        intervalId: String,
+        hhmm: String,
+        label: String,
+        isStart: Bool
+    ) -> some View {
+        DatePicker(
+            label,
+            selection: Binding(
+                get: { Self.scheduleDateFromHHMM(hhmm) },
+                set: { newDate in
+                    let value = Self.scheduleHHMMFromDate(newDate)
+                    if isStart {
+                        updateInlineInterval(day: day, intervalId: intervalId, start: value)
+                    } else {
+                        updateInlineInterval(day: day, intervalId: intervalId, end: value)
+                    }
+                }
+            ),
+            displayedComponents: .hourAndMinute
+        )
+        .labelsHidden()
+        .datePickerStyle(.compact)
+        .accessibilityLabel(label)
+    }
+
+    private func addInterval(for day: WeeklyScheduleDayKey) {
+        var current = daySchedule(for: day)
         let last = current.intervals.last
         var newStart = "09:00"
         if let last, let h = Int(last.end.split(separator: ":").first ?? "") {
@@ -1493,22 +1534,27 @@ struct ProviderScheduleDashboardView: View {
         let newEnd = String(format: "%02d:00", min(startHour + 2, 23))
         current.intervals.append(ScheduleIntervalDTO(start: newStart, end: newEnd))
         current.enabled = true
-        setSelectedDaySchedule(current)
+        setDaySchedule(current, for: day)
     }
 
-    private func removeInlineInterval(intervalId: String) {
-        var current = selectedDaySchedule
+    private func removeInlineInterval(day: WeeklyScheduleDayKey, intervalId: String) {
+        var current = daySchedule(for: day)
         current.intervals.removeAll { $0.id == intervalId }
         if current.intervals.isEmpty { current.enabled = false }
-        setSelectedDaySchedule(current)
+        setDaySchedule(current, for: day)
     }
 
-    private func updateInlineInterval(intervalId: String, start: String? = nil, end: String? = nil) {
-        var current = selectedDaySchedule
+    private func updateInlineInterval(
+        day: WeeklyScheduleDayKey,
+        intervalId: String,
+        start: String? = nil,
+        end: String? = nil
+    ) {
+        var current = daySchedule(for: day)
         guard let idx = current.intervals.firstIndex(where: { $0.id == intervalId }) else { return }
         if let start { current.intervals[idx].start = start }
         if let end { current.intervals[idx].end = end }
-        setSelectedDaySchedule(current)
+        setDaySchedule(current, for: day)
     }
 
     /// Same rules as `ProviderAvailabilityEditorView.recomputeValidation`.
@@ -1540,23 +1586,6 @@ struct ProviderScheduleDashboardView: View {
             }
         }
         inlineValidationError = nil
-    }
-
-    private static func scheduleDateFromHHMM(_ hhmm: String) -> Date {
-        let parts = hhmm.split(separator: ":")
-        let h = parts.first.flatMap { Int($0) } ?? 9
-        let m = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
-        var c = DateComponents()
-        c.hour = h
-        c.minute = m
-        return Calendar(identifier: .gregorian).date(from: c) ?? .now
-    }
-
-    private static func scheduleHHMMFromDate(_ date: Date) -> String {
-        let cal = Calendar(identifier: .gregorian)
-        let h = cal.component(.hour, from: date)
-        let m = cal.component(.minute, from: date)
-        return String(format: "%02d:%02d", h, m)
     }
 
     private static func scheduleMinutesFromHHMM(_ hhmm: String) -> Int {
@@ -1604,11 +1633,28 @@ struct ProviderScheduleDashboardView: View {
         guard let barberId = session.barberProfile?.id, let weekly = inlineWeeklySchedule else { return }
         recomputeInlineWeeklyValidation()
         guard inlineValidationError == nil else { return }
+        let original = originalInlineWeeklySchedule ?? weekly
+        let bookingConflicts = ProviderScheduleBookingConflicts.bookingsNewlyExcludedByScheduleChange(
+            proposed: weekly,
+            original: original,
+            bookings: scheduleBookings,
+            calendar: mondayCalendar
+        )
+        if !bookingConflicts.isEmpty {
+            inlineSaveError = ProviderScheduleBookingConflicts.moveBookingsMessage(
+                bookings: bookingConflicts,
+                calendar: mondayCalendar,
+                action: "saving this schedule"
+            )
+            return
+        }
         savingInlineWeekly = true
         inlineSaveError = nil
         defer { savingInlineWeekly = false }
         do {
             try await ProviderAvailabilityManagementService.updateWeeklySchedule(barberId: barberId, schedule: weekly)
+            cachedWeeklySchedule = weekly
+            purgeStaleAvailabilityCacheAfterWeeklyScheduleSave(from: original, to: weekly)
             NotificationCenter.default.post(name: .providerAvailabilityChanged, object: nil)
             await refreshDayScheduleFromNetwork()
             cancelInlineAvailabilityEditing()
@@ -1633,12 +1679,6 @@ struct ProviderScheduleDashboardView: View {
         return h * 60 + m
     }
 
-    private func pretty12hBlockTime(_ hhmm: String) -> String {
-        let mins = minutesFromHHMM(hhmm)
-        let d = mondayCalendar.date(bySettingHour: mins / 60, minute: mins % 60, second: 0, of: selectedDay) ?? selectedDay
-        return d.formatted(date: .omitted, time: .shortened)
-    }
-
     private func timeBlocksOverlappingSlot(_ slot: HourlySlot) -> [BarberTimeBlockDTO] {
         timeBlocksOnSelectedDay
             .filter { b in
@@ -1661,11 +1701,34 @@ struct ProviderScheduleDashboardView: View {
     }
 
     private func prepareBlockSheet(forMinute minute: Int) {
+        prepareBlockSheetForSelectedDay(startMinute: minute)
+    }
+
+    /// Opens the one-off block editor prefilled from the schedule's selected day.
+    private func prepareBlockSheetForSelectedDay(startMinute: Int? = nil) {
         let cal = mondayCalendar
         let day = selectedDay
-        blockSheetDayStart = cal.startOfDay(for: day)
-        blockSheetStart = cal.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: day) ?? day
-        blockSheetEnd = cal.date(byAdding: .minute, value: 60, to: blockSheetStart) ?? blockSheetStart
+        let start: Date
+        if let startMinute {
+            blockSheetBlocksEntireDay = false
+            start = cal.date(
+                bySettingHour: startMinute / 60,
+                minute: startMinute % 60,
+                second: 0,
+                of: day
+            ) ?? day
+        } else {
+            blockSheetBlocksEntireDay = true
+            let defaultStart = ProviderTimeBlockEditorSheet.defaultBlockStart(from: Date(), calendar: cal)
+            start = ProviderTimeBlockEditorSheet.blockStart(
+                on: day,
+                defaultStartFromNow: defaultStart,
+                calendar: cal
+            )
+        }
+        blockSheetStart = start
+        blockSheetDayStart = cal.startOfDay(for: start)
+        blockSheetPresentationID = UUID()
     }
 
     private func refreshDayScheduleFromNetwork() async {
@@ -1842,7 +1905,11 @@ struct ProviderScheduleDashboardView: View {
         switch effectiveZoomTier {
         case .week:
             let weekIntervals = availabilityIntervalsForVisibleWeek().flatMap { $0 }
-            return ProviderScheduleTimelineBounds.range(for: weekIntervals)
+            return ProviderScheduleTimelineBounds.weekRange(
+                intervals: weekIntervals,
+                bookings: visibleBookingsForCurrentZoom(),
+                calendar: mondayCalendar
+            )
         case .day, .minute:
             if let exact = ProviderScheduleTimelineBounds.exactRange(for: displayIntervals) {
                 return exact
@@ -1875,23 +1942,52 @@ struct ProviderScheduleDashboardView: View {
 
     /// True only when a day is explicitly off — disabled in the weekly schedule or marked unavailable for that date.
     private func isEntireDayBlockedOff(for day: Date) -> Bool {
+        let weekdayKey = weeklyDayKey(for: day)
+
         if isEditingAvailability, let schedule = inlineWeeklySchedule {
-            return !schedule[weeklyDayKey(for: day)].enabled
+            return !schedule[weekdayKey].enabled
+        }
+
+        if let schedule = cachedWeeklySchedule {
+            if !schedule[weekdayKey].enabled { return true }
+            let key = dayKey(for: day)
+            if let data = availabilityByDay[key],
+               let raw = data.date?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty,
+               normalizedBlockDate(raw) == key,
+               data.available == false
+            {
+                return true
+            }
+            return false
         }
 
         let key = dayKey(for: day)
-        if let data = availabilityByDay[key] {
-            if let raw = data.date?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
-                if normalizedBlockDate(raw) == key {
-                    if data.available == false { return true }
-                    if (data.intervals ?? []).isEmpty { return true }
-                    return false
-                }
+        if let data = availabilityByDay[key],
+           let raw = data.date?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty,
+           normalizedBlockDate(raw) == key
+        {
+            if data.available == false { return true }
+            if (data.intervals ?? []).isEmpty { return true }
+        }
+        return false
+    }
+
+    private func purgeStaleAvailabilityCacheAfterWeeklyScheduleSave(from original: WeeklyScheduleDTO, to saved: WeeklyScheduleDTO) {
+        var next = availabilityByDay
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = mondayCalendar
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+
+        for dateKey in availabilityByDay.keys {
+            guard let date = formatter.date(from: dateKey) else { continue }
+            let weekdayKey = weeklyDayKey(for: date)
+            if !original[weekdayKey].enabled, saved[weekdayKey].enabled {
+                next.removeValue(forKey: dateKey)
             }
         }
-
-        guard let schedule = cachedWeeklySchedule else { return false }
-        return !schedule[weeklyDayKey(for: day)].enabled
+        availabilityByDay = next
     }
 
     private func timeBlocksForVisibleWeek() -> [[BarberTimeBlockDTO]] {

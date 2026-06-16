@@ -78,6 +78,7 @@ struct BarberMonthlyDensityView: View {
     let workloads: [DailyWorkload]
     let selectedDate: Date
     var availableHeight: CGFloat?
+    var isDayBlockedOff: (Date) -> Bool = { _ in false }
     let onDayTap: (Date) -> Void
 
     private let defaultCellHeight: CGFloat = 52
@@ -150,6 +151,7 @@ struct BarberMonthlyDensityView: View {
         let workload = workloadByDay[dayStart] ?? DailyWorkload(date: dayStart, bookingCount: 0)
         let isToday = calendar.isDateInToday(date)
         let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
+        let isBlockedOff = isDayBlockedOff(dayStart)
 
         Button {
             withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
@@ -188,6 +190,11 @@ struct BarberMonthlyDensityView: View {
                 if isSelected, !isToday {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .strokeBorder(Color.lavaShellCream.opacity(0.55), lineWidth: 1.5)
+                }
+            }
+            .overlay {
+                if isBlockedOff {
+                    ProviderScheduleEntireDayCrossOutOverlay(cornerRadius: 10)
                 }
             }
             .scaleEffect(isSelected ? 1.03 : 1)

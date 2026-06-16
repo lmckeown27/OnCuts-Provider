@@ -27,6 +27,7 @@ struct ProviderAvailabilityEditorView: View {
     @State private var blocksError: String?
     @State private var showingAddBlock = false
     @State private var deletingBlockIds: Set<String> = []
+    @State private var scheduleBookings: [SimpleBookingDTO] = []
 
     // MARK: Google Calendar — TEMPORARILY DISABLED (see file header).
     #if false
@@ -44,6 +45,12 @@ struct ProviderAvailabilityEditorView: View {
     @State private var savedToast: String?
 
     private var weeklyDirty: Bool { weekly != originalWeekly }
+
+    private var scheduleCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.firstWeekday = 2
+        return calendar
+    }
 
     var body: some View {
         ScrollView {
@@ -86,6 +93,11 @@ struct ProviderAvailabilityEditorView: View {
         .sheet(isPresented: $showingAddBlock, onDismiss: { /* nothing — list reloads on save */ }) {
             ProviderTimeBlockEditorSheet(
                 barberId: session.barberProfile?.id,
+                bookings: ProviderScheduleBookingConflicts.upcomingBookings(
+                    from: scheduleBookings,
+                    calendar: scheduleCalendar
+                ),
+                calendar: scheduleCalendar,
                 onSaved: { newBlock in
                     if let newBlock {
                         // Optimistic insert in sorted order.
@@ -406,7 +418,7 @@ struct ProviderAvailabilityEditorView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(Self.prettyDate(block.blockDate))
                     .font(.provider(.subheadline, weight: .semibold))
-                Text("\(Self.pretty12h(block.startTime)) – \(Self.pretty12h(block.endTime))")
+                Text(ProviderTimeBlockEditorSheet.displayTimeRange(startTime: block.startTime, endTime: block.endTime))
                     .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                 if let reason = block.reason, !reason.isEmpty {
@@ -608,6 +620,7 @@ struct ProviderAvailabilityEditorView: View {
                 weekly: (snapshot.weekly, snapshot.weeklyError),
                 blocks: (snapshot.timeBlocks, snapshot.blocksError)
             )
+            scheduleBookings = await fetchScheduleBookings()
             await prepareWeeklyEditor()
             return
         }
@@ -619,12 +632,14 @@ struct ProviderAvailabilityEditorView: View {
         // its result into `applyLoadedContent` (signature also restored under the `#if false`).
         async let weekly = fetchWeeklySchedule(barberId: barberId)
         async let blocks = fetchTimeBlocks(barberId: barberId)
-        let results = await (weekly, blocks)
+        async let bookings = fetchScheduleBookings()
+        let results = await (weekly, blocks, bookings)
 
         applyLoadedContent(
             weekly: results.0,
             blocks: results.1
         )
+        scheduleBookings = results.2
         await prepareWeeklyEditor()
     }
 
@@ -688,6 +703,16 @@ struct ProviderAvailabilityEditorView: View {
         }
     }
 
+    private func fetchScheduleBookings() async -> [SimpleBookingDTO] {
+        guard session.hasProviderProfile else { return [] }
+        do {
+            let list = try await ProviderBookingsService.listBookings(role: "barber")
+            return list.filter(\.isVisibleOnMainSchedule)
+        } catch {
+            return []
+        }
+    }
+
     private func loadWeeklySchedule() async {
         guard let barberId = session.barberProfile?.id else { return }
         let result = await fetchWeeklySchedule(barberId: barberId)
@@ -705,6 +730,20 @@ struct ProviderAvailabilityEditorView: View {
         guard let barberId = session.barberProfile?.id else { return }
         recomputeValidation()
         guard weeklyValidationError == nil else { return }
+        let bookingConflicts = ProviderScheduleBookingConflicts.bookingsNewlyExcludedByScheduleChange(
+            proposed: weekly,
+            original: originalWeekly,
+            bookings: scheduleBookings,
+            calendar: scheduleCalendar
+        )
+        if !bookingConflicts.isEmpty {
+            weeklyError = ProviderScheduleBookingConflicts.moveBookingsMessage(
+                bookings: bookingConflicts,
+                calendar: scheduleCalendar,
+                action: "saving this schedule"
+            )
+            return
+        }
         savingWeekly = true
         weeklyError = nil
         defer { savingWeekly = false }

@@ -39,10 +39,12 @@ private struct WeeklyPositionedAppointment: Identifiable {
 // MARK: - Layout constants
 
 private enum WeeklySwimlaneLayout {
-    static let timeGutterWidth: CGFloat = 52
+    static let timeGutterWidth: CGFloat = 56
     static let timeGutterLabelFontSize: CGFloat = 10
     static let dayHeaderHeight: CGFloat = 46
-    static let outerPadding: CGFloat = 10
+    static let outerPaddingLeading: CGFloat = 4
+    static let outerPaddingTrailing: CGFloat = 10
+    static let outerPaddingVertical: CGFloat = 10
     static let dayColumnWidth: CGFloat = 68
     static let dayColumnSpacing: CGFloat = 10
     static let trackCornerRadius: CGFloat = 10
@@ -108,7 +110,7 @@ struct WeeklySwimlaneView: View {
     private var trackAreaHeight: CGFloat {
         max(
             120,
-            viewportSize.height - WeeklySwimlaneLayout.dayHeaderHeight - (WeeklySwimlaneLayout.outerPadding * 2)
+            viewportSize.height - WeeklySwimlaneLayout.dayHeaderHeight - (WeeklySwimlaneLayout.outerPaddingVertical * 2)
         )
     }
 
@@ -117,7 +119,7 @@ struct WeeklySwimlaneView: View {
     }
 
     private var contentTrackHeight: CGFloat {
-        CGFloat(minuteSpan) * pointsPerMinute
+        CGFloat(minuteSpan) * pointsPerMinute + ProviderScheduleTimelineBounds.bottomLabelClearance
     }
 
     private var usesVerticalScroll: Bool {
@@ -131,11 +133,39 @@ struct WeeklySwimlaneView: View {
     }
 
     private var layoutWidth: CGFloat {
-        max(viewportSize.width, weekGridWidth + (WeeklySwimlaneLayout.outerPadding * 2))
+        max(
+            viewportSize.width,
+            weekGridWidth
+                + WeeklySwimlaneLayout.outerPaddingLeading
+                + WeeklySwimlaneLayout.outerPaddingTrailing
+        )
     }
 
     private var dayColumnStride: CGFloat {
         WeeklySwimlaneLayout.dayColumnWidth + WeeklySwimlaneLayout.dayColumnSpacing
+    }
+
+    private var timeGutterMarkers: [Int] {
+        var markers = Set(
+            ProviderScheduleTimelineBounds.scheduleBoundaryMarkers(
+                from: startMinute,
+                through: endMinute
+            )
+        )
+        for dayIntervals in dayAvailabilityIntervals {
+            for interval in dayIntervals {
+                markers.insert(minutesFromHHMM(interval.start))
+                markers.insert(minutesFromHHMM(interval.end))
+            }
+        }
+        return markers.filter { $0 >= startMinute && $0 <= endMinute }.sorted()
+    }
+
+    private func minutesFromHHMM(_ hhmm: String) -> Int {
+        let parts = hhmm.split(separator: ":")
+        let h = parts.first.flatMap { Int($0) } ?? 0
+        let m = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+        return h * 60 + m
     }
 
     private var positionedAppointments: [WeeklyPositionedAppointment] {
@@ -164,75 +194,93 @@ struct WeeklySwimlaneView: View {
     var body: some View {
         VStack(spacing: 0) {
             dayHeaderRow
-                .padding(.horizontal, WeeklySwimlaneLayout.outerPadding)
-                .padding(.top, WeeklySwimlaneLayout.outerPadding)
+                .padding(.top, WeeklySwimlaneLayout.outerPaddingVertical)
 
             trackScrollRegion
-                .padding(.horizontal, WeeklySwimlaneLayout.outerPadding)
-                .padding(.bottom, WeeklySwimlaneLayout.outerPadding)
+                .padding(.bottom, WeeklySwimlaneLayout.outerPaddingVertical)
         }
         .frame(width: layoutWidth, height: viewportSize.height, alignment: .top)
     }
 
     private var dayHeaderRow: some View {
-        HStack(spacing: WeeklySwimlaneLayout.dayColumnSpacing) {
+        HStack(spacing: 0) {
             Color.clear
-                .frame(width: WeeklySwimlaneLayout.timeGutterWidth)
+                .frame(width: WeeklySwimlaneLayout.outerPaddingLeading)
 
-            ForEach(0 ..< 7, id: \.self) { offset in
-                dayHeader(
-                    for: dayDate(offset: offset),
-                    isBlockedOff: isEntireDayBlockedOff(for: offset)
-                )
-                .frame(width: WeeklySwimlaneLayout.dayColumnWidth)
+            HStack(spacing: WeeklySwimlaneLayout.dayColumnSpacing) {
+                Color.clear
+                    .frame(width: WeeklySwimlaneLayout.timeGutterWidth)
+
+                ForEach(0 ..< 7, id: \.self) { offset in
+                    dayHeader(
+                        for: dayDate(offset: offset),
+                        isBlockedOff: isEntireDayBlockedOff(for: offset)
+                    )
+                    .frame(width: WeeklySwimlaneLayout.dayColumnWidth)
+                }
+
+                Color.clear
+                    .frame(width: WeeklySwimlaneLayout.timeGutterWidth)
             }
+            .frame(width: weekGridWidth, alignment: .leading)
 
             Color.clear
-                .frame(width: WeeklySwimlaneLayout.timeGutterWidth)
+                .frame(width: WeeklySwimlaneLayout.outerPaddingTrailing)
         }
-        .frame(width: weekGridWidth, height: WeeklySwimlaneLayout.dayHeaderHeight, alignment: .leading)
+        .frame(width: layoutWidth, height: WeeklySwimlaneLayout.dayHeaderHeight, alignment: .leading)
     }
 
     @ViewBuilder
     private var trackScrollRegion: some View {
         let tracks = AnyView(
             ZStack(alignment: .topLeading) {
-                HStack(alignment: .top, spacing: WeeklySwimlaneLayout.dayColumnSpacing) {
-                    WeeklySwimlaneTimeGutterView(
-                        startMinute: startMinute,
-                        endMinute: endMinute,
-                        pointsPerMinute: pointsPerMinute,
-                        trackHeight: contentTrackHeight,
-                        labelPlacement: .leadingEdge
-                    )
-                    .frame(width: WeeklySwimlaneLayout.timeGutterWidth)
+                HStack(spacing: 0) {
+                    Color.clear
+                        .frame(width: WeeklySwimlaneLayout.outerPaddingLeading)
 
-                    ForEach(0 ..< 7, id: \.self) { offset in
-                        WeeklySwimlaneDayTrackView(
-                            day: dayDate(offset: offset),
-                            availabilityIntervals: availabilityIntervals(for: offset),
-                            isEntireDayBlockedOff: isEntireDayBlockedOff(for: offset),
-                            timeBlocks: dayTimeBlocks.indices.contains(offset) ? dayTimeBlocks[offset] : [],
+                    HStack(alignment: .top, spacing: WeeklySwimlaneLayout.dayColumnSpacing) {
+                        WeeklySwimlaneTimeGutterView(
+                            calendar: calendar,
+                            labeledMinutes: timeGutterMarkers,
                             startMinute: startMinute,
-                            endMinute: endMinute,
                             pointsPerMinute: pointsPerMinute,
                             trackHeight: contentTrackHeight,
-                            moveEditingActive: editingMoveBookingID != nil,
-                            onDayTap: onDayTap
+                            labelPlacement: .leadingEdge
                         )
-                        .frame(width: WeeklySwimlaneLayout.dayColumnWidth)
-                    }
+                        .frame(width: WeeklySwimlaneLayout.timeGutterWidth)
 
-                    WeeklySwimlaneTimeGutterView(
-                        startMinute: startMinute,
-                        endMinute: endMinute,
-                        pointsPerMinute: pointsPerMinute,
-                        trackHeight: contentTrackHeight,
-                        labelPlacement: .trailingEdge
-                    )
-                    .frame(width: WeeklySwimlaneLayout.timeGutterWidth)
+                        ForEach(0 ..< 7, id: \.self) { offset in
+                            WeeklySwimlaneDayTrackView(
+                                day: dayDate(offset: offset),
+                                availabilityIntervals: availabilityIntervals(for: offset),
+                                isEntireDayBlockedOff: isEntireDayBlockedOff(for: offset),
+                                timeBlocks: dayTimeBlocks.indices.contains(offset) ? dayTimeBlocks[offset] : [],
+                                startMinute: startMinute,
+                                endMinute: endMinute,
+                                pointsPerMinute: pointsPerMinute,
+                                trackHeight: contentTrackHeight,
+                                moveEditingActive: editingMoveBookingID != nil,
+                                onDayTap: onDayTap
+                            )
+                            .frame(width: WeeklySwimlaneLayout.dayColumnWidth)
+                        }
+
+                        WeeklySwimlaneTimeGutterView(
+                            calendar: calendar,
+                            labeledMinutes: timeGutterMarkers,
+                            startMinute: startMinute,
+                            pointsPerMinute: pointsPerMinute,
+                            trackHeight: contentTrackHeight,
+                            labelPlacement: .trailingEdge
+                        )
+                        .frame(width: WeeklySwimlaneLayout.timeGutterWidth)
+                    }
+                    .frame(width: weekGridWidth, alignment: .leading)
+
+                    Color.clear
+                        .frame(width: WeeklySwimlaneLayout.outerPaddingTrailing)
                 }
-                .frame(width: weekGridWidth, alignment: .leading)
+                .frame(width: layoutWidth, alignment: .leading)
 
                 WeeklySwimlaneAppointmentsLayer(
                     positionedAppointments: positionedAppointments,
@@ -251,9 +299,10 @@ struct WeeklySwimlaneView: View {
                     onBookingTap: onBookingTap,
                     onBookingTimeChangeProposed: onBookingTimeChangeProposed
                 )
+                .offset(x: WeeklySwimlaneLayout.outerPaddingLeading)
                 .frame(width: weekGridWidth, height: contentTrackHeight, alignment: .topLeading)
             }
-            .frame(width: weekGridWidth, alignment: .leading)
+            .frame(width: layoutWidth, alignment: .leading)
         )
 
         if usesVerticalScroll {
@@ -294,10 +343,8 @@ struct WeeklySwimlaneView: View {
                 }
 
                 if isBlockedOff {
-                    WeeklySwimlaneEntireDayBlockedOverlay(
-                        height: WeeklySwimlaneLayout.dayHeaderHeight,
-                        cornerRadius: 8
-                    )
+                    ProviderScheduleEntireDayCrossOutOverlay(cornerRadius: 8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
@@ -670,46 +717,53 @@ private struct WeeklySwimlaneTimeGutterView: View {
         case trailingEdge
     }
 
+    let calendar: Calendar
+    let labeledMinutes: [Int]
     let startMinute: Int
-    let endMinute: Int
     let pointsPerMinute: CGFloat
     let trackHeight: CGFloat
     var labelPlacement: LabelPlacement = .leadingEdge
 
-    private var hourMarkers: [Int] {
-        let firstHour = (startMinute / 60) * 60
-        return stride(from: max(firstHour, startMinute), to: endMinute, by: 60).map { $0 }
-    }
-
-    private var labelAlignment: Alignment {
-        labelPlacement == .leadingEdge ? .trailing : .leading
+    /// Anchor labels toward the day columns; allow overflow into outer padding so AM/PM isn't clipped.
+    private var gutterAlignment: Alignment {
+        switch labelPlacement {
+        case .leadingEdge: .topTrailing
+        case .trailingEdge: .topLeading
+        }
     }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack(alignment: gutterAlignment) {
             Color.clear
                 .frame(height: trackHeight)
 
-            ForEach(hourMarkers, id: \.self) { minute in
+            ForEach(labeledMinutes, id: \.self) { minute in
                 Text(formatHour(minute))
                     .font(.provider(size: WeeklySwimlaneLayout.timeGutterLabelFontSize, weight: .medium))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                    .frame(width: WeeklySwimlaneLayout.timeGutterWidth, alignment: labelAlignment)
+                    .fixedSize(horizontal: true, vertical: false)
                     .offset(y: CGFloat(minute - startMinute) * pointsPerMinute)
-                    .padding(labelPlacement == .leadingEdge ? .trailing : .leading, 2)
             }
         }
-        .frame(height: trackHeight, alignment: .top)
+        .frame(width: WeeklySwimlaneLayout.timeGutterWidth, height: trackHeight, alignment: .top)
     }
 
     private func formatHour(_ totalMinutes: Int) -> String {
-        var components = DateComponents()
-        components.hour = totalMinutes / 60
-        components.minute = 0
-        let date = Calendar(identifier: .gregorian).date(from: components) ?? .now
-        return date.formatted(.dateTime.hour(.defaultDigits(amPM: .abbreviated)))
+        let hour = totalMinutes / 60
+        let minute = totalMinutes % 60
+        if minute == 0 {
+            let displayHour = hour % 12 == 0 ? 12 : hour % 12
+            let meridiem = hour < 12 ? "AM" : "PM"
+            return "\(displayHour) \(meridiem)"
+        }
+        let date = calendar.date(
+            bySettingHour: hour,
+            minute: minute,
+            second: 0,
+            of: .now
+        ) ?? .now
+        return date.formatted(date: .omitted, time: .shortened)
     }
 }
 
@@ -733,8 +787,9 @@ private struct WeeklySwimlaneDayTrackView: View {
                 .fill(Color.providerScheduleControlFill.opacity(0.55))
 
             if isEntireDayBlockedOff {
-                WeeklySwimlaneEntireDayBlockedOverlay(height: trackHeight)
+                ProviderScheduleEntireDayCrossOutOverlay(cornerRadius: WeeklySwimlaneLayout.trackCornerRadius)
                     .frame(maxWidth: .infinity)
+                    .frame(height: max(4, trackHeight))
                     .padding(.horizontal, 4)
             } else {
                 ForEach(availabilityIntervals.indices, id: \.self) { index in
@@ -784,27 +839,6 @@ private struct WeeklySwimlaneDayTrackView: View {
 
 // MARK: - Blocked time overlay
 
-private struct WeeklySwimlaneEntireDayBlockedOverlay: View {
-    let height: CGFloat
-    var cornerRadius: CGFloat = WeeklySwimlaneLayout.trackCornerRadius
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(Color.providerOlive.opacity(0.06))
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color.providerOlive.opacity(0.24), lineWidth: 0.5)
-            }
-            .overlay {
-                WeeklySwimlaneDiagonalCrossOut(lineColor: Color.providerOlive.opacity(0.44))
-            }
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .frame(maxWidth: .infinity)
-            .frame(height: max(4, height))
-            .accessibilityLabel("Day blocked off")
-    }
-}
-
 private struct WeeklySwimlaneBlockedTimeOverlay: View {
     let height: CGFloat
 
@@ -816,31 +850,11 @@ private struct WeeklySwimlaneBlockedTimeOverlay: View {
                     .strokeBorder(Color.lavaShellCreamSecondary.opacity(0.32), lineWidth: 0.5)
             }
             .overlay {
-                WeeklySwimlaneDiagonalCrossOut()
+                ProviderScheduleDiagonalCrossOut()
             }
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .frame(height: max(4, height))
             .accessibilityLabel("Blocked time")
-    }
-}
-
-private struct WeeklySwimlaneDiagonalCrossOut: View {
-    var lineColor: Color = Color.lavaShellCreamSecondary.opacity(0.38)
-
-    var body: some View {
-        GeometryReader { proxy in
-            let spacing: CGFloat = 7
-            Path { path in
-                var x = -proxy.size.height
-                while x < proxy.size.width + proxy.size.height {
-                    path.move(to: CGPoint(x: x, y: proxy.size.height))
-                    path.addLine(to: CGPoint(x: x + proxy.size.height, y: 0))
-                    x += spacing
-                }
-            }
-            .stroke(lineColor, lineWidth: 1)
-        }
-        .allowsHitTesting(false)
     }
 }
 
@@ -1365,14 +1379,14 @@ private struct WeeklyUIKitPlaneDragOverlay: UIViewRepresentable {
             guard let hScroll else { return nil }
 
             let fingerInHorizontal = recognizer.location(in: hScroll)
-            let x = fingerInHorizontal.x - WeeklySwimlaneLayout.outerPadding
+            let x = fingerInHorizontal.x - WeeklySwimlaneLayout.outerPaddingLeading
             let y: CGFloat
             if let vScroll {
                 y = recognizer.location(in: vScroll).y
             } else {
                 y = fingerInHorizontal.y
                     - WeeklySwimlaneLayout.dayHeaderHeight
-                    - WeeklySwimlaneLayout.outerPadding
+                    - WeeklySwimlaneLayout.outerPaddingVertical
             }
 
             return CGPoint(x: x, y: y)

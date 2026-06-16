@@ -9,21 +9,22 @@ enum ProviderScheduleZoom {
     static let defaultScale: CGFloat = 1.5
 
     /// Fixed viewer height for month schedule box; week/day/minute use `canvasViewerHeight`.
-    static let canvasMinHeightDefault: CGFloat = 360
+    static let canvasMinHeightDefault: CGFloat = 340
 
     /// Taller scrollable viewer for day/minute — timeline content may extend beyond and scroll inside.
     static let timelineVerticalScaleBoost: CGFloat = 1.4
 
-    /// Target height for the day/minute schedule viewer box (timeline scrolls inside).
-    static let dayMinuteViewerPreferredHeight: CGFloat = 440
-    static let dayMinuteViewerMinHeight: CGFloat = 360
+    /// Target height for the day/minute/weekly schedule viewer box (timeline scrolls inside).
+    static let dayMinuteViewerPreferredHeight: CGFloat = 400
+    static let dayMinuteViewerMinHeight: CGFloat = 340
     static let dayMinuteViewerScreenMargin: CGFloat = 24
+    /// Shell header, summary, controls above the canvas, and supplement text below it.
+    static let schedulePageChromeReserve: CGFloat = 180
 
-    /// Height of the day/minute schedule **viewer** area inside the card (below the tier header).
-    /// Chrome above/below the card lives in the page `ScrollView` and is not subtracted here.
+    /// Height of the schedule **viewer** area inside the card.
     static func canvasViewerHeight(availableHeight: CGFloat) -> CGFloat {
-        let capped = max(dayMinuteViewerMinHeight, availableHeight - dayMinuteViewerScreenMargin)
-        return min(dayMinuteViewerPreferredHeight, capped)
+        let budget = availableHeight - schedulePageChromeReserve - dayMinuteViewerScreenMargin
+        return min(dayMinuteViewerPreferredHeight, max(dayMinuteViewerMinHeight, budget))
     }
 
     /// Tier boundaries — pinch scale crosses these to change Month / Week / Day / Minute.
@@ -146,6 +147,7 @@ struct ProviderZoomableScheduleCanvas: View {
     let weekDayAvailabilityIntervals: [[BarberAvailabilityIntervalDTO]]
     /// Per-day flags for weekdays explicitly turned off in the weekly schedule (or date overrides).
     let weekDayEntirelyBlockedOff: [Bool]
+    let isDayEntirelyBlockedOff: (Date) -> Bool
     /// Per-day time blocks for the visible week (Mon–Sun), used when validating weekly drag moves.
     let weekDayTimeBlocks: [[BarberTimeBlockDTO]]
     let timeBlocks: [BarberTimeBlockDTO]
@@ -217,9 +219,9 @@ struct ProviderZoomableScheduleCanvas: View {
     private var timelineScrollContentHeight: CGFloat {
         let bookedHoursHeight = dayMinuteTimelineLayout.contentHeight
         if bookedHoursHeight > 0 {
-            return bookedHoursHeight + 16
+            return bookedHoursHeight + ScheduleTimelineDragLayout.timelineVerticalChromeHeight
         }
-        return 16
+        return ScheduleTimelineDragLayout.timelineVerticalChromeHeight
     }
 
     private var maxTimelineScrollOffsetY: CGFloat {
@@ -232,7 +234,7 @@ struct ProviderZoomableScheduleCanvas: View {
             intervals: availabilityIntervals,
             verticalScale: verticalScale
         )
-        let contentHeight = layout.contentHeight + 16
+        let contentHeight = layout.contentHeight + ScheduleTimelineDragLayout.timelineVerticalChromeHeight
         return max(0, contentHeight - resolvedViewerBoxHeight)
     }
 
@@ -241,7 +243,7 @@ struct ProviderZoomableScheduleCanvas: View {
         incrementalRatio: CGFloat,
         proposedEffectiveScale: CGFloat
     ) -> CGFloat {
-        let padding = ScheduleTimelineDragLayout.contentVerticalPadding
+        let padding = ScheduleTimelineDragLayout.contentTopPadding
         let rawScroll = padding * (1 - incrementalRatio)
             + pinchSessionScrollY * incrementalRatio
             + pinchSessionAnchorY * (incrementalRatio - 1)
@@ -320,7 +322,7 @@ struct ProviderZoomableScheduleCanvas: View {
         guard let top = dayMinuteTimelineLayout.contentY(forMinute: app.startMinute) else { return }
 
         let height = max(4, CGFloat(app.durationMinutes) * dayTimelineVerticalScale)
-        let bookingContentTop = ScheduleTimelineDragLayout.contentVerticalPadding + top + clampedOffsetY
+        let bookingContentTop = ScheduleTimelineDragLayout.contentTopPadding + top + clampedOffsetY
         let bottomMargin: CGFloat = 14
 
         let targetY: CGFloat
@@ -495,6 +497,7 @@ struct ProviderZoomableScheduleCanvas: View {
                     ),
                     selectedDate: selectedDay,
                     availableHeight: size.height,
+                    isDayBlockedOff: isDayEntirelyBlockedOff,
                     onDayTap: onMonthDayTap
                 )
                 .frame(width: size.width, height: size.height, alignment: .top)
@@ -714,7 +717,18 @@ struct ScheduleAppointmentTimeChangeProposal: Identifiable {
 }
 
 private enum ScheduleTimelineDragLayout {
-    static let contentVerticalPadding: CGFloat = 8
+    static let contentTopPadding: CGFloat = 24
+    static let contentBottomPadding: CGFloat = 8
+    static let contentBottomLabelClearance: CGFloat = 32
+
+    static var timelineVerticalChromeHeight: CGFloat {
+        contentTopPadding + contentBottomPadding + contentBottomLabelClearance
+    }
+
+    static var contentBottomInset: CGFloat {
+        contentBottomPadding + contentBottomLabelClearance
+    }
+
     static let viewportEdgeInset: CGFloat = 4
     /// Space reserved above a dropped booking so the confirm prompt stays visible.
     static let confirmPromptClearance: CGFloat = 152
@@ -854,7 +868,7 @@ private struct SchedulePreciseTimelineCanvas: View {
                 Color.clear
                     .contentShape(Rectangle())
                     .frame(maxWidth: .infinity)
-                    .frame(height: timelineHeight + 16)
+                    .frame(height: timelineHeight + ScheduleTimelineDragLayout.timelineVerticalChromeHeight)
                     .onTapGesture(coordinateSpace: .local) { location in
                         guard let app = appointments.first(where: { $0.id == movingID }) else { return }
                         if activeMoveDragBookingID != nil {
@@ -867,7 +881,8 @@ private struct SchedulePreciseTimelineCanvas: View {
             appointmentBlocks
         }
         .frame(height: timelineHeight)
-        .padding(.vertical, 8)
+        .padding(.top, ScheduleTimelineDragLayout.contentTopPadding)
+        .padding(.bottom, ScheduleTimelineDragLayout.contentBottomInset)
     }
 
     private var availabilityBackground: some View {
@@ -918,20 +933,36 @@ private struct SchedulePreciseTimelineCanvas: View {
         VStack(spacing: 0) {
             ForEach(timelineLayout.segments.indices, id: \.self) { segmentIndex in
                 let segment = timelineLayout.segments[segmentIndex]
-                ForEach(
-                    Array(stride(from: segment.start, to: segment.end, by: ScheduleTimelineZoomVisuals.fineTickStep)),
-                    id: \.self
-                ) { minute in
-                    tickRow(for: minute)
+                let minutes = tickMinutes(for: segment)
+                ForEach(minutes.indices, id: \.self) { index in
+                    let minute = minutes[index]
+                    let spanMinutes = (index + 1 < minutes.count ? minutes[index + 1] : minute + ScheduleTimelineZoomVisuals.fineTickStep) - minute
+                    tickRow(for: minute, rowSpanMinutes: max(1, spanMinutes))
                 }
             }
         }
         .animation(isPinchZoomActive ? nil : .smooth(duration: 0.28), value: scale)
     }
 
-    private func tickRow(for minute: Int) -> some View {
+    private func tickMinutes(for segment: ScheduleAvailabilityTimelineLayout.Segment) -> [Int] {
+        let step = ScheduleTimelineZoomVisuals.fineTickStep
+        guard segment.end > segment.start else { return [] }
+
+        var minutes: [Int] = []
+        var minute = segment.start
+        while minute < segment.end {
+            minutes.append(minute)
+            minute += step
+        }
+        if minutes.last != segment.end {
+            minutes.append(segment.end)
+        }
+        return minutes
+    }
+
+    private func tickRow(for minute: Int, rowSpanMinutes: Int) -> some View {
         let presentation = tickPresentation(for: minute)
-        let rowHeight = CGFloat(ScheduleTimelineZoomVisuals.fineTickStep) * verticalScale
+        let rowHeight = CGFloat(rowSpanMinutes) * verticalScale
 
         return HStack(alignment: .top, spacing: 6) {
             Group {
@@ -965,12 +996,13 @@ private struct SchedulePreciseTimelineCanvas: View {
         let midOpacity = ScheduleTimelineZoomVisuals.midTickLabelOpacity(scale: scale)
         let fineOpacity = ScheduleTimelineZoomVisuals.fineTickLabelOpacity(scale: scale)
         let minorLine = ScheduleTimelineZoomVisuals.minorGridLineOpacity(scale: scale)
+        let isScheduleBoundary = timelineLayout.segments.contains { $0.start == minute || $0.end == minute }
 
-        if minute % 30 == 0, majorOpacity > 0.04 {
+        if isScheduleBoundary || (minute % 30 == 0 && majorOpacity > 0.04) {
             return TickPresentation(
                 label: formatMinuteLabel(minute),
-                labelOpacity: majorOpacity,
-                lineOpacity: 0.16 + 0.24 * majorOpacity
+                labelOpacity: isScheduleBoundary ? max(majorOpacity, 0.85) : majorOpacity,
+                lineOpacity: isScheduleBoundary ? 0.28 : 0.16 + 0.24 * majorOpacity
             )
         }
 
@@ -1236,10 +1268,11 @@ private struct SchedulePreciseTimelineCanvas: View {
 
     private func visibleDragOffsetRange(top: CGFloat, height: CGFloat) -> (min: CGFloat, max: CGFloat) {
         let scrollY = currentScrollOffsetY()
-        let padding = ScheduleTimelineDragLayout.contentVerticalPadding
+        let topPadding = ScheduleTimelineDragLayout.contentTopPadding
+        let bottomPadding = ScheduleTimelineDragLayout.contentBottomInset
         let inset = ScheduleTimelineDragLayout.viewportEdgeInset
-        let minOffset = scrollY - padding - top + inset
-        let maxOffset = scrollY + viewportHeight - height - padding - top - inset
+        let minOffset = scrollY - topPadding - top + inset
+        let maxOffset = scrollY + viewportHeight - height - bottomPadding - top - inset
         return (minOffset, max(maxOffset, minOffset))
     }
 
@@ -1271,19 +1304,20 @@ private struct SchedulePreciseTimelineCanvas: View {
             totalOffsetY: totalOffsetY
         )
         let scrollY = currentScrollOffsetY()
-        let padding = ScheduleTimelineDragLayout.contentVerticalPadding
+        let topPadding = ScheduleTimelineDragLayout.contentTopPadding
+        let bottomPadding = ScheduleTimelineDragLayout.contentBottomInset
         let inset = ScheduleTimelineDragLayout.viewportEdgeInset
 
         if direction > 0, availabilityClamped >= maxDragOffsetY - 1 {
-            let viewportTop = padding + top + availabilityClamped - scrollY
-            if viewportTop <= padding + inset + 1 {
+            let viewportTop = topPadding + top + availabilityClamped - scrollY
+            if viewportTop <= topPadding + inset + 1 {
                 return false
             }
         }
 
         if direction < 0, availabilityClamped <= minDragOffsetY + 1 {
-            let viewportBottom = padding + top + availabilityClamped - scrollY + height
-            if viewportBottom >= viewportHeight - padding - inset - 1 {
+            let viewportBottom = topPadding + top + availabilityClamped - scrollY + height
+            if viewportBottom >= viewportHeight - bottomPadding - inset - 1 {
                 return false
             }
         }
@@ -2210,22 +2244,8 @@ private struct StaticAppointmentInteractionModifier: ViewModifier {
 enum ProviderScheduleTimelineBounds {
     static let defaultStartMinute = 8 * 60
     static let defaultEndMinute = 19 * 60
-
-    /// Padded outer range — used for week overview where a little breathing room helps.
-    static func range(for intervals: [BarberAvailabilityIntervalDTO], paddingMinutes: Int = 30) -> (start: Int, end: Int) {
-        guard !intervals.isEmpty else {
-            return (defaultStartMinute, defaultEndMinute)
-        }
-        var start = defaultEndMinute
-        var end = defaultStartMinute
-        for interval in intervals {
-            let s = minutesFromHHMM(interval.start)
-            let e = minutesFromHHMM(interval.end)
-            start = min(start, s)
-            end = max(end, e)
-        }
-        return (max(0, start - paddingMinutes), min(24 * 60, end + paddingMinutes))
-    }
+    /// Extra space below the timeline so the last time label is not clipped.
+    static let bottomLabelClearance: CGFloat = 32
 
     /// Exact booking-hour envelope with no padding — day/minute views use this.
     static func exactRange(for intervals: [BarberAvailabilityIntervalDTO]) -> (start: Int, end: Int)? {
@@ -2240,6 +2260,71 @@ enum ProviderScheduleTimelineBounds {
         }
         guard end > start else { return nil }
         return (start, end)
+    }
+
+    /// Week view: no padding on availability hours; extend one hour past the latest slot when a booking ends there.
+    static func weekRange(
+        intervals: [BarberAvailabilityIntervalDTO],
+        bookings: [SimpleBookingDTO],
+        calendar: Calendar,
+        durationMinutes: Int = ProviderScheduleHourlySlot.bookableSlotMinutes
+    ) -> (start: Int, end: Int) {
+        guard let envelope = exactRange(for: intervals) else {
+            return (defaultStartMinute, defaultEndMinute)
+        }
+
+        var start = envelope.start
+        var end = envelope.end
+        let availabilityEnd = envelope.end
+        var bookingTouchesLatestAvailability = false
+
+        for booking in bookings {
+            guard let appointment = ScheduleCanvasAppointment.from(
+                booking: booking,
+                calendar: calendar,
+                defaultDurationMinutes: durationMinutes
+            ) else { continue }
+            start = min(start, appointment.startMinute)
+            let bookingEnd = appointment.startMinute + appointment.durationMinutes
+            end = max(end, bookingEnd)
+            if bookingEnd >= availabilityEnd || appointment.startMinute >= availabilityEnd {
+                bookingTouchesLatestAvailability = true
+            }
+        }
+
+        if bookingTouchesLatestAvailability {
+            end = min(24 * 60, max(end, availabilityEnd + 60))
+        }
+
+        guard end > start else { return (defaultStartMinute, defaultEndMinute) }
+        return (start, end)
+    }
+
+    /// Padded outer range — used where extra breathing room is still desired.
+    static func range(for intervals: [BarberAvailabilityIntervalDTO], paddingMinutes: Int = 30) -> (start: Int, end: Int) {
+        guard let exact = exactRange(for: intervals) else {
+            return (defaultStartMinute, defaultEndMinute)
+        }
+        return (
+            max(0, exact.start - paddingMinutes),
+            min(24 * 60, exact.end + paddingMinutes)
+        )
+    }
+
+    /// Hour labels plus exact schedule start/end when they fall between whole hours.
+    static func scheduleBoundaryMarkers(from startMinute: Int, through endMinute: Int) -> [Int] {
+        guard endMinute > startMinute else { return [] }
+
+        var markers = Set<Int>([startMinute, endMinute])
+        var minute = (startMinute / 60) * 60
+        if minute < startMinute {
+            minute += 60
+        }
+        while minute < endMinute {
+            markers.insert(minute)
+            minute += 60
+        }
+        return markers.sorted()
     }
 
     /// Total minutes of availability (excludes gaps between intervals).
