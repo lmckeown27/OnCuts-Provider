@@ -67,7 +67,9 @@ struct ProviderAvailabilityEditorView: View {
                     }
                     weeklyScheduleSection
                         .id("weekly-schedule")
-                    timeBlocksSection
+                    if !timeBlocks.isEmpty {
+                        timeBlocksSection
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
@@ -85,11 +87,11 @@ struct ProviderAvailabilityEditorView: View {
             }
         }
         .providerNavigationStackDestinationBackdrop()
-        .navigationTitle("Manage Availability")
+        .navigationTitle("Availability")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text("Manage Availability")
+                Text("Availability")
                     .font(.provider(.headline, weight: .semibold))
             }
         }
@@ -428,10 +430,6 @@ struct ProviderAvailabilityEditorView: View {
                 Text(blocksError)
                     .font(.provider(.caption))
                     .foregroundStyle(.red)
-            } else if timeBlocks.isEmpty {
-                Text("No upcoming blocks.")
-                    .font(.provider(.footnote))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
             } else {
                 VStack(spacing: 8) {
                     ForEach(timeBlocks) { block in
