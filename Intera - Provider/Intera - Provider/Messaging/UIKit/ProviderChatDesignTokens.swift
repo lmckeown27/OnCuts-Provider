@@ -91,6 +91,8 @@ enum ProviderChatDesignTokens {
         static let inboxPreviewCornerRadius: CGFloat = 12
         static let inboxPreviewPaddingH: CGFloat = 10
         static let inboxPreviewPaddingV: CGFloat = 5
+        /// Space between the thread header and the first message bubble.
+        static let messageListTopPadding: CGFloat = 16
     }
 
     static func composerTypingAttributes() -> [NSAttributedString.Key: Any] {

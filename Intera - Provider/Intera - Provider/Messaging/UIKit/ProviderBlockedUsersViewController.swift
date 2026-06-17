@@ -21,7 +21,6 @@ final class ProviderBlockedUsersViewController: UIViewController {
 
     private func setupUI() {
         view.backgroundColor = ProviderChatDesignTokens.Color.screenBackground
-        title = "Blocked Users"
 
         tableView.backgroundColor = .clear
         tableView.dataSource = self

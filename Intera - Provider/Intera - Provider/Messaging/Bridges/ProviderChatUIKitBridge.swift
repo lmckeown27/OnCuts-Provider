@@ -119,14 +119,11 @@ enum ProviderChatNavigationBarStyle {
 // MARK: - Blocked users sheet
 
 struct ProviderBlockedUsersHost: UIViewControllerRepresentable {
-    func makeUIViewController(context: Context) -> UINavigationController {
-        let blocked = ProviderBlockedUsersViewController()
-        let navigationController = UINavigationController(rootViewController: blocked)
-        ProviderChatNavigationBarStyle.apply(to: navigationController.navigationBar)
-        return navigationController
+    func makeUIViewController(context: Context) -> ProviderBlockedUsersViewController {
+        ProviderBlockedUsersViewController()
     }
 
-    func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {}
+    func updateUIViewController(_ uiViewController: ProviderBlockedUsersViewController, context: Context) {}
 }
 
 // MARK: - Messages route
@@ -144,14 +141,8 @@ struct ProviderMessagesInboxView: View {
         @Bindable var navigator = shellNavigator
 
         NavigationStack(path: $navigator.messagesDetailPath) {
-            ProviderMessagesInboxUIKitHost(
-                barberTableId: session.barberProfile?.id,
-                currentUserId: session.authUser?.id,
+            ProviderChatInboxScreen(
                 reloadToken: inboxReloadToken,
-                onConversationSelected: { row in
-                    ProviderConversationMessagesPrefetch.prefetch(conversationId: row.id)
-                    navigator.messagesDetailPath.append(row.id)
-                },
                 onConversationsUpdated: { rows in
                     conversations = rows
                 }
@@ -165,7 +156,7 @@ struct ProviderMessagesInboxView: View {
                     Button {
                         showingBlockedUsers = true
                     } label: {
-                        Image(systemName: "shield.lefthalf.filled")
+                        Image(systemName: "person.crop.circle.badge.minus")
                     }
                     .accessibilityLabel("Blocked Users")
                 }
@@ -216,9 +207,11 @@ struct ProviderMessagesInboxView: View {
         .sheet(isPresented: $showingBlockedUsers) {
             NavigationStack {
                 ProviderBlockedUsersHost()
+                    .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { showingBlockedUsers = false }
+                        ToolbarItem(placement: .principal) {
+                            Text("Blocked Users")
+                                .font(.provider(.headline, weight: .semibold))
                         }
                     }
             }

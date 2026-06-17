@@ -158,6 +158,11 @@ extension Color {
 
     static var providerNeutralPushedBackdrop: Color { Color(uiColor: ProviderAppearance.neutralPushedBackdrop) }
 
+    /// Messaging accent blue (`#3A86FF`) — inbox CTAs and today appointment badges.
+    static var providerBrandAccent: Color {
+        Color(red: 58 / 255, green: 134 / 255, blue: 255 / 255)
+    }
+
     static var providerFormGroupedBackground: Color {
         Color(uiColor: ProviderAppearance.groupedShellBase)
     }

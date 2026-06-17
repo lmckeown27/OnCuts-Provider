@@ -29,7 +29,8 @@ final class ProviderChatDetailViewController: UIViewController {
     private var tableViewTopToBannerConstraint: NSLayoutConstraint?
 
     private let headerBar = UIView()
-    private let backButton = UIButton(type: .system)
+    private let headerBlurView = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+    private let backButton = ProviderChatHeaderGlassButton(symbolName: "chevron.backward")
     private let titleLabel = UILabel()
     private let trailingStack: UIStackView = {
         let stack = UIStackView()
@@ -38,9 +39,7 @@ final class ProviderChatDetailViewController: UIViewController {
         stack.alignment = .center
         return stack
     }()
-    private let safetyMenuButton = UIButton(type: .system)
-
-    private static let headerIconTint = ProviderChatDesignTokens.Color.providerOlive
+    private let safetyMenuButton = ProviderChatHeaderGlassButton(symbolName: "ellipsis")
 
     private let tableView = UITableView(frame: .zero, style: .plain)
     private lazy var inputBar = ProviderChatInputAccessoryView()
@@ -70,6 +69,7 @@ final class ProviderChatDetailViewController: UIViewController {
         loadMessages()
         Task { await refreshLinkedBooking() }
         installBackPanGestures()
+        installKeyboardDismissGestures()
 
         NotificationCenter.default.addObserver(
             self,
@@ -99,7 +99,7 @@ final class ProviderChatDetailViewController: UIViewController {
         // The composer is a regular subview (see `ProviderChatInputAccessoryView`'s type
         // doc for the *why*), so it can never collapse on return. Dismiss the keyboard
         // when leaving so the next screen doesn't inherit a stray edit session.
-        view.endEditing(true)
+        inputBar.resignComposerFocus()
     }
 
     // MARK: - UI Setup
@@ -107,19 +107,19 @@ final class ProviderChatDetailViewController: UIViewController {
     private func setupUI() {
         view.backgroundColor = ProviderChatDesignTokens.Color.screenBackground
 
-        headerBar.backgroundColor = ProviderAppearance.neutralPushedBackdrop
+        headerBar.backgroundColor = .clear
         headerBar.translatesAutoresizingMaskIntoConstraints = false
+
+        headerBlurView.translatesAutoresizingMaskIntoConstraints = false
+        headerBar.insertSubview(headerBlurView, at: 0)
 
         let headerDivider = UIView()
         headerDivider.backgroundColor = ProviderChatDesignTokens.Color.separator
         headerDivider.translatesAutoresizingMaskIntoConstraints = false
         headerBar.addSubview(headerDivider)
 
-        backButton.setImage(UIImage(systemName: "chevron.backward"), for: .normal)
-        backButton.tintColor = Self.headerIconTint
         backButton.accessibilityLabel = "Back"
         backButton.addTarget(self, action: #selector(conversationBackTapped), for: .touchUpInside)
-        backButton.translatesAutoresizingMaskIntoConstraints = false
 
         titleLabel.text = consumerDisplayName
         titleLabel.font = ProviderChatDesignTokens.Font.heading(17)
@@ -140,10 +140,13 @@ final class ProviderChatDetailViewController: UIViewController {
         tableView.register(ProviderChatMessageCell.self, forCellReuseIdentifier: ProviderChatMessageCell.reuseIdentifier)
         tableView.register(ProviderChatBookingRequestCell.self, forCellReuseIdentifier: ProviderChatBookingRequestCell.reuseIdentifier)
         tableView.translatesAutoresizingMaskIntoConstraints = false
+        let topPadding = ProviderChatDesignTokens.Metrics.messageListTopPadding
+        tableView.contentInset.top = topPadding
+        tableView.scrollIndicatorInsets.top = topPadding
 
         inputBar.delegate = self
 
-        loadingIndicator.color = Self.headerIconTint
+        loadingIndicator.color = ProviderChatDesignTokens.Color.lavaShellCream
         loadingIndicator.hidesWhenStopped = true
         loadingIndicator.translatesAutoresizingMaskIntoConstraints = false
 
@@ -158,6 +161,10 @@ final class ProviderChatDetailViewController: UIViewController {
         NSLayoutConstraint.activate([
             loadingIndicator.centerXAnchor.constraint(equalTo: tableView.centerXAnchor),
             loadingIndicator.centerYAnchor.constraint(equalTo: tableView.centerYAnchor),
+            headerBlurView.leadingAnchor.constraint(equalTo: headerBar.leadingAnchor),
+            headerBlurView.trailingAnchor.constraint(equalTo: headerBar.trailingAnchor),
+            headerBlurView.topAnchor.constraint(equalTo: headerBar.topAnchor),
+            headerBlurView.bottomAnchor.constraint(equalTo: headerBar.bottomAnchor),
             headerDivider.leadingAnchor.constraint(equalTo: headerBar.leadingAnchor),
             headerDivider.trailingAnchor.constraint(equalTo: headerBar.trailingAnchor),
             headerDivider.bottomAnchor.constraint(equalTo: headerBar.bottomAnchor),
@@ -167,8 +174,6 @@ final class ProviderChatDetailViewController: UIViewController {
 
     private func setupHeaderBar() {
         refreshSafetyMenu()
-        safetyMenuButton.setImage(UIImage(systemName: "ellipsis"), for: .normal)
-        safetyMenuButton.tintColor = Self.headerIconTint
         safetyMenuButton.accessibilityLabel = "Conversation options"
         safetyMenuButton.showsMenuAsPrimaryAction = true
         trailingStack.addArrangedSubview(safetyMenuButton)
@@ -192,12 +197,10 @@ final class ProviderChatDetailViewController: UIViewController {
             headerBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             headerBar.heightAnchor.constraint(equalToConstant: 44),
 
-            backButton.leadingAnchor.constraint(equalTo: headerBar.leadingAnchor, constant: 4),
+            backButton.leadingAnchor.constraint(equalTo: headerBar.leadingAnchor, constant: 14),
             backButton.centerYAnchor.constraint(equalTo: headerBar.centerYAnchor),
-            backButton.widthAnchor.constraint(equalToConstant: 44),
-            backButton.heightAnchor.constraint(equalToConstant: 44),
 
-            trailingStack.trailingAnchor.constraint(equalTo: headerBar.trailingAnchor, constant: -18),
+            trailingStack.trailingAnchor.constraint(equalTo: headerBar.trailingAnchor, constant: -14),
             trailingStack.centerYAnchor.constraint(equalTo: headerBar.centerYAnchor),
 
             titleLabel.centerXAnchor.constraint(equalTo: headerBar.centerXAnchor),
@@ -219,30 +222,10 @@ final class ProviderChatDetailViewController: UIViewController {
             inputBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
 
-        // Pin the composer above the keyboard (when shown) while hugging the safe-area
-        // bottom when the keyboard is down. Two cooperating constraints — `required`
-        // never-overlap-the-keyboard and `defaultHigh` rest-on-the-safe-area — are the
-        // canonical iOS 15+ `keyboardLayoutGuide` pattern from Apple's "Adopt the New Look
-        // of iOS 15" / WWDC sessions.
-        //
-        // When the keyboard is up, `keyboardLayoutGuide.topAnchor` is above the safe area;
-        // the `defaultHigh` safe-area equality is forced to break and the optimizer pulls
-        // the composer to `keyboard.top`. When the keyboard is down, the layout guide's
-        // top sits at `view.bottomAnchor`, the required `<=` is trivially satisfied, and
-        // the safe-area equality rests the composer on the safe-area bottom (above the
-        // home indicator). This matches how Messages and WhatsApp position their
-        // composers.
-        let aboveKeyboard = inputBar.bottomAnchor.constraint(
-            lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor
-        )
-        aboveKeyboard.priority = .required
-        aboveKeyboard.isActive = true
-
-        let restOnSafeArea = inputBar.bottomAnchor.constraint(
-            equalTo: view.safeAreaLayoutGuide.bottomAnchor
-        )
-        restOnSafeArea.priority = .defaultHigh
-        restOnSafeArea.isActive = true
+        // Pin the composer to the keyboard layout guide so it tracks presentation and
+        // dismissal animations. When the keyboard is hidden the guide's top sits at the
+        // safe-area bottom — no separate safe-area fallback constraint is needed.
+        inputBar.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor).isActive = true
 
         tableViewTopToHeaderConstraint = tableView.topAnchor.constraint(equalTo: headerBar.bottomAnchor)
         tableViewTopToBannerConstraint = tableView.topAnchor.constraint(equalTo: rescheduleBannerView.bottomAnchor, constant: 8)
@@ -257,6 +240,19 @@ final class ProviderChatDetailViewController: UIViewController {
             pan.cancelsTouchesInView = false
             gestureView.addGestureRecognizer(pan)
         }
+    }
+
+    private func installKeyboardDismissGestures() {
+        for target in [tableView, headerBar, rescheduleBannerView] as [UIView] {
+            let tap = UITapGestureRecognizer(target: self, action: #selector(dismissComposerKeyboard))
+            tap.cancelsTouchesInView = false
+            tap.delegate = self
+            target.addGestureRecognizer(tap)
+        }
+    }
+
+    @objc private func dismissComposerKeyboard() {
+        inputBar.resignComposerFocus()
     }
 
     // MARK: - Data
@@ -708,6 +704,12 @@ extension ProviderChatDetailViewController: UIGestureRecognizerDelegate {
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
         otherGestureRecognizer.view is UIScrollView
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard gestureRecognizer is UITapGestureRecognizer else { return true }
+        let location = touch.location(in: view)
+        return !inputBar.frame.contains(location)
     }
 }
 

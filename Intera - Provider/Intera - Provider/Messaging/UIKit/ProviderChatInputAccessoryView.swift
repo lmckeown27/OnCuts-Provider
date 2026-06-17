@@ -112,6 +112,11 @@ final class ProviderChatInputAccessoryView: UIView {
         textView.becomeFirstResponder()
     }
 
+    /// Resigns composer focus so UIKit animates keyboard dismissal in sync with `keyboardLayoutGuide`.
+    func resignComposerFocus() {
+        textView.resignFirstResponder()
+    }
+
     // MARK: - UI Setup
 
     private func setupUI() {
