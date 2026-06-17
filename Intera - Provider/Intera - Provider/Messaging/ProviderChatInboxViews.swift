@@ -120,32 +120,6 @@ struct ProviderChatThreadCard: View {
     }
 }
 
-// MARK: - Olive outlined ribbon label
-
-private struct ProviderOliveOutlinedModifier: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-
-    func body(content: Content) -> some View {
-        let outline = colorScheme == .dark ? Color.white : Color.black
-        content
-            .foregroundStyle(Color.providerOlive)
-            .shadow(color: outline, radius: 0, x: 0, y: 1)
-            .shadow(color: outline, radius: 0, x: 0, y: -1)
-            .shadow(color: outline, radius: 0, x: 1, y: 0)
-            .shadow(color: outline, radius: 0, x: -1, y: 0)
-            .shadow(color: outline, radius: 0, x: 0.75, y: 0.75)
-            .shadow(color: outline, radius: 0, x: -0.75, y: 0.75)
-            .shadow(color: outline, radius: 0, x: 0.75, y: -0.75)
-            .shadow(color: outline, radius: 0, x: -0.75, y: -0.75)
-    }
-}
-
-private extension View {
-    func providerOliveOutlined() -> some View {
-        modifier(ProviderOliveOutlinedModifier())
-    }
-}
-
 // MARK: - Inbox list
 
 struct ProviderChatInboxListView: View {

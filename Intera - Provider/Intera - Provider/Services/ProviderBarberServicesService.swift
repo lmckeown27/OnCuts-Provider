@@ -29,7 +29,13 @@ enum ProviderBarberServicesService {
         pricing: [BarberPricingEntryDTO]
     ) async throws {
         let enc = barberId.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlPathAllowed) ?? barberId
-        let pricingBody: [[String: Any]] = pricing.map { ["name": $0.name, "price": $0.price] }
+        let pricingBody: [[String: Any]] = pricing.map { entry in
+            var row: [String: Any] = ["name": entry.name, "price": entry.price]
+            if let durationMinutes = entry.durationMinutes {
+                row["duration_minutes"] = durationMinutes
+            }
+            return row
+        }
         let body: [String: Any] = [
             "specialties": specialties,
             "pricing": pricingBody,

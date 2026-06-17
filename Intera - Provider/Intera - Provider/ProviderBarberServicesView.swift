@@ -14,6 +14,9 @@ struct ProviderBarberServicesView: View {
     @State private var toast: String?
 
     private let priceBounds = 5 ... 500
+    private let durationBounds = 15 ... 240
+    private let ledgerFieldLabelWidth: CGFloat = 48
+    private let ledgerFieldInputWidth: CGFloat = 52
 
     var body: some View {
         Group {
@@ -54,18 +57,11 @@ struct ProviderBarberServicesView: View {
                                 .background(Color.providerOlive.opacity(0.45), in: Capsule())
                         }
 
-                        Text("Select services and set your prices. Offerings and base prices come from your campus service list.")
+                        Text("Choose the services you offer, then set a price and duration for each one.")
                             .font(.provider(.subheadline))
                             .foregroundStyle(Color.lavaShellCream.opacity(0.8))
 
-                        LazyVGrid(
-                            columns: [GridItem(.adaptive(minimum: 148), spacing: 12)],
-                            spacing: 12
-                        ) {
-                            ForEach($rows) { $row in
-                                serviceCard(row: $row)
-                            }
-                        }
+                        servicesLedger
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
@@ -76,7 +72,7 @@ struct ProviderBarberServicesView: View {
         }
         .background(Color.clear)
         .providerNavigationStackDestinationBackdrop()
-        .navigationTitle("Services & Pricing")
+        .navigationTitle("Services")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .foregroundStyle(Color.lavaShellCream)
@@ -89,119 +85,226 @@ struct ProviderBarberServicesView: View {
         }
     }
 
+    private var servicesLedger: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(Array(ledgerSections.enumerated()), id: \.element.category) { index, section in
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(section.category.title)
+                        .font(.provider(.caption2, weight: .bold))
+                        .tracking(0.6)
+                        .foregroundStyle(Color.lavaShellCream.opacity(0.45))
+                        .padding(.top, index == 0 ? 0 : 16)
+                        .padding(.bottom, 8)
+
+                    VStack(spacing: 14) {
+                        ForEach(section.slugs, id: \.self) { slug in
+                            if let idx = rows.firstIndex(where: { $0.slug == slug }) {
+                                serviceLedgerRow(row: $rows[idx])
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var ledgerSections: [ServiceLedgerSection] {
+        let grouped = Dictionary(grouping: rows, by: \.category)
+        return ServiceLedgerCategory.displayOrder.compactMap { category in
+            guard let sectionRows = grouped[category], !sectionRows.isEmpty else { return nil }
+            let ordered = sectionRows.sorted(by: ledgerRowSort)
+            return ServiceLedgerSection(category: category, slugs: ordered.map(\.slug))
+        }
+    }
+
+    /// Alphabetical within each section, except **Haircut** and **Buzz Cut** are swapped
+    /// (Haircut appears where Buzz Cut would have been alphabetically, and vice versa).
+    private func ledgerRowSort(_ lhs: ServiceEditRow, _ rhs: ServiceEditRow) -> Bool {
+        if isHaircutBuzzCutPair(lhs, rhs) {
+            return lhs.normalizedLedgerSlug == "haircut"
+        }
+        return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+    }
+
+    private func isHaircutBuzzCutPair(_ lhs: ServiceEditRow, _ rhs: ServiceEditRow) -> Bool {
+        Set([lhs.normalizedLedgerSlug, rhs.normalizedLedgerSlug]) == ["haircut", "buzz-cut"]
+    }
+
     @ViewBuilder
-    private func serviceCard(row: Binding<ServiceEditRow>) -> some View {
+    private func serviceLedgerRow(row: Binding<ServiceEditRow>) -> some View {
         let r = row.wrappedValue
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 8) {
+        let isActive = r.isOffered
+
+        HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 Button {
                     Task { await toggleOffered(slug: r.slug) }
                 } label: {
-                    Image(systemName: r.isOffered ? "checkmark.square.fill" : "square")
+                    Image(systemName: isActive ? "checkmark.square.fill" : "square")
                         .font(.provider(.title3))
-                        .foregroundStyle(r.isOffered ? Color.providerOlive : Color.lavaShellCream.opacity(0.45))
+                        .foregroundStyle(isActive ? Color.providerOlive : Color.lavaShellCream.opacity(0.4))
                 }
                 .buttonStyle(.plain)
                 .disabled(saving)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(r.name)
-                        .font(.provider(.subheadline, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCream)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if !r.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text(r.description)
-                            .font(.provider(.caption2))
-                            .foregroundStyle(Color.lavaShellCream.opacity(0.55))
-                            .lineLimit(3)
-                    }
-                }
-                Spacer(minLength: 0)
+                Text(r.name)
+                    .font(.provider(.body, weight: .bold))
+                    .foregroundStyle(isActive ? Color.lavaShellCream : Color.lavaShellCream.opacity(0.55))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.9)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            if r.isOffered {
-                HStack(spacing: 8) {
-                    Text("$")
-                        .font(.provider(.headline, weight: .bold))
-                        .foregroundStyle(Color.lavaShellCream.opacity(0.55))
-
-                    TextField("Price", text: row.priceText)
-                        .keyboardType(.numberPad)
-                        .font(.provider(.headline, weight: .bold))
-                        .foregroundStyle(Color.lavaShellCream)
-                        .frame(minWidth: 48, maxWidth: 72)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color.white.opacity(r.priceNeedsCommit ? 0.14 : 0.08))
-                        )
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(
-                                    r.priceNeedsCommit ? Color.providerOlive : Color.lavaShellCream.opacity(0.2),
-                                    lineWidth: r.priceNeedsCommit ? 2 : 1
-                                )
-                        }
-                        .disabled(saving)
-                        .accessibilityLabel("Price for \(r.name)")
-
-                    if r.priceNeedsCommit {
-                        Button {
-                            Task { await commitPrice(slug: r.slug) }
-                        } label: {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.provider(.title2))
-                                .symbolRenderingMode(.palette)
-                                .foregroundStyle(Color.lavaShellCream, Color.providerOlive)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(saving)
-                        .accessibilityLabel("Confirm price")
-
-                        Button {
-                            resetPriceDraft(slug: r.slug)
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.provider(.title3))
-                                .foregroundStyle(Color.lavaShellCream.opacity(0.45))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(saving)
-                        .accessibilityLabel("Cancel price change")
-                    }
-                }
-
-                if r.priceNeedsCommit {
-                    Text("Tap the checkmark to save this price.")
-                        .font(.provider(.caption2))
-                        .foregroundStyle(Color.lavaShellCream.opacity(0.6))
-                }
-            } else {
-                Text("+ Add")
-                    .font(.provider(.caption, weight: .semibold))
-                    .foregroundStyle(Color.providerOlive)
+            VStack(alignment: .leading, spacing: 8) {
+                priceInputSlot(row: row, isActive: isActive)
+                durationInputSlot(row: row, isActive: isActive)
             }
+            .layoutPriority(1)
         }
-        .padding(12)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(r.isOffered ? Color.providerOlive.opacity(0.18) : Color.white.opacity(0.06))
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(isActive ? Color.providerOlive.opacity(0.14) : Color.white.opacity(0.04))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(
-                    r.isOffered ? Color.providerOlive.opacity(0.55) : Color.lavaShellCream.opacity(0.15),
+                    isActive ? Color.providerOlive.opacity(0.72) : Color.lavaShellCream.opacity(0.14),
                     lineWidth: 2
                 )
         )
-        .contentShape(Rectangle())
+        .opacity(isActive ? 1 : 0.45)
+        .animation(.easeInOut(duration: 0.2), value: isActive)
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .onTapGesture {
-            if !r.isOffered, !saving {
+            if !isActive, !saving {
                 Task { await toggleOffered(slug: r.slug) }
             }
         }
+    }
+
+    @ViewBuilder
+    private func priceInputSlot(row: Binding<ServiceEditRow>, isActive: Bool) -> some View {
+        let r = row.wrappedValue
+        HStack(alignment: .center, spacing: 6) {
+            Text("Price:")
+                .font(.provider(.caption, weight: .semibold))
+                .foregroundStyle(Color.lavaShellCream.opacity(isActive ? 0.62 : 0.38))
+                .frame(width: ledgerFieldLabelWidth, alignment: .trailing)
+
+            HStack(spacing: 4) {
+                Text("$")
+                    .font(.provider(.subheadline, weight: .bold))
+                    .foregroundStyle(Color.lavaShellCream.opacity(isActive ? 0.55 : 0.35))
+
+                TextField("0", text: row.priceText)
+                    .keyboardType(.numberPad)
+                    .font(.provider(.headline, weight: .bold))
+                    .foregroundStyle(isActive ? Color.lavaShellCream : Color.lavaShellCream.opacity(0.45))
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: ledgerFieldInputWidth)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(serviceInputBackground(isActive: isActive, needsCommit: r.priceNeedsCommit))
+                    .overlay(serviceInputBorder(isActive: isActive, needsCommit: r.priceNeedsCommit))
+                    .disabled(!isActive || saving)
+                    .accessibilityLabel("Price for \(r.name)")
+
+                if isActive, r.priceNeedsCommit {
+                    serviceFieldCommitButtons(
+                        onConfirm: { Task { await commitPrice(slug: r.slug) } },
+                        onCancel: { resetPriceDraft(slug: r.slug) },
+                        confirmAccessibilityLabel: "Confirm price",
+                        cancelAccessibilityLabel: "Cancel price change"
+                    )
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func durationInputSlot(row: Binding<ServiceEditRow>, isActive: Bool) -> some View {
+        let r = row.wrappedValue
+        HStack(alignment: .center, spacing: 6) {
+            Text("Time:")
+                .font(.provider(.caption, weight: .semibold))
+                .foregroundStyle(Color.lavaShellCream.opacity(isActive ? 0.62 : 0.38))
+                .frame(width: ledgerFieldLabelWidth, alignment: .trailing)
+
+            HStack(spacing: 4) {
+                TextField("0", text: row.durationText)
+                    .keyboardType(.numberPad)
+                    .font(.provider(.headline, weight: .bold))
+                    .foregroundStyle(isActive ? Color.lavaShellCream : Color.lavaShellCream.opacity(0.45))
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: ledgerFieldInputWidth)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(serviceInputBackground(isActive: isActive, needsCommit: r.durationNeedsCommit))
+                    .overlay(serviceInputBorder(isActive: isActive, needsCommit: r.durationNeedsCommit))
+                    .disabled(!isActive || saving)
+                    .accessibilityLabel("Duration in minutes for \(r.name)")
+
+                Text("min")
+                    .font(.provider(.caption, weight: .semibold))
+                    .foregroundStyle(Color.lavaShellCream.opacity(isActive ? 0.55 : 0.35))
+
+                if isActive, r.durationNeedsCommit {
+                    serviceFieldCommitButtons(
+                        onConfirm: { Task { await commitDuration(slug: r.slug) } },
+                        onCancel: { resetDurationDraft(slug: r.slug) },
+                        confirmAccessibilityLabel: "Confirm duration",
+                        cancelAccessibilityLabel: "Cancel duration change"
+                    )
+                }
+            }
+        }
+    }
+
+    private func serviceInputBackground(isActive: Bool, needsCommit: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(
+                isActive
+                    ? Color.white.opacity(needsCommit ? 0.18 : 0.12)
+                    : Color.white.opacity(0.03)
+            )
+    }
+
+    private func serviceInputBorder(isActive: Bool, needsCommit: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .strokeBorder(
+                needsCommit ? Color.providerOlive : Color.lavaShellCream.opacity(isActive ? 0.22 : 0.1),
+                lineWidth: needsCommit ? 2 : 1
+            )
+    }
+
+    @ViewBuilder
+    private func serviceFieldCommitButtons(
+        onConfirm: @escaping () -> Void,
+        onCancel: @escaping () -> Void,
+        confirmAccessibilityLabel: String,
+        cancelAccessibilityLabel: String
+    ) -> some View {
+        Button(action: onConfirm) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.provider(.title2))
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(Color.lavaShellCream, Color.providerOlive)
+        }
+        .buttonStyle(.plain)
+        .disabled(saving)
+        .accessibilityLabel(confirmAccessibilityLabel)
+
+        Button(action: onCancel) {
+            Image(systemName: "xmark.circle.fill")
+                .font(.provider(.title3))
+                .foregroundStyle(Color.lavaShellCream.opacity(0.45))
+        }
+        .buttonStyle(.plain)
+        .disabled(saving)
+        .accessibilityLabel(cancelAccessibilityLabel)
     }
 
     private func load() async {
@@ -240,9 +343,16 @@ struct ProviderBarberServicesView: View {
             let base = next.committedPriceDollars > 0 ? next.committedPriceDollars : next.suggestedDollars
             next.committedPriceDollars = clampPrice(base)
             next.priceText = "\(next.committedPriceDollars)"
+            let baseDuration = next.committedDurationMinutes > 0
+                ? next.committedDurationMinutes
+                : next.suggestedDurationMinutes
+            next.committedDurationMinutes = clampDuration(baseDuration)
+            next.durationText = "\(next.committedDurationMinutes)"
         } else {
             next.committedPriceDollars = next.suggestedDollars
             next.priceText = "\(next.suggestedDollars)"
+            next.committedDurationMinutes = next.suggestedDurationMinutes
+            next.durationText = "\(next.suggestedDurationMinutes)"
         }
         rows[idx] = next
 
@@ -270,8 +380,35 @@ struct ProviderBarberServicesView: View {
         rows[idx].priceText = "\(rows[idx].committedPriceDollars)"
     }
 
+    private func commitDuration(slug: String) async {
+        guard let idx = rows.firstIndex(where: { $0.slug == slug }) else { return }
+        saving = true
+        defer { saving = false }
+
+        let digits = rows[idx].durationText.filter(\.isNumber)
+        guard let raw = Int(digits) else { return }
+        let clamped = clampDuration(raw)
+        rows[idx].committedDurationMinutes = clamped
+        rows[idx].durationText = "\(clamped)"
+        await persistAndRefresh(from: rows)
+        toast = clamped != raw
+            ? "Duration must be \(durationBounds.lowerBound)–\(durationBounds.upperBound) minutes; saved \(clamped) min."
+            : "Saved."
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        toast = nil
+    }
+
+    private func resetDurationDraft(slug: String) {
+        guard let idx = rows.firstIndex(where: { $0.slug == slug }) else { return }
+        rows[idx].durationText = "\(rows[idx].committedDurationMinutes)"
+    }
+
     private func clampPrice(_ v: Int) -> Int {
         min(priceBounds.upperBound, max(priceBounds.lowerBound, v))
+    }
+
+    private func clampDuration(_ v: Int) -> Int {
+        min(durationBounds.upperBound, max(durationBounds.lowerBound, v))
     }
 
     private func persistAndRefresh(from state: [ServiceEditRow]) async {
@@ -281,7 +418,11 @@ struct ProviderBarberServicesView: View {
         }
         let specialties = state.filter(\.isOffered).map(\.name)
         let pricing: [BarberPricingEntryDTO] = state.filter(\.isOffered).map {
-            BarberPricingEntryDTO(name: $0.name, price: Double($0.committedPriceDollars))
+            BarberPricingEntryDTO(
+                name: $0.name,
+                price: Double($0.committedPriceDollars),
+                durationMinutes: $0.committedDurationMinutes
+            )
         }
         do {
             try await ProviderBarberServicesService.updateBarberServicesAndPricing(
@@ -302,28 +443,46 @@ struct ProviderBarberServicesView: View {
     ) -> [ServiceEditRow] {
         let specLower = Set((barber.specialties ?? []).map { $0.lowercased() })
         var priceByName: [String: Double] = [:]
+        var durationByName: [String: Int] = [:]
         for p in barber.pricing ?? [] {
             priceByName[p.name.lowercased()] = p.price
+            if let durationMinutes = p.durationMinutes {
+                durationByName[p.name.lowercased()] = durationMinutes
+            }
         }
 
         return catalog.map { item in
             let offered = specLower.contains(item.name.lowercased())
             let suggestedRaw = max(1, item.basePriceCents / 100)
             let suggested = max(5, min(500, suggestedRaw))
+            let suggestedDuration = clampStatic(
+                item.defaultDurationMinutes ?? 45,
+                min: 15,
+                max: 240
+            )
             let saved = priceByName[item.name.lowercased()]
             let initialDollars = clampStatic(
                 Int((saved ?? Double(suggested)).rounded()),
                 min: 5,
                 max: 500
             )
+            let savedDuration = durationByName[item.name.lowercased()]
+            let initialDuration = clampStatic(
+                savedDuration ?? suggestedDuration,
+                min: 15,
+                max: 240
+            )
             return ServiceEditRow(
                 slug: item.slug,
                 name: item.name,
-                description: item.description ?? "",
+                category: ServiceLedgerCategorizer.category(slug: item.slug, name: item.name),
                 suggestedDollars: suggested,
+                suggestedDurationMinutes: suggestedDuration,
                 isOffered: offered,
                 priceText: offered ? "\(initialDollars)" : "\(suggested)",
-                committedPriceDollars: offered ? initialDollars : suggested
+                committedPriceDollars: offered ? initialDollars : suggested,
+                durationText: offered ? "\(initialDuration)" : "\(suggestedDuration)",
+                committedDurationMinutes: offered ? initialDuration : suggestedDuration
             )
         }
     }
@@ -333,19 +492,99 @@ struct ProviderBarberServicesView: View {
     }
 }
 
+private struct ServiceLedgerSection: Hashable {
+    let category: ServiceLedgerCategory
+    let slugs: [String]
+}
+
+private enum ServiceLedgerCategory: String, Hashable {
+    case haircuts
+    case beardAndGrooming
+    case textureAndDesign
+    case colorAndTreatments
+    case other
+
+    var title: String {
+        switch self {
+        case .haircuts: "Haircuts"
+        case .beardAndGrooming: "Beard & Grooming"
+        case .textureAndDesign: "Texture & Design"
+        case .colorAndTreatments: "Color & Treatments"
+        case .other: "Other Services"
+        }
+    }
+
+    static let displayOrder: [ServiceLedgerCategory] = [
+        .haircuts, .beardAndGrooming, .textureAndDesign, .colorAndTreatments, .other,
+    ]
+}
+
+private enum ServiceLedgerCategorizer {
+    static func category(slug: String, name: String) -> ServiceLedgerCategory {
+        let haystack = "\(slug) \(name)".lowercased()
+        if haystack.contains("beard")
+            || haystack.contains("shave")
+            || haystack.contains("lineup")
+            || haystack.contains("line-up")
+            || haystack.contains("line up") {
+            return .beardAndGrooming
+        }
+        if haystack.contains("color")
+            || haystack.contains("perm")
+            || haystack.contains("treatment")
+            || haystack.contains("dye") {
+            return .colorAndTreatments
+        }
+        if haystack.contains("design")
+            || haystack.contains("afro")
+            || haystack.contains("texture")
+            || haystack.contains("art") {
+            return .textureAndDesign
+        }
+        if haystack.contains("hair")
+            || haystack.contains("fade")
+            || haystack.contains("cut")
+            || haystack.contains("buzz")
+            || haystack.contains("taper")
+            || haystack.contains("mullet")
+            || haystack.contains("kids")
+            || haystack.contains("women") {
+            return .haircuts
+        }
+        return .other
+    }
+}
+
 private struct ServiceEditRow: Identifiable, Hashable {
     let slug: String
     let name: String
-    let description: String
+    let category: ServiceLedgerCategory
     let suggestedDollars: Int
+    let suggestedDurationMinutes: Int
     var isOffered: Bool
     var priceText: String
     var committedPriceDollars: Int
+    var durationText: String
+    var committedDurationMinutes: Int
 
     var id: String { slug }
 
+    var normalizedLedgerSlug: String {
+        let trimmedSlug = slug.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !trimmedSlug.isEmpty { return trimmedSlug }
+        return name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "-")
+    }
+
     var parsedPriceDollars: Int? {
         let digits = priceText.filter(\.isNumber)
+        guard !digits.isEmpty else { return nil }
+        return Int(digits)
+    }
+
+    var parsedDurationMinutes: Int? {
+        let digits = durationText.filter(\.isNumber)
         guard !digits.isEmpty else { return nil }
         return Int(digits)
     }
@@ -354,5 +593,11 @@ private struct ServiceEditRow: Identifiable, Hashable {
         guard isOffered else { return false }
         guard let p = parsedPriceDollars else { return false }
         return p != committedPriceDollars
+    }
+
+    var durationNeedsCommit: Bool {
+        guard isOffered else { return false }
+        guard let duration = parsedDurationMinutes else { return false }
+        return duration != committedDurationMinutes
     }
 }

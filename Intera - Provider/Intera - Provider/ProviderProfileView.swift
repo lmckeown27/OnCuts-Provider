@@ -1,21 +1,11 @@
 import SwiftUI
 
-/// Account screen: native **UIKit** profile editor (web parity) + quick account actions.
+/// Account screen: SwiftUI barber control center.
 struct ProviderProfileContent: View {
-    @Environment(ProviderSession.self) private var session
-
     var body: some View {
-        ProviderProfileEditViewRepresentable()
-            .environment(session)
+        BarberAccountControlView()
             .navigationTitle("Account")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Sign Out", role: .destructive) {
-                        Task { await session.signOut() }
-                    }
-                }
-            }
     }
 }
 

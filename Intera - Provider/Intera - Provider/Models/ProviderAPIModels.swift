@@ -98,6 +98,8 @@ struct AdminServiceCatalogItem: Decodable, Identifiable, Hashable {
     let minPriceCents: Int?
     let maxPriceCents: Int?
     let isActive: Bool?
+    /// Campus default appointment length when the catalog exposes it (`default_duration_minutes`).
+    let defaultDurationMinutes: Int?
 }
 
 // MARK: - Barber profile by user (`GET /barbers/user/:userId`) — services & pricing editor
@@ -113,14 +115,16 @@ struct BarberUserProfileDTO: Decodable {
     let pricing: [BarberPricingEntryDTO]?
 }
 
-/// One priced service row from `barbers.pricing` JSONB or merged barber payload (`name` + `price` in dollars).
+/// One priced service row from `barbers.pricing` JSONB (`name`, `price`, optional `duration_minutes`).
 struct BarberPricingEntryDTO: Decodable, Hashable {
     let name: String
     let price: Double
+    let durationMinutes: Int?
 
-    init(name: String, price: Double) {
+    init(name: String, price: Double, durationMinutes: Int? = nil) {
         self.name = name
         self.price = price
+        self.durationMinutes = durationMinutes
     }
 
     init(from decoder: Decoder) throws {
@@ -136,11 +140,13 @@ struct BarberPricingEntryDTO: Decodable, Hashable {
         } else {
             price = 0
         }
+        durationMinutes = try c.decodeIfPresent(Int.self, forKey: .durationMinutes)
     }
 
     private enum CodingKeys: String, CodingKey {
         case name
         case price
+        case durationMinutes = "duration_minutes"
     }
 }
 

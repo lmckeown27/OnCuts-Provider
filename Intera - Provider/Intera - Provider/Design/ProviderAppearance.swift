@@ -54,6 +54,12 @@ enum ProviderAppearance {
     }
 
     static let olive = UIColor(red: 90 / 255, green: 114 / 255, blue: 104 / 255, alpha: 1)
+    /// Inbox message ribbon — darker olive in dark mode, lighter olive in light mode.
+    static let inboxMessageOlive = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 72 / 255, green: 94 / 255, blue: 86 / 255, alpha: 1)
+            : UIColor(red: 118 / 255, green: 142 / 255, blue: 132 / 255, alpha: 1)
+    }
     static let oliveFill = UIColor { traits in
         traits.userInterfaceStyle == .dark
             ? UIColor(red: 90 / 255, green: 114 / 255, blue: 104 / 255, alpha: 0.92)
@@ -163,6 +169,9 @@ extension Color {
         Color(red: 58 / 255, green: 134 / 255, blue: 255 / 255)
     }
 
+    /// Olive inbox preview text — appearance-adaptive for ribbon legibility.
+    static var providerInboxMessageOlive: Color { Color(uiColor: ProviderAppearance.inboxMessageOlive) }
+
     static var providerFormGroupedBackground: Color {
         Color(uiColor: ProviderAppearance.groupedShellBase)
     }
@@ -174,4 +183,26 @@ extension Color {
     static var providerScheduleCardStroke: Color { Color(uiColor: ProviderAppearance.scheduleCardStroke) }
     static var providerScheduleControlFill: Color { Color(uiColor: ProviderAppearance.scheduleControlFill) }
     static var providerScheduleControlStroke: Color { Color(uiColor: ProviderAppearance.scheduleControlStroke) }
+}
+
+// MARK: - Olive outlined label (Messages inbox ribbon + Account)
+
+struct ProviderOliveOutlinedModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        let outline = colorScheme == .dark ? Color.white : Color.black
+        content
+            .foregroundStyle(Color.providerInboxMessageOlive)
+            .shadow(color: outline, radius: 0, x: 0, y: 0.5)
+            .shadow(color: outline, radius: 0, x: 0, y: -0.5)
+            .shadow(color: outline, radius: 0, x: 0.5, y: 0)
+            .shadow(color: outline, radius: 0, x: -0.5, y: 0)
+    }
+}
+
+extension View {
+    func providerOliveOutlined() -> some View {
+        modifier(ProviderOliveOutlinedModifier())
+    }
 }

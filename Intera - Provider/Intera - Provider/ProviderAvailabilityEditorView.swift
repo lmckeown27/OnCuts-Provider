@@ -40,6 +40,9 @@ struct ProviderAvailabilityEditorView: View {
 
     // Page load — one gate so sections appear together, not as each API returns.
     @State private var isLoadingContent = true
+    @State private var pendingWeeklyEditorScroll = false
+    @State private var isHydratingWeekly = false
+    @State private var weeklyAutosaveTask: Task<Void, Never>?
 
     // Generic toast / save feedback
     @State private var savedToast: String?
@@ -53,37 +56,52 @@ struct ProviderAvailabilityEditorView: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 22) {
-                if let savedToast {
-                    inlineBanner(text: savedToast, tint: .green)
+        ScrollViewReader { scrollProxy in
+            ScrollView {
+                LazyVStack(spacing: 22) {
+                    if let savedToast {
+                        inlineBanner(text: savedToast, tint: .green)
+                    }
+                    if session.hasProviderProfile, !isLoadingContent {
+                        availabilityActionsRow
+                    }
+                    weeklyScheduleSection
+                        .id("weekly-schedule")
+                    timeBlocksSection
                 }
-                // googleCalendarSection — disabled until the integration is fully built out
-                // (see `#if false` blocks throughout this file).
-                weeklyScheduleSection
-                timeBlocksSection
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 36)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 36)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .scrollIndicators(.hidden)
+            .scrollContentBackground(.hidden)
+            .onChange(of: weeklyEditorReady) { _, isReady in
+                guard isReady, pendingWeeklyEditorScroll else { return }
+                pendingWeeklyEditorScroll = false
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    scrollProxy.scrollTo("weekly-schedule", anchor: .top)
+                }
+            }
         }
-        .scrollIndicators(.hidden)
-        .scrollContentBackground(.hidden)
         .providerNavigationStackDestinationBackdrop()
-        .navigationTitle("Manage availability")
+        .navigationTitle("Manage Availability")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Save") {
-                    Task { await saveWeeklySchedule() }
-                }
-                .disabled(!weeklyDirty || savingWeekly || weeklyValidationError != nil)
+            ToolbarItem(placement: .principal) {
+                Text("Manage Availability")
+                    .font(.provider(.headline, weight: .semibold))
             }
         }
         .toolbar(.visible, for: .navigationBar)
         .foregroundStyle(Color.lavaShellCream)
         .tint(.providerOlive)
+        .onChange(of: weekly) { _, _ in
+            scheduleWeeklyAutosave()
+        }
+        .onDisappear {
+            weeklyAutosaveTask?.cancel()
+        }
         .task {
             await loadAll()
         }
@@ -93,6 +111,8 @@ struct ProviderAvailabilityEditorView: View {
         .sheet(isPresented: $showingAddBlock, onDismiss: { /* nothing — list reloads on save */ }) {
             ProviderTimeBlockEditorSheet(
                 barberId: session.barberProfile?.id,
+                navigationTitle: "Block Time",
+                confirmButtonTitle: "Block",
                 bookings: ProviderScheduleBookingConflicts.upcomingBookings(
                     from: scheduleBookings,
                     calendar: scheduleCalendar
@@ -142,6 +162,40 @@ struct ProviderAvailabilityEditorView: View {
     }
 
     // MARK: - Sections
+
+    private var availabilityActionsRow: some View {
+        HStack(spacing: 10) {
+            availabilityActionButton(title: "Edit Schedule", action: beginWeeklyScheduleEditing)
+            availabilityActionButton(title: "Block Time", action: { showingAddBlock = true })
+        }
+    }
+
+    private func availabilityActionButton(title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.provider(.subheadline, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .providerOliveOutlined()
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.providerScheduleCardFill)
+                        .overlay(
+                            Capsule(style: .continuous)
+                                .strokeBorder(Color.providerOlive.opacity(0.62), lineWidth: 0.65)
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func beginWeeklyScheduleEditing() {
+        pendingWeeklyEditorScroll = true
+        weeklyEditorReady = true
+    }
 
     // MARK: Google Calendar section — TEMPORARILY DISABLED (see file header).
     #if false
@@ -234,24 +288,6 @@ struct ProviderAvailabilityEditorView: View {
                 Text(weeklyError)
                     .font(.provider(.caption))
                     .foregroundStyle(.red)
-            }
-            if weeklyDirty, weeklyValidationError == nil {
-                HStack(spacing: 10) {
-                    Spacer()
-                    Button("Discard") {
-                        weekly = originalWeekly
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-                    primaryActionButton(
-                        title: savingWeekly ? "Saving…" : "Save schedule",
-                        systemImage: "checkmark.circle.fill",
-                        disabled: savingWeekly
-                    ) {
-                        Task { await saveWeeklySchedule() }
-                    }
-                }
-                .padding(.top, 4)
             }
         }
     }
@@ -402,13 +438,6 @@ struct ProviderAvailabilityEditorView: View {
                         timeBlockRow(block)
                     }
                 }
-            }
-            primaryActionButton(
-                title: "Add time block",
-                systemImage: "plus",
-                disabled: !session.hasProviderProfile || isLoadingContent
-            ) {
-                showingAddBlock = true
             }
         }
     }
@@ -650,6 +679,9 @@ struct ProviderAvailabilityEditorView: View {
         // calendarStatus / calendarError assignments removed while the Google Calendar
         // integration is parked. Restore alongside the `calendar:` parameter when re-enabling.
 
+        isHydratingWeekly = true
+        defer { isHydratingWeekly = false }
+
         if let schedule = weekly.0 {
             self.weekly = schedule
             originalWeekly = schedule
@@ -672,7 +704,7 @@ struct ProviderAvailabilityEditorView: View {
 
     private func prepareWeeklyEditor() async {
         await Task.yield()
-        weeklyEditorReady = true
+        weeklyEditorReady = false
     }
 
     // MARK: Google Calendar fetch helper — TEMPORARILY DISABLED.
@@ -726,6 +758,17 @@ struct ProviderAvailabilityEditorView: View {
         }
     }
 
+    private func scheduleWeeklyAutosave() {
+        guard !isHydratingWeekly, !isLoadingContent, weeklyEditorReady else { return }
+        guard weeklyDirty, weeklyValidationError == nil, !savingWeekly else { return }
+        weeklyAutosaveTask?.cancel()
+        weeklyAutosaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard !Task.isCancelled else { return }
+            await saveWeeklySchedule()
+        }
+    }
+
     private func saveWeeklySchedule() async {
         guard let barberId = session.barberProfile?.id else { return }
         recomputeValidation()
@@ -751,7 +794,6 @@ struct ProviderAvailabilityEditorView: View {
             try await ProviderAvailabilityManagementService.updateWeeklySchedule(barberId: barberId, schedule: weekly)
             originalWeekly = weekly
             NotificationCenter.default.post(name: .providerAvailabilityChanged, object: nil)
-            showSavedToast("Weekly schedule saved.")
         } catch {
             weeklyError = (error as? LocalizedError)?.errorDescription ?? "Could not save schedule."
         }

@@ -264,7 +264,7 @@ struct ProviderScheduleDashboardView: View {
             if let barberId = session.barberProfile?.id {
                 ProviderTimeBlockEditorSheet(
                     barberId: barberId,
-                    navigationTitle: "Block time",
+                    navigationTitle: "Block Time",
                     confirmButtonTitle: "Block",
                     initialDate: blockSheetDayStart,
                     initialBlocksEntireDay: blockSheetBlocksEntireDay,
@@ -453,7 +453,7 @@ struct ProviderScheduleDashboardView: View {
                 action: beginInlineAvailabilityEditing
             )
             scheduleActionButton(
-                title: "Block time",
+                title: "Block Time",
                 action: {
                     prepareBlockSheetForSelectedDay()
                     showingBlockTimeSheet = true
@@ -471,18 +471,18 @@ struct ProviderScheduleDashboardView: View {
                 .font(.provider(.subheadline, weight: .semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
+                .providerOliveOutlined()
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    Capsule(style: .continuous)
                         .fill(Color.providerScheduleCardFill)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            Capsule(style: .continuous)
                                 .strokeBorder(Color.providerOlive.opacity(0.62), lineWidth: 0.65)
                         )
                 )
-                .foregroundStyle(Color.lavaShellCream)
         }
         .buttonStyle(.plain)
     }
