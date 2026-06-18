@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Campus Manager **Services** tab: same ledger layout as `ProviderBarberServicesView`, but toggling a
-/// service adds/removes it from the campus catalog barbers can select from.
+/// service adds/removes it from the campus catalog and sets **price / duration ranges** barbers choose within.
 struct ProviderCampusManagerServicesView: View {
     @State private var rows: [CampusCatalogEditRow] = []
     @State private var isLoading = true
@@ -9,13 +9,17 @@ struct ProviderCampusManagerServicesView: View {
     @State private var showDeletedServices = false
     @State private var showAddForm = false
     @State private var addServiceName = ""
-    @State private var addServicePrice = ""
+    @State private var addMinPrice = ""
+    @State private var addMaxPrice = ""
+    @State private var addMinDuration = ""
+    @State private var addMaxDuration = ""
     @State private var addServiceError: String?
     @State private var saving = false
     @State private var toast: String?
     @State private var servicePendingRemoval: CampusCatalogEditRow?
 
     private let priceBounds = 5 ... 500
+    private let durationBounds = 15 ... 240
 
     var body: some View {
         Group {
@@ -51,7 +55,7 @@ struct ProviderCampusManagerServicesView: View {
                             .background(Color.providerOlive.opacity(0.45), in: Capsule())
                     }
 
-                    Text("Add or remove services barbers can offer, and set the default base price for each.")
+                    Text("Add or remove services barbers can offer, and set the price and duration ranges they may choose within.")
                         .font(.provider(.subheadline))
                         .foregroundStyle(Color.lavaShellCream.opacity(0.8))
 
@@ -168,29 +172,29 @@ struct ProviderCampusManagerServicesView: View {
                         .fill(Color.white.opacity(0.12))
                 )
 
-            HStack(spacing: 6) {
-                Text("Price:")
-                    .font(.provider(.caption, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCream.opacity(0.62))
-                    .frame(width: ProviderServicesLedgerStyle.fieldLabelWidth, alignment: .trailing)
-                HStack(spacing: 4) {
-                    Text("$")
-                        .font(.provider(.subheadline, weight: .bold))
-                        .foregroundStyle(Color.lavaShellCream.opacity(0.55))
-                    TextField("0", text: $addServicePrice)
-                        .keyboardType(.numberPad)
-                        .font(.provider(.headline, weight: .bold))
-                        .foregroundStyle(Color.lavaShellCream)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: ProviderServicesLedgerStyle.fieldInputWidth)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color.white.opacity(0.12))
-                        )
-                }
-            }
+            catalogRangeInputRow(
+                label: "Price:",
+                prefix: "$",
+                suffix: nil,
+                minText: $addMinPrice,
+                maxText: $addMaxPrice,
+                isEnabled: true,
+                needsCommit: false,
+                onConfirm: nil,
+                onCancel: nil
+            )
+
+            catalogRangeInputRow(
+                label: "Time:",
+                prefix: nil,
+                suffix: "min",
+                minText: $addMinDuration,
+                maxText: $addMaxDuration,
+                isEnabled: true,
+                needsCommit: false,
+                onConfirm: nil,
+                onCancel: nil
+            )
 
             if let addServiceError, !addServiceError.isEmpty {
                 Text(addServiceError)
@@ -247,8 +251,29 @@ struct ProviderCampusManagerServicesView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 8) {
-                catalogPriceInputSlot(row: row, isAvailable: isAvailable)
-                catalogDurationDisplay(row: r, isAvailable: isAvailable)
+                catalogRangeInputRow(
+                    label: "Price:",
+                    prefix: "$",
+                    suffix: nil,
+                    minText: row.minPriceText,
+                    maxText: row.maxPriceText,
+                    isEnabled: isAvailable,
+                    needsCommit: r.priceNeedsCommit,
+                    onConfirm: { Task { await commitPriceRange(slug: r.slug) } },
+                    onCancel: { resetPriceDraft(slug: r.slug) }
+                )
+
+                catalogRangeInputRow(
+                    label: "Time:",
+                    prefix: nil,
+                    suffix: "min",
+                    minText: row.minDurationText,
+                    maxText: row.maxDurationText,
+                    isEnabled: isAvailable,
+                    needsCommit: r.durationNeedsCommit,
+                    onConfirm: { Task { await commitDurationRange(slug: r.slug) } },
+                    onCancel: { resetDurationDraft(slug: r.slug) }
+                )
             }
             .layoutPriority(1)
         }
@@ -276,69 +301,74 @@ struct ProviderCampusManagerServicesView: View {
     }
 
     @ViewBuilder
-    private func catalogPriceInputSlot(row: Binding<CampusCatalogEditRow>, isAvailable: Bool) -> some View {
-        let r = row.wrappedValue
-        HStack(alignment: .center, spacing: 6) {
-            Text("Price:")
+    private func catalogRangeInputRow(
+        label: String,
+        prefix: String?,
+        suffix: String?,
+        minText: Binding<String>,
+        maxText: Binding<String>,
+        isEnabled: Bool,
+        needsCommit: Bool,
+        onConfirm: (() -> Void)?,
+        onCancel: (() -> Void)?
+    ) -> some View {
+        HStack(alignment: .center, spacing: 4) {
+            Text(label)
                 .font(.provider(.caption, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream.opacity(isAvailable ? 0.62 : 0.38))
+                .foregroundStyle(Color.lavaShellCream.opacity(isEnabled ? 0.62 : 0.38))
                 .frame(width: ProviderServicesLedgerStyle.fieldLabelWidth, alignment: .trailing)
 
-            HStack(spacing: 4) {
-                Text("$")
-                    .font(.provider(.subheadline, weight: .bold))
-                    .foregroundStyle(Color.lavaShellCream.opacity(isAvailable ? 0.55 : 0.35))
+            HStack(spacing: 3) {
+                if let prefix {
+                    Text(prefix)
+                        .font(.provider(.caption, weight: .bold))
+                        .foregroundStyle(Color.lavaShellCream.opacity(isEnabled ? 0.55 : 0.35))
+                }
 
-                TextField("0", text: row.priceText)
-                    .keyboardType(.numberPad)
-                    .font(.provider(.headline, weight: .bold))
-                    .foregroundStyle(isAvailable ? Color.lavaShellCream : Color.lavaShellCream.opacity(0.45))
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: ProviderServicesLedgerStyle.fieldInputWidth)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(catalogInputBackground(isAvailable: isAvailable, needsCommit: r.priceNeedsCommit))
-                    .overlay(catalogInputBorder(isAvailable: isAvailable, needsCommit: r.priceNeedsCommit))
-                    .disabled(!isAvailable || saving)
-                    .accessibilityLabel("Default price for \(r.name)")
+                catalogRangeField(text: minText, isEnabled: isEnabled, needsCommit: needsCommit)
 
-                if isAvailable, r.priceNeedsCommit {
+                Text("–")
+                    .font(.provider(.caption, weight: .semibold))
+                    .foregroundStyle(Color.lavaShellCream.opacity(isEnabled ? 0.45 : 0.28))
+
+                if let prefix {
+                    Text(prefix)
+                        .font(.provider(.caption, weight: .bold))
+                        .foregroundStyle(Color.lavaShellCream.opacity(isEnabled ? 0.55 : 0.35))
+                }
+
+                catalogRangeField(text: maxText, isEnabled: isEnabled, needsCommit: needsCommit)
+
+                if let suffix {
+                    Text(suffix)
+                        .font(.provider(.caption2, weight: .semibold))
+                        .foregroundStyle(Color.lavaShellCream.opacity(isEnabled ? 0.55 : 0.35))
+                }
+
+                if isEnabled, needsCommit, let onConfirm, let onCancel {
                     catalogFieldCommitButtons(
-                        onConfirm: { Task { await commitPrice(slug: r.slug) } },
-                        onCancel: { resetPriceDraft(slug: r.slug) },
-                        confirmAccessibilityLabel: "Confirm price",
-                        cancelAccessibilityLabel: "Cancel price change"
+                        onConfirm: onConfirm,
+                        onCancel: onCancel,
+                        confirmAccessibilityLabel: "Confirm \(label) range",
+                        cancelAccessibilityLabel: "Cancel \(label) range change"
                     )
                 }
             }
         }
     }
 
-    @ViewBuilder
-    private func catalogDurationDisplay(row: CampusCatalogEditRow, isAvailable: Bool) -> some View {
-        HStack(alignment: .center, spacing: 6) {
-            Text("Time:")
-                .font(.provider(.caption, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream.opacity(isAvailable ? 0.62 : 0.38))
-                .frame(width: ProviderServicesLedgerStyle.fieldLabelWidth, alignment: .trailing)
-
-            HStack(spacing: 4) {
-                Text("\(row.defaultDurationMinutes)")
-                    .font(.provider(.headline, weight: .bold))
-                    .foregroundStyle(isAvailable ? Color.lavaShellCream.opacity(0.75) : Color.lavaShellCream.opacity(0.45))
-                    .frame(width: ProviderServicesLedgerStyle.fieldInputWidth, alignment: .trailing)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.white.opacity(isAvailable ? 0.06 : 0.03))
-                    )
-
-                Text("min")
-                    .font(.provider(.caption, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCream.opacity(isAvailable ? 0.55 : 0.35))
-            }
-        }
+    private func catalogRangeField(text: Binding<String>, isEnabled: Bool, needsCommit: Bool) -> some View {
+        TextField("0", text: text)
+            .keyboardType(.numberPad)
+            .font(.provider(.subheadline, weight: .bold))
+            .foregroundStyle(isEnabled ? Color.lavaShellCream : Color.lavaShellCream.opacity(0.45))
+            .multilineTextAlignment(.trailing)
+            .frame(width: ProviderServicesLedgerStyle.rangeFieldInputWidth)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 6)
+            .background(catalogInputBackground(isAvailable: isEnabled, needsCommit: needsCommit))
+            .overlay(catalogInputBorder(isAvailable: isEnabled, needsCommit: needsCommit))
+            .disabled(!isEnabled || saving)
     }
 
     private func catalogInputBackground(isAvailable: Bool, needsCommit: Bool) -> some View {
@@ -367,7 +397,7 @@ struct ProviderCampusManagerServicesView: View {
     ) -> some View {
         Button(action: onConfirm) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.provider(.title2))
+                .font(.provider(.title3))
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(Color.lavaShellCream, Color.providerOlive)
         }
@@ -377,7 +407,7 @@ struct ProviderCampusManagerServicesView: View {
 
         Button(action: onCancel) {
             Image(systemName: "xmark.circle.fill")
-                .font(.provider(.title3))
+                .font(.provider(.title2))
                 .foregroundStyle(Color.lavaShellCream.opacity(0.45))
         }
         .buttonStyle(.plain)
@@ -432,23 +462,62 @@ struct ProviderCampusManagerServicesView: View {
         }
     }
 
-    private func commitPrice(slug: String) async {
+    private func commitPriceRange(slug: String) async {
         guard let idx = rows.firstIndex(where: { $0.slug == slug }) else { return }
+        guard let parsed = parsePriceRange(from: rows[idx]) else {
+            toast = "Enter a valid price range (min ≤ max, $5–$500)."
+            return
+        }
+
         saving = true
         defer { saving = false }
 
-        let digits = rows[idx].priceText.filter(\.isNumber)
-        guard let raw = Int(digits), raw > 0 else { return }
-        let clamped = clampPrice(raw)
-        rows[idx].committedPriceDollars = clamped
-        rows[idx].priceText = "\(clamped)"
+        rows[idx].committedMinPriceDollars = parsed.min
+        rows[idx].committedMaxPriceDollars = parsed.max
+        rows[idx].minPriceText = "\(parsed.min)"
+        rows[idx].maxPriceText = "\(parsed.max)"
 
         do {
-            try await ProviderCampusManagerService.updatePlatformServiceBasePrice(
+            try await ProviderCampusManagerService.updatePlatformServiceBounds(
                 id: rows[idx].id,
-                basePriceCents: clamped * 100
+                minPriceCents: parsed.min * 100,
+                maxPriceCents: parsed.max * 100,
+                minDurationMinutes: rows[idx].committedMinDurationMinutes,
+                maxDurationMinutes: rows[idx].committedMaxDurationMinutes
             )
-            toast = clamped != raw ? "Price must be $\(priceBounds.lowerBound)–$\(priceBounds.upperBound); saved $\(clamped)." : "Saved."
+            toast = "Price range saved."
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            toast = nil
+        } catch {
+            toast = error.localizedDescription
+            await load()
+        }
+    }
+
+    private func commitDurationRange(slug: String) async {
+        guard let idx = rows.firstIndex(where: { $0.slug == slug }) else { return }
+        guard let parsed = parseDurationRange(from: rows[idx]) else {
+            toast = "Enter a valid duration range (min ≤ max, 15–240 min)."
+            return
+        }
+
+        saving = true
+        defer { saving = false }
+
+        rows[idx].committedMinDurationMinutes = parsed.min
+        rows[idx].committedMaxDurationMinutes = parsed.max
+        rows[idx].minDurationText = "\(parsed.min)"
+        rows[idx].maxDurationText = "\(parsed.max)"
+
+        do {
+            try await ProviderCampusManagerService.updatePlatformServiceBounds(
+                id: rows[idx].id,
+                minPriceCents: rows[idx].committedMinPriceDollars * 100,
+                maxPriceCents: rows[idx].committedMaxPriceDollars * 100,
+                minDurationMinutes: parsed.min,
+                maxDurationMinutes: parsed.max
+            )
+            toast = "Duration range saved."
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             toast = nil
         } catch {
@@ -459,7 +528,14 @@ struct ProviderCampusManagerServicesView: View {
 
     private func resetPriceDraft(slug: String) {
         guard let idx = rows.firstIndex(where: { $0.slug == slug }) else { return }
-        rows[idx].priceText = "\(rows[idx].committedPriceDollars)"
+        rows[idx].minPriceText = "\(rows[idx].committedMinPriceDollars)"
+        rows[idx].maxPriceText = "\(rows[idx].committedMaxPriceDollars)"
+    }
+
+    private func resetDurationDraft(slug: String) {
+        guard let idx = rows.firstIndex(where: { $0.slug == slug }) else { return }
+        rows[idx].minDurationText = "\(rows[idx].committedMinDurationMinutes)"
+        rows[idx].maxDurationText = "\(rows[idx].committedMaxDurationMinutes)"
     }
 
     private func submitAddService() async {
@@ -469,12 +545,26 @@ struct ProviderCampusManagerServicesView: View {
             addServiceError = "Service name is required."
             return
         }
-        let raw = addServicePrice.replacingOccurrences(of: ",", with: ".")
-        guard let dollars = Double(raw.trimmingCharacters(in: .whitespaces)), dollars > 0 else {
-            addServiceError = "Enter a valid base price."
+
+        guard let minPrice = Int(addMinPrice.filter(\.isNumber)),
+              let maxPrice = Int(addMaxPrice.filter(\.isNumber)),
+              minPrice >= priceBounds.lowerBound,
+              maxPrice <= priceBounds.upperBound,
+              minPrice <= maxPrice
+        else {
+            addServiceError = "Enter a valid price range ($5–$500, min ≤ max)."
             return
         }
-        let cents = Int((dollars * 100).rounded())
+
+        guard let minDuration = Int(addMinDuration.filter(\.isNumber)),
+              let maxDuration = Int(addMaxDuration.filter(\.isNumber)),
+              minDuration >= durationBounds.lowerBound,
+              maxDuration <= durationBounds.upperBound,
+              minDuration <= maxDuration
+        else {
+            addServiceError = "Enter a valid duration range (15–240 min, min ≤ max)."
+            return
+        }
 
         saving = true
         defer { saving = false }
@@ -483,7 +573,10 @@ struct ProviderCampusManagerServicesView: View {
             try await ProviderCampusManagerService.createPlatformService(
                 name: name,
                 description: nil,
-                basePriceCents: cents
+                minPriceCents: minPrice * 100,
+                maxPriceCents: maxPrice * 100,
+                minDurationMinutes: minDuration,
+                maxDurationMinutes: maxDuration
             )
             showAddForm = false
             clearAddForm()
@@ -500,27 +593,65 @@ struct ProviderCampusManagerServicesView: View {
 
     private func clearAddForm() {
         addServiceName = ""
-        addServicePrice = ""
+        addMinPrice = ""
+        addMaxPrice = ""
+        addMinDuration = ""
+        addMaxDuration = ""
         addServiceError = nil
     }
 
-    private func clampPrice(_ value: Int) -> Int {
-        min(priceBounds.upperBound, max(priceBounds.lowerBound, value))
+    private func parsePriceRange(from row: CampusCatalogEditRow) -> (min: Int, max: Int)? {
+        guard let minVal = Int(row.minPriceText.filter(\.isNumber)),
+              let maxVal = Int(row.maxPriceText.filter(\.isNumber)),
+              minVal >= priceBounds.lowerBound,
+              maxVal <= priceBounds.upperBound,
+              minVal <= maxVal
+        else { return nil }
+        return (minVal, maxVal)
+    }
+
+    private func parseDurationRange(from row: CampusCatalogEditRow) -> (min: Int, max: Int)? {
+        guard let minVal = Int(row.minDurationText.filter(\.isNumber)),
+              let maxVal = Int(row.maxDurationText.filter(\.isNumber)),
+              minVal >= durationBounds.lowerBound,
+              maxVal <= durationBounds.upperBound,
+              minVal <= maxVal
+        else { return nil }
+        return (minVal, maxVal)
     }
 
     private static func mappedRows(from catalog: [AdminServiceCatalogItem]) -> [CampusCatalogEditRow] {
         catalog.map { item in
-            let baseDollars = clampStatic(max(1, item.basePriceCents / 100), min: 5, max: 500)
-            let duration = clampStatic(item.defaultDurationMinutes ?? 45, min: 15, max: 240)
+            let baseDollars = max(1, item.basePriceCents / 100)
+            let minDollars = item.minPriceCents.map { max(1, $0 / 100) }
+                ?? clampStatic(Int((Double(baseDollars) * 0.8).rounded()), min: 5, max: 500)
+            let maxDollars = item.maxPriceCents.map { max(1, $0 / 100) }
+                ?? clampStatic(Int((Double(baseDollars) * 1.5).rounded()), min: 5, max: 500)
+            let resolvedMinPrice = min(minDollars, maxDollars)
+            let resolvedMaxPrice = max(minDollars, maxDollars)
+
+            let defaultDuration = item.defaultDurationMinutes ?? 45
+            let minDuration = item.minDurationMinutes
+                ?? clampStatic(defaultDuration - 15, min: 15, max: 240)
+            let maxDuration = item.maxDurationMinutes
+                ?? clampStatic(defaultDuration + 15, min: 15, max: 240)
+            let resolvedMinDuration = min(minDuration, maxDuration)
+            let resolvedMaxDuration = max(minDuration, maxDuration)
+
             return CampusCatalogEditRow(
                 id: item.id,
                 slug: item.slug,
                 name: item.name,
                 category: ServiceLedgerCategorizer.category(slug: item.slug, name: item.name),
                 isAvailable: item.isActive ?? true,
-                priceText: "\(baseDollars)",
-                committedPriceDollars: baseDollars,
-                defaultDurationMinutes: duration
+                minPriceText: "\(resolvedMinPrice)",
+                maxPriceText: "\(resolvedMaxPrice)",
+                committedMinPriceDollars: resolvedMinPrice,
+                committedMaxPriceDollars: resolvedMaxPrice,
+                minDurationText: "\(resolvedMinDuration)",
+                maxDurationText: "\(resolvedMaxDuration)",
+                committedMinDurationMinutes: resolvedMinDuration,
+                committedMaxDurationMinutes: resolvedMaxDuration
             )
         }
     }
@@ -536,19 +667,38 @@ private struct CampusCatalogEditRow: Identifiable, Hashable {
     let name: String
     let category: ServiceLedgerCategory
     var isAvailable: Bool
-    var priceText: String
-    var committedPriceDollars: Int
-    let defaultDurationMinutes: Int
-
-    var parsedPriceDollars: Int? {
-        let digits = priceText.filter(\.isNumber)
-        guard !digits.isEmpty else { return nil }
-        return Int(digits)
-    }
+    var minPriceText: String
+    var maxPriceText: String
+    var committedMinPriceDollars: Int
+    var committedMaxPriceDollars: Int
+    var minDurationText: String
+    var maxDurationText: String
+    var committedMinDurationMinutes: Int
+    var committedMaxDurationMinutes: Int
 
     var priceNeedsCommit: Bool {
         guard isAvailable else { return false }
-        guard let parsed = parsedPriceDollars else { return false }
-        return parsed != committedPriceDollars
+        guard let parsed = parsedPriceRange else { return false }
+        return parsed.min != committedMinPriceDollars || parsed.max != committedMaxPriceDollars
+    }
+
+    var durationNeedsCommit: Bool {
+        guard isAvailable else { return false }
+        guard let parsed = parsedDurationRange else { return false }
+        return parsed.min != committedMinDurationMinutes || parsed.max != committedMaxDurationMinutes
+    }
+
+    private var parsedPriceRange: (min: Int, max: Int)? {
+        guard let minVal = Int(minPriceText.filter(\.isNumber)),
+              let maxVal = Int(maxPriceText.filter(\.isNumber))
+        else { return nil }
+        return (minVal, maxVal)
+    }
+
+    private var parsedDurationRange: (min: Int, max: Int)? {
+        guard let minVal = Int(minDurationText.filter(\.isNumber)),
+              let maxVal = Int(maxDurationText.filter(\.isNumber))
+        else { return nil }
+        return (minVal, maxVal)
     }
 }

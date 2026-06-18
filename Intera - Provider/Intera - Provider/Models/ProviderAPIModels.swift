@@ -98,8 +98,11 @@ struct AdminServiceCatalogItem: Decodable, Identifiable, Hashable {
     let minPriceCents: Int?
     let maxPriceCents: Int?
     let isActive: Bool?
-    /// Campus default appointment length when the catalog exposes it (`default_duration_minutes`).
+    /// Default / suggested appointment length when the catalog exposes it.
     let defaultDurationMinutes: Int?
+    /// Allowed barber duration floor / ceiling (minutes) — set by Campus Manager / Admin.
+    let minDurationMinutes: Int?
+    let maxDurationMinutes: Int?
 }
 
 // MARK: - Barber profile by user (`GET /barbers/user/:userId`) — services & pricing editor

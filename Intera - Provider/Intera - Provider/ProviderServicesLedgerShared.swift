@@ -66,6 +66,7 @@ enum ServiceLedgerCategorizer {
 enum ProviderServicesLedgerStyle {
     static let fieldLabelWidth: CGFloat = 48
     static let fieldInputWidth: CGFloat = 52
+    static let rangeFieldInputWidth: CGFloat = 40
 }
 
 enum ServiceLedgerRowOrdering {

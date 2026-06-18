@@ -114,10 +114,22 @@ enum ProviderCampusManagerService {
         return env.data ?? []
     }
 
-    static func createPlatformService(name: String, description: String?, basePriceCents: Int) async throws {
+    static func createPlatformService(
+        name: String,
+        description: String?,
+        minPriceCents: Int,
+        maxPriceCents: Int,
+        minDurationMinutes: Int,
+        maxDurationMinutes: Int
+    ) async throws {
+        let basePriceCents = (minPriceCents + maxPriceCents) / 2
         var body: [String: Any] = [
             "name": name,
             "basePriceCents": basePriceCents,
+            "minPriceCents": minPriceCents,
+            "maxPriceCents": maxPriceCents,
+            "minDurationMinutes": minDurationMinutes,
+            "maxDurationMinutes": maxDurationMinutes,
         ]
         if let description, !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             body["description"] = description
@@ -126,6 +138,27 @@ enum ProviderCampusManagerService {
             path: "admin/services",
             method: "POST",
             jsonBody: body
+        )
+    }
+
+    static func updatePlatformServiceBounds(
+        id: Int,
+        minPriceCents: Int,
+        maxPriceCents: Int,
+        minDurationMinutes: Int,
+        maxDurationMinutes: Int
+    ) async throws {
+        let basePriceCents = (minPriceCents + maxPriceCents) / 2
+        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+            path: "admin/services/\(id)",
+            method: "PUT",
+            jsonBody: [
+                "basePriceCents": basePriceCents,
+                "minPriceCents": minPriceCents,
+                "maxPriceCents": maxPriceCents,
+                "minDurationMinutes": minDurationMinutes,
+                "maxDurationMinutes": maxDurationMinutes,
+            ]
         )
     }
 

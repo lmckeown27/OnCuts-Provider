@@ -13,9 +13,6 @@ struct ProviderBarberServicesView: View {
     @State private var saving = false
     @State private var toast: String?
 
-    private let priceBounds = 5 ... 500
-    private let durationBounds = 15 ... 240
-
     var body: some View {
         Group {
             if isLoading {
@@ -55,7 +52,7 @@ struct ProviderBarberServicesView: View {
                                 .background(Color.providerOlive.opacity(0.45), in: Capsule())
                         }
 
-                        Text("Choose the services you offer, then set a price and duration for each one.")
+                        Text("Choose the services you offer, then set a price and duration within each service's allowed range.")
                             .font(.provider(.subheadline))
                             .foregroundStyle(Color.lavaShellCream.opacity(0.8))
 
@@ -328,12 +325,12 @@ struct ProviderBarberServicesView: View {
         next.isOffered.toggle()
         if next.isOffered {
             let base = next.committedPriceDollars > 0 ? next.committedPriceDollars : next.suggestedDollars
-            next.committedPriceDollars = clampPrice(base)
+            next.committedPriceDollars = clampPrice(base, for: next)
             next.priceText = "\(next.committedPriceDollars)"
             let baseDuration = next.committedDurationMinutes > 0
                 ? next.committedDurationMinutes
                 : next.suggestedDurationMinutes
-            next.committedDurationMinutes = clampDuration(baseDuration)
+            next.committedDurationMinutes = clampDuration(baseDuration, for: next)
             next.durationText = "\(next.committedDurationMinutes)"
         } else {
             next.committedPriceDollars = next.suggestedDollars
@@ -353,11 +350,14 @@ struct ProviderBarberServicesView: View {
 
         let digits = rows[idx].priceText.filter(\.isNumber)
         guard let raw = Int(digits) else { return }
-        let clamped = clampPrice(raw)
+        let row = rows[idx]
+        let clamped = clampPrice(raw, for: row)
         rows[idx].committedPriceDollars = clamped
         rows[idx].priceText = "\(clamped)"
         await persistAndRefresh(from: rows)
-        toast = clamped != raw ? "Price must be $\(priceBounds.lowerBound)–$\(priceBounds.upperBound); saved $\(clamped)." : "Saved."
+        toast = clamped != raw
+            ? "Price must be $\(row.minPriceDollars)–$\(row.maxPriceDollars); saved $\(clamped)."
+            : "Saved."
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         toast = nil
     }
@@ -374,12 +374,13 @@ struct ProviderBarberServicesView: View {
 
         let digits = rows[idx].durationText.filter(\.isNumber)
         guard let raw = Int(digits) else { return }
-        let clamped = clampDuration(raw)
+        let row = rows[idx]
+        let clamped = clampDuration(raw, for: row)
         rows[idx].committedDurationMinutes = clamped
         rows[idx].durationText = "\(clamped)"
         await persistAndRefresh(from: rows)
         toast = clamped != raw
-            ? "Duration must be \(durationBounds.lowerBound)–\(durationBounds.upperBound) minutes; saved \(clamped) min."
+            ? "Duration must be \(row.minDurationMinutes)–\(row.maxDurationMinutes) minutes; saved \(clamped) min."
             : "Saved."
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         toast = nil
@@ -390,12 +391,36 @@ struct ProviderBarberServicesView: View {
         rows[idx].durationText = "\(rows[idx].committedDurationMinutes)"
     }
 
-    private func clampPrice(_ v: Int) -> Int {
-        min(priceBounds.upperBound, max(priceBounds.lowerBound, v))
+    private func clampPrice(_ v: Int, for row: ServiceEditRow) -> Int {
+        min(row.maxPriceDollars, max(row.minPriceDollars, v))
     }
 
-    private func clampDuration(_ v: Int) -> Int {
-        min(durationBounds.upperBound, max(durationBounds.lowerBound, v))
+    private func clampDuration(_ v: Int, for row: ServiceEditRow) -> Int {
+        min(row.maxDurationMinutes, max(row.minDurationMinutes, v))
+    }
+
+    private static func resolvedPriceBounds(for item: AdminServiceCatalogItem) -> (min: Int, max: Int, suggested: Int) {
+        let baseDollars = max(1, item.basePriceCents / 100)
+        let minDollars = item.minPriceCents.map { max(1, $0 / 100) }
+            ?? clampStatic(Int((Double(baseDollars) * 0.8).rounded()), min: 5, max: 500)
+        let maxDollars = item.maxPriceCents.map { max(1, $0 / 100) }
+            ?? clampStatic(Int((Double(baseDollars) * 1.5).rounded()), min: 5, max: 500)
+        let minBound = min(minDollars, maxDollars)
+        let maxBound = max(minDollars, maxDollars)
+        let suggested = clampStatic(baseDollars, min: minBound, max: maxBound)
+        return (minBound, maxBound, suggested)
+    }
+
+    private static func resolvedDurationBounds(for item: AdminServiceCatalogItem) -> (min: Int, max: Int, suggested: Int) {
+        let defaultDuration = item.defaultDurationMinutes ?? 45
+        let minDuration = item.minDurationMinutes
+            ?? clampStatic(defaultDuration - 15, min: 15, max: 240)
+        let maxDuration = item.maxDurationMinutes
+            ?? clampStatic(defaultDuration + 15, min: 15, max: 240)
+        let minBound = min(minDuration, maxDuration)
+        let maxBound = max(minDuration, maxDuration)
+        let suggested = clampStatic(defaultDuration, min: minBound, max: maxBound)
+        return (minBound, maxBound, suggested)
     }
 
     private func persistAndRefresh(from state: [ServiceEditRow]) async {
@@ -440,36 +465,35 @@ struct ProviderBarberServicesView: View {
 
         return catalog.map { item in
             let offered = specLower.contains(item.name.lowercased())
-            let suggestedRaw = max(1, item.basePriceCents / 100)
-            let suggested = max(5, min(500, suggestedRaw))
-            let suggestedDuration = clampStatic(
-                item.defaultDurationMinutes ?? 45,
-                min: 15,
-                max: 240
-            )
+            let priceBounds = resolvedPriceBounds(for: item)
+            let durationBounds = resolvedDurationBounds(for: item)
             let saved = priceByName[item.name.lowercased()]
             let initialDollars = clampStatic(
-                Int((saved ?? Double(suggested)).rounded()),
-                min: 5,
-                max: 500
+                Int((saved ?? Double(priceBounds.suggested)).rounded()),
+                min: priceBounds.min,
+                max: priceBounds.max
             )
             let savedDuration = durationByName[item.name.lowercased()]
             let initialDuration = clampStatic(
-                savedDuration ?? suggestedDuration,
-                min: 15,
-                max: 240
+                savedDuration ?? durationBounds.suggested,
+                min: durationBounds.min,
+                max: durationBounds.max
             )
             return ServiceEditRow(
                 slug: item.slug,
                 name: item.name,
                 category: ServiceLedgerCategorizer.category(slug: item.slug, name: item.name),
-                suggestedDollars: suggested,
-                suggestedDurationMinutes: suggestedDuration,
+                minPriceDollars: priceBounds.min,
+                maxPriceDollars: priceBounds.max,
+                minDurationMinutes: durationBounds.min,
+                maxDurationMinutes: durationBounds.max,
+                suggestedDollars: priceBounds.suggested,
+                suggestedDurationMinutes: durationBounds.suggested,
                 isOffered: offered,
-                priceText: offered ? "\(initialDollars)" : "\(suggested)",
-                committedPriceDollars: offered ? initialDollars : suggested,
-                durationText: offered ? "\(initialDuration)" : "\(suggestedDuration)",
-                committedDurationMinutes: offered ? initialDuration : suggestedDuration
+                priceText: offered ? "\(initialDollars)" : "\(priceBounds.suggested)",
+                committedPriceDollars: offered ? initialDollars : priceBounds.suggested,
+                durationText: offered ? "\(initialDuration)" : "\(durationBounds.suggested)",
+                committedDurationMinutes: offered ? initialDuration : durationBounds.suggested
             )
         }
     }
@@ -483,6 +507,10 @@ private struct ServiceEditRow: Identifiable, Hashable {
     let slug: String
     let name: String
     let category: ServiceLedgerCategory
+    let minPriceDollars: Int
+    let maxPriceDollars: Int
+    let minDurationMinutes: Int
+    let maxDurationMinutes: Int
     let suggestedDollars: Int
     let suggestedDurationMinutes: Int
     var isOffered: Bool
