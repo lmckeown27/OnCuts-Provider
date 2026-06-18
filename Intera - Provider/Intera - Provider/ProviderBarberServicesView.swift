@@ -15,8 +15,6 @@ struct ProviderBarberServicesView: View {
 
     private let priceBounds = 5 ... 500
     private let durationBounds = 15 ... 240
-    private let ledgerFieldLabelWidth: CGFloat = 48
-    private let ledgerFieldInputWidth: CGFloat = 52
 
     var body: some View {
         Group {
@@ -113,22 +111,11 @@ struct ProviderBarberServicesView: View {
         let grouped = Dictionary(grouping: rows, by: \.category)
         return ServiceLedgerCategory.displayOrder.compactMap { category in
             guard let sectionRows = grouped[category], !sectionRows.isEmpty else { return nil }
-            let ordered = sectionRows.sorted(by: ledgerRowSort)
-            return ServiceLedgerSection(category: category, slugs: ordered.map(\.slug))
+            let slugs = ServiceLedgerRowOrdering.sortSlugs(sectionRows.map(\.slug)) { slug in
+                sectionRows.first(where: { $0.slug == slug })?.name ?? slug
+            }
+            return ServiceLedgerSection(category: category, slugs: slugs)
         }
-    }
-
-    /// Alphabetical within each section, except **Haircut** and **Buzz Cut** are swapped
-    /// (Haircut appears where Buzz Cut would have been alphabetically, and vice versa).
-    private func ledgerRowSort(_ lhs: ServiceEditRow, _ rhs: ServiceEditRow) -> Bool {
-        if isHaircutBuzzCutPair(lhs, rhs) {
-            return lhs.normalizedLedgerSlug == "haircut"
-        }
-        return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-    }
-
-    private func isHaircutBuzzCutPair(_ lhs: ServiceEditRow, _ rhs: ServiceEditRow) -> Bool {
-        Set([lhs.normalizedLedgerSlug, rhs.normalizedLedgerSlug]) == ["haircut", "buzz-cut"]
     }
 
     @ViewBuilder
@@ -192,7 +179,7 @@ struct ProviderBarberServicesView: View {
             Text("Price:")
                 .font(.provider(.caption, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCream.opacity(isActive ? 0.62 : 0.38))
-                .frame(width: ledgerFieldLabelWidth, alignment: .trailing)
+                .frame(width: ProviderServicesLedgerStyle.fieldLabelWidth, alignment: .trailing)
 
             HStack(spacing: 4) {
                 Text("$")
@@ -204,7 +191,7 @@ struct ProviderBarberServicesView: View {
                     .font(.provider(.headline, weight: .bold))
                     .foregroundStyle(isActive ? Color.lavaShellCream : Color.lavaShellCream.opacity(0.45))
                     .multilineTextAlignment(.trailing)
-                    .frame(width: ledgerFieldInputWidth)
+                    .frame(width: ProviderServicesLedgerStyle.fieldInputWidth)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                     .background(serviceInputBackground(isActive: isActive, needsCommit: r.priceNeedsCommit))
@@ -231,7 +218,7 @@ struct ProviderBarberServicesView: View {
             Text("Time:")
                 .font(.provider(.caption, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCream.opacity(isActive ? 0.62 : 0.38))
-                .frame(width: ledgerFieldLabelWidth, alignment: .trailing)
+                .frame(width: ProviderServicesLedgerStyle.fieldLabelWidth, alignment: .trailing)
 
             HStack(spacing: 4) {
                 TextField("0", text: row.durationText)
@@ -239,7 +226,7 @@ struct ProviderBarberServicesView: View {
                     .font(.provider(.headline, weight: .bold))
                     .foregroundStyle(isActive ? Color.lavaShellCream : Color.lavaShellCream.opacity(0.45))
                     .multilineTextAlignment(.trailing)
-                    .frame(width: ledgerFieldInputWidth)
+                    .frame(width: ProviderServicesLedgerStyle.fieldInputWidth)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                     .background(serviceInputBackground(isActive: isActive, needsCommit: r.durationNeedsCommit))
@@ -492,69 +479,6 @@ struct ProviderBarberServicesView: View {
     }
 }
 
-private struct ServiceLedgerSection: Hashable {
-    let category: ServiceLedgerCategory
-    let slugs: [String]
-}
-
-private enum ServiceLedgerCategory: String, Hashable {
-    case haircuts
-    case beardAndGrooming
-    case textureAndDesign
-    case colorAndTreatments
-    case other
-
-    var title: String {
-        switch self {
-        case .haircuts: "Haircuts"
-        case .beardAndGrooming: "Beard & Grooming"
-        case .textureAndDesign: "Texture & Design"
-        case .colorAndTreatments: "Color & Treatments"
-        case .other: "Other Services"
-        }
-    }
-
-    static let displayOrder: [ServiceLedgerCategory] = [
-        .haircuts, .beardAndGrooming, .textureAndDesign, .colorAndTreatments, .other,
-    ]
-}
-
-private enum ServiceLedgerCategorizer {
-    static func category(slug: String, name: String) -> ServiceLedgerCategory {
-        let haystack = "\(slug) \(name)".lowercased()
-        if haystack.contains("beard")
-            || haystack.contains("shave")
-            || haystack.contains("lineup")
-            || haystack.contains("line-up")
-            || haystack.contains("line up") {
-            return .beardAndGrooming
-        }
-        if haystack.contains("color")
-            || haystack.contains("perm")
-            || haystack.contains("treatment")
-            || haystack.contains("dye") {
-            return .colorAndTreatments
-        }
-        if haystack.contains("design")
-            || haystack.contains("afro")
-            || haystack.contains("texture")
-            || haystack.contains("art") {
-            return .textureAndDesign
-        }
-        if haystack.contains("hair")
-            || haystack.contains("fade")
-            || haystack.contains("cut")
-            || haystack.contains("buzz")
-            || haystack.contains("taper")
-            || haystack.contains("mullet")
-            || haystack.contains("kids")
-            || haystack.contains("women") {
-            return .haircuts
-        }
-        return .other
-    }
-}
-
 private struct ServiceEditRow: Identifiable, Hashable {
     let slug: String
     let name: String
@@ -568,14 +492,6 @@ private struct ServiceEditRow: Identifiable, Hashable {
     var committedDurationMinutes: Int
 
     var id: String { slug }
-
-    var normalizedLedgerSlug: String {
-        let trimmedSlug = slug.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if !trimmedSlug.isEmpty { return trimmedSlug }
-        return name.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .replacingOccurrences(of: " ", with: "-")
-    }
 
     var parsedPriceDollars: Int? {
         let digits = priceText.filter(\.isNumber)

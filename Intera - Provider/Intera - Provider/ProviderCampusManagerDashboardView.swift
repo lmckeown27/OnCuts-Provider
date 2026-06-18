@@ -92,22 +92,6 @@ struct ProviderCampusManagerDashboardView: View {
         let isDestructive: Bool
     }
 
-    // Platform service types (Campus Manager / Admin — `GET/POST/PUT/DELETE /admin/services`)
-    @State private var platformServices: [AdminServiceCatalogItem] = []
-    @State private var platformServicesLoading = false
-    @State private var platformServicesError: String?
-    @State private var showDeletedPlatformServices = false
-    @State private var showAddServiceCard = false
-    @State private var addServiceName = ""
-    @State private var addServiceDescription = ""
-    @State private var addServicePrice = ""
-    @State private var addServiceError: String?
-    @State private var editingPriceServiceId: Int?
-    @State private var editingPriceText = ""
-    @State private var platformServiceBusyId: Int?
-    @State private var addingPlatformService = false
-    @State private var servicePendingDelete: AdminServiceCatalogItem?
-
     // MARK: Admin campus switcher state
     //
     // The web `CampusManagerDashboard` lets admins flip between any campus's CM view (regular
@@ -217,7 +201,7 @@ struct ProviderCampusManagerDashboardView: View {
                     case .overview:
                         overviewSection
                     case .serviceTypes:
-                        serviceTypesSection
+                        ProviderCampusManagerServicesView()
                     case .barbers:
                         barbersSection
                     case .bookings:
@@ -256,25 +240,6 @@ struct ProviderCampusManagerDashboardView: View {
         }
         .onDisappear {
             endChartScrubbingIfNeeded()
-        }
-        .confirmationDialog(
-            "Remove “\(servicePendingDelete?.name ?? "")”? Barbers will no longer see this service until it is restored.",
-            isPresented: Binding(
-                get: { servicePendingDelete != nil },
-                set: { if !$0 { servicePendingDelete = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let s = servicePendingDelete {
-                    Task { await deactivatePlatformService(s) }
-                }
-                servicePendingDelete = nil
-            }
-            Button("Cancel", role: .cancel) { servicePendingDelete = nil }
-        }
-        .onChange(of: showDeletedPlatformServices) { _, _ in
-            Task { await loadPlatformServices() }
         }
         .confirmationDialog(
             applicationDecisionDialogTitle,
@@ -501,7 +466,7 @@ struct ProviderCampusManagerDashboardView: View {
 
                 campusSummaryStatsStrip
 
-                VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 12) {
                     Picker("Timeline", selection: $metricsTimeline) {
                         ForEach(CampusMetricsTimeline.allCases) { timeline in
                             Text(timeline.segmentTitle).tag(timeline)
@@ -577,8 +542,8 @@ struct ProviderCampusManagerDashboardView: View {
     @ViewBuilder
     private var campusSummaryStatsStrip: some View {
         let isLoadingStats = isLoading && performance == nil
-        LazyVGrid(columns: [
-            GridItem(.flexible(), spacing: 12),
+                    LazyVGrid(columns: [
+                        GridItem(.flexible(), spacing: 12),
             GridItem(.flexible(), spacing: 12),
         ], alignment: .leading, spacing: 12) {
             summaryStatCell(
@@ -633,18 +598,18 @@ struct ProviderCampusManagerDashboardView: View {
         if !chartMetricPoints.isEmpty {
             overviewMetricsPair(selectedPoint: selectedMetricPoint)
         } else if isLoading || isLoadingMetrics {
-            HStack {
-                ProgressView().controlSize(.small)
+                    HStack {
+                        ProgressView().controlSize(.small)
                 Text("Loading \(metricsScopeTitle.lowercased())…")
                     .font(.provider(.footnote))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-            }
-        } else {
+                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                    }
+                } else {
             Text("No \(metricsScopeTitle.lowercased()) data in this range yet.")
                 .font(.provider(.footnote))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
-        }
-    }
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                }
+            }
 
     @ViewBuilder
     private func overviewMetricsPair(selectedPoint: CampusMetricPlotPoint?) -> some View {
@@ -1037,335 +1002,6 @@ struct ProviderCampusManagerDashboardView: View {
         let joined = "\(f) \(l)".trimmingCharacters(in: .whitespaces)
         if !joined.isEmpty { return joined }
         return session.authUser?.email ?? ""
-    }
-
-    // MARK: - Service types (platform catalog)
-
-    private var serviceTypesSection: some View {
-        sectionCard(
-            title: "Service Types",
-            subtitle: "Default prices for barbers who haven’t set their own. Barber price limits use min / max from the catalog."
-        ) {
-            VStack(alignment: .leading, spacing: 14) {
-                if let platformServicesError {
-                    Text(platformServicesError)
-                        .font(.provider(.caption))
-                        .foregroundStyle(.red)
-                }
-
-                HStack {
-                    Text("Show deleted")
-                        .font(.provider(.subheadline, weight: .medium))
-                    Spacer()
-                    Toggle("", isOn: $showDeletedPlatformServices)
-                        .labelsHidden()
-                        .tint(.providerOlive)
-                }
-
-                Button {
-                    if showAddServiceCard {
-                        showAddServiceCard = false
-                        clearAddServiceForm()
-                    } else {
-                        addServiceError = nil
-                        showAddServiceCard = true
-                    }
-                } label: {
-                    Label(showAddServiceCard ? "Cancel add" : "Add Service", systemImage: showAddServiceCard ? "xmark.circle.fill" : "plus.circle.fill")
-                        .font(.provider(.subheadline, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.providerOlive.opacity(0.85), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .foregroundStyle(Color.lavaShellCream)
-                }
-                .buttonStyle(.plain)
-
-                if showAddServiceCard {
-                    VStack(alignment: .leading, spacing: 10) {
-                        TextField("Service name", text: $addServiceName)
-                            .textFieldStyle(.roundedBorder)
-                        TextField("Description (optional)", text: $addServiceDescription, axis: .vertical)
-                            .lineLimit(2 ... 4)
-                            .textFieldStyle(.roundedBorder)
-                        HStack {
-                            Text("$")
-                                .font(.provider(.headline, weight: .bold))
-                            TextField("Base price", text: $addServicePrice)
-                                .keyboardType(.decimalPad)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        if let addServiceError, !addServiceError.isEmpty {
-                            Text(addServiceError)
-                                .font(.provider(.caption))
-                                .foregroundStyle(.red)
-                        }
-                        Button {
-                            Task { await submitAddService() }
-                        } label: {
-                            Text("Save service")
-                                .font(.provider(.subheadline, weight: .semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .background(Color.providerOlive.opacity(0.45), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(addingPlatformService)
-                    }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(Color.providerOlive.opacity(0.5), style: StrokeStyle(lineWidth: 2, dash: [6]))
-                    )
-                }
-
-                if platformServicesLoading, platformServices.isEmpty {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Loading services…")
-                            .font(.provider(.footnote))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
-                    }
-                } else if platformServices.isEmpty {
-                    Text("No services yet. Add a service type to match your campus offerings.")
-                        .font(.provider(.footnote))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
-                } else {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 148), spacing: 12)],
-                        spacing: 12
-                    ) {
-                        ForEach(platformServices) { svc in
-                            platformServiceCard(svc)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func platformServiceCard(_ svc: AdminServiceCatalogItem) -> some View {
-        let active = svc.isActive ?? true
-        let isEditingPrice = editingPriceServiceId == svc.id
-        let busy = platformServiceBusyId == svc.id
-        let baseDollars = max(0, svc.basePriceCents / 100)
-
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 6) {
-                Text(svc.name)
-                    .font(.provider(.subheadline, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCream)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if active {
-                    HStack(spacing: 2) {
-                        if !isEditingPrice {
-                            Button {
-                                editingPriceServiceId = svc.id
-                                editingPriceText = "\(baseDollars)"
-                            } label: {
-                                Image(systemName: "pencil")
-                                    .font(.provider(.caption, weight: .semibold))
-                                    .foregroundStyle(Color.lavaShellCream.opacity(0.65))
-                                    .padding(6)
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(busy)
-                            Button {
-                                servicePendingDelete = svc
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.provider(.caption, weight: .semibold))
-                                    .foregroundStyle(Color.lavaShellCream.opacity(0.65))
-                                    .padding(6)
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(busy)
-                        }
-                    }
-                }
-            }
-
-            if !active {
-                Button {
-                    Task { await restorePlatformService(svc) }
-                } label: {
-                    HStack(spacing: 4) {
-                        if busy { ProgressView().controlSize(.mini) }
-                        Image(systemName: "arrow.uturn.backward")
-                        Text("Restore service")
-                            .font(.provider(.caption, weight: .semibold))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-                    .background(Color.green.opacity(0.25), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .disabled(busy)
-            }
-
-            if isEditingPrice {
-                HStack(spacing: 4) {
-                    Text("$")
-                        .font(.provider(.headline, weight: .bold))
-                        .foregroundStyle(Color.lavaShellCream.opacity(0.55))
-                    TextField("Price", text: $editingPriceText)
-                        .keyboardType(.numberPad)
-                        .font(.provider(.headline, weight: .bold))
-                        .foregroundStyle(Color.lavaShellCream)
-                        .frame(width: 56)
-                        .padding(.vertical, 4)
-                        .overlay(alignment: .bottom) {
-                            Rectangle()
-                                .fill(Color.providerOlive.opacity(0.65))
-                                .frame(height: 2)
-                        }
-                }
-                HStack(spacing: 8) {
-                    Button("Save") {
-                        Task { await saveInlineBasePrice(svc) }
-                    }
-                    .font(.provider(.caption, weight: .semibold))
-                    .buttonStyle(.borderedProminent)
-                    .tint(.providerOlive)
-                    .disabled(busy)
-                    Button("Cancel") {
-                        editingPriceServiceId = nil
-                        editingPriceText = ""
-                    }
-                    .font(.provider(.caption, weight: .semibold))
-                    .buttonStyle(.bordered)
-                    .disabled(busy)
-                }
-            } else {
-                HStack(spacing: 4) {
-                    Text("$")
-                        .font(.provider(.headline, weight: .bold))
-                        .foregroundStyle(Color.lavaShellCream.opacity(0.55))
-                    Text("\(baseDollars)")
-                        .font(.provider(.headline, weight: .bold))
-                        .foregroundStyle(Color.lavaShellCream)
-                }
-                if let rangeLabel = platformServiceBarberRangeLabel(svc) {
-                    Text(rangeLabel)
-                        .font(.provider(.caption2))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
-                }
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(active ? Color.providerOlive.opacity(0.18) : Color.red.opacity(0.12))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(
-                    active ? Color.providerOlive.opacity(0.55) : Color.red.opacity(0.35),
-                    lineWidth: 2
-                )
-        )
-        .opacity(active ? 1 : 0.85)
-    }
-
-    private func platformServiceBarberRangeLabel(_ s: AdminServiceCatalogItem) -> String? {
-        guard let lo = s.minPriceCents, let hi = s.maxPriceCents else { return nil }
-        return "Barber range $\(lo / 100)–$\(hi / 100)"
-    }
-
-    private func clearAddServiceForm() {
-        addServiceName = ""
-        addServiceDescription = ""
-        addServicePrice = ""
-        addServiceError = nil
-    }
-
-    private func loadPlatformServices() async {
-        platformServicesLoading = true
-        defer { platformServicesLoading = false }
-        platformServicesError = nil
-        do {
-            platformServices = try await ProviderCampusManagerService.listPlatformServices(
-                includeInactive: showDeletedPlatformServices
-            )
-        } catch {
-            platformServices = []
-            platformServicesError = error.localizedDescription
-        }
-    }
-
-    private func submitAddService() async {
-        addServiceError = nil
-        let name = addServiceName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if name.isEmpty {
-            addServiceError = "Service name is required."
-            return
-        }
-        let raw = addServicePrice.replacingOccurrences(of: ",", with: ".")
-        guard let dollars = Double(raw.trimmingCharacters(in: .whitespaces)), dollars > 0 else {
-            addServiceError = "Enter a valid base price."
-            return
-        }
-        let cents = Int((dollars * 100).rounded())
-        addingPlatformService = true
-        defer { addingPlatformService = false }
-        do {
-            try await ProviderCampusManagerService.createPlatformService(
-                name: name,
-                description: addServiceDescription.trimmingCharacters(in: .whitespacesAndNewlines),
-                basePriceCents: cents
-            )
-            showAddServiceCard = false
-            clearAddServiceForm()
-            await loadPlatformServices()
-        } catch let CampusCutsHTTPError.httpStatus(code, msg) {
-            addServiceError = msg ?? "Could not add service (\(code))."
-        } catch {
-            addServiceError = error.localizedDescription
-        }
-    }
-
-    private func saveInlineBasePrice(_ svc: AdminServiceCatalogItem) async {
-        let digits = editingPriceText.filter(\.isNumber)
-        guard let dollars = Int(digits), dollars > 0 else {
-            platformServicesError = "Enter a valid price."
-            return
-        }
-        platformServiceBusyId = svc.id
-        defer { platformServiceBusyId = nil }
-        editingPriceServiceId = nil
-        editingPriceText = ""
-        platformServicesError = nil
-        do {
-            try await ProviderCampusManagerService.updatePlatformServiceBasePrice(id: svc.id, basePriceCents: dollars * 100)
-            await loadPlatformServices()
-        } catch {
-            platformServicesError = error.localizedDescription
-        }
-    }
-
-    private func restorePlatformService(_ svc: AdminServiceCatalogItem) async {
-        platformServiceBusyId = svc.id
-        defer { platformServiceBusyId = nil }
-        platformServicesError = nil
-        do {
-            try await ProviderCampusManagerService.setPlatformServiceActive(id: svc.id, isActive: true)
-            await loadPlatformServices()
-        } catch {
-            platformServicesError = error.localizedDescription
-        }
-    }
-
-    private func deactivatePlatformService(_ s: AdminServiceCatalogItem) async {
-        platformServiceBusyId = s.id
-        defer { platformServiceBusyId = nil }
-        platformServicesError = nil
-        do {
-            try await ProviderCampusManagerService.deactivatePlatformService(id: s.id)
-            await loadPlatformServices()
-        } catch {
-            platformServicesError = error.localizedDescription
-        }
     }
 
     // MARK: - Barbers (Applications + Current sub-tabs)
@@ -2047,7 +1683,6 @@ struct ProviderCampusManagerDashboardView: View {
         }
         metricsSnapshot = await metrics
         await loadBookings()
-        await loadPlatformServices()
         await loadApplications()
     }
 
