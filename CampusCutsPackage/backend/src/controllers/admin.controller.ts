@@ -24,6 +24,42 @@ import transactionService from '../services/transaction.service';
 import { logger } from '../utils/logger';
 
 /**
+ * Allows platform admins, or campus managers scoped to the requested campus.
+ * Mirrors the access gate on `GET /bookings-simple/campus/:campusId`.
+ */
+async function assertCampusMetricsAccess(req: AuthRequest, campusId: string): Promise<void> {
+  const userRole = req.user!.role?.toUpperCase();
+  if (userRole === 'ADMIN') {
+    return;
+  }
+
+  if (userRole === 'CAMPUS_MANAGER') {
+    const campusCheck = await pool.query(
+      `SELECT id FROM users WHERE id = $1 AND "campusId" = $2::uuid`,
+      [req.user!.userId, campusId]
+    );
+    if (campusCheck.rows.length > 0) {
+      return;
+    }
+  }
+
+  const managerCheck = await pool.query(
+    `SELECT b.id FROM barbers b
+     JOIN users u ON b."userId" = u.id
+     WHERE b."userId" = $1
+       AND b."isCampusManager" = true
+       AND b."campusId" = $2::uuid`,
+    [req.user!.userId, campusId]
+  );
+
+  if (managerCheck.rows.length > 0) {
+    return;
+  }
+
+  throw new ApiError(403, 'Admin or Campus Manager access required');
+}
+
+/**
  * Withdraw platform fees
  * POST /api/admin/fees/withdraw
  */
@@ -890,16 +926,12 @@ export const getCampusPerformance = async (req: AuthRequest, res: Response, next
   try {
     const { campusId } = req.params;
 
-    // Verify admin role
-    const userRole = req.user!.role?.toUpperCase();
-    if (userRole !== 'ADMIN') {
-      throw new ApiError(403, 'Admin access required');
-    }
-
     // Validate campusId format
     if (!campusId || campusId === 'undefined') {
       throw new ApiError(400, 'Valid campusId is required');
     }
+
+    await assertCampusMetricsAccess(req, campusId);
 
     // Get barber counts - use simpler query
     const barbersResult = await pool.query(`
@@ -948,6 +980,33 @@ export const getCampusPerformance = async (req: AuthRequest, res: Response, next
         JOIN users u ON b."userId" = u.id
         WHERE u."campusId" = $1::uuid
       )
+    `, [campusId]);
+
+    // Consumers whose primary campus (booking-based) or signup campus matches this campus
+    const consumersResult = await pool.query(`
+      WITH consumer_booking_campuses AS (
+        SELECT
+          bk."consumerId",
+          bu."campusId" as barber_campus_id,
+          COUNT(*) as booking_count
+        FROM bookings bk
+        JOIN barbers b ON bk."barberId" = b.id
+        JOIN users bu ON b."userId" = bu.id
+        WHERE bk.status IN ('COMPLETED', 'PAID', 'ACCEPTED', 'IN_PROGRESS')
+        GROUP BY bk."consumerId", bu."campusId"
+      ),
+      primary_campus AS (
+        SELECT DISTINCT ON ("consumerId")
+          "consumerId",
+          barber_campus_id as primary_campus_id
+        FROM consumer_booking_campuses
+        ORDER BY "consumerId", booking_count DESC
+      )
+      SELECT COUNT(*) as total
+      FROM users u
+      LEFT JOIN primary_campus pc ON u.id = pc."consumerId"
+      WHERE u.role = 'CONSUMER'
+        AND COALESCE(pc.primary_campus_id, u."campusId") = $1::uuid
     `, [campusId]);
 
     // Get average rating and review count
@@ -1128,6 +1187,7 @@ export const getCampusPerformance = async (req: AuthRequest, res: Response, next
     res.json({
       totalBarbers: parseInt(barbersResult.rows[0]?.total || '0'),
       activeBarbers,
+      totalConsumers: parseInt(consumersResult.rows[0]?.total || '0'),
       totalBookings: parseInt(bookingsResult.rows[0]?.total || '0'),
       completedBookings,
       cancelledBookings: parseInt(bookingsResult.rows[0]?.cancelled || '0'),
@@ -1178,15 +1238,11 @@ export const getCampusMetrics = async (req: AuthRequest, res: Response, next: Ne
     const { campusId } = req.params;
     const period = (req.query.period as string) || 'daily';
 
-    // Verify admin role
-    const userRole = req.user!.role?.toUpperCase();
-    if (userRole !== 'ADMIN') {
-      throw new ApiError(403, 'Admin access required');
-    }
-
     if (!campusId || campusId === 'undefined') {
       throw new ApiError(400, 'Valid campusId is required');
     }
+
+    await assertCampusMetricsAccess(req, campusId);
 
     // Determine date truncation and range based on period
     let dateTrunc: string;
@@ -1234,15 +1290,15 @@ export const getCampusMetrics = async (req: AuthRequest, res: Response, next: Ne
       // Legacy support
       case 'daily':
         dateTrunc = 'day';
-        interval = '30 days';
+        interval = '7 days';
         break;
       case 'weekly':
         dateTrunc = 'week';
-        interval = '12 weeks';
+        interval = '1 month';
         break;
       case 'monthly':
         dateTrunc = 'month';
-        interval = '12 months';
+        interval = '1 year';
         break;
       case 'yearly':
         dateTrunc = 'year';
@@ -1714,15 +1770,15 @@ export const getAggregateMetrics = async (req: AuthRequest, res: Response, next:
       // Legacy support
       case 'daily':
         dateTrunc = 'day';
-        interval = '30 days';
+        interval = '7 days';
         break;
       case 'weekly':
         dateTrunc = 'week';
-        interval = '12 weeks';
+        interval = '1 month';
         break;
       case 'monthly':
         dateTrunc = 'month';
-        interval = '12 months';
+        interval = '1 year';
         break;
       case 'yearly':
         dateTrunc = 'year';

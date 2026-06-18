@@ -38,6 +38,11 @@ enum ProviderCampusManagerService {
         try await ProviderAdminService.campusPerformance(campusId: campusId)
     }
 
+    /// Time-series chart data for a campus (`GET /admin/campuses/:id/metrics?period=…`).
+    static func campusMetrics(campusId: String, period: String) async throws -> AdminMetricsSnapshotDTO {
+        try await ProviderAdminService.campusMetrics(campusId: campusId, period: period)
+    }
+
     /// Campus-scoped bookings list. Mirrors the web `/api/v1/bookings-simple/campus/:campusId` query
     /// used by the Campus Manager dashboard.
     static func campusBookings(

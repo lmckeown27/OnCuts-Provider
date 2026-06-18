@@ -228,6 +228,9 @@ final class ProviderShellNavigationPopBridge {
     /// SwiftUI `navigationDestination` pushes that UIKit depth tracking can miss (Bookings → detail).
     private(set) var registeredHostDestinationDepth = 0
 
+    /// Transient holds (e.g. chart scrub) that must block the shell edge-swipe dismiss.
+    private(set) var shellDismissGestureSuppressionCount = 0
+
     /// A SwiftUI destination (e.g. Bookings → detail) is currently presented on the shell host stack.
     var isHostDestinationPresented: Bool { registeredHostDestinationDepth > 0 }
 
@@ -235,7 +238,7 @@ final class ProviderShellNavigationPopBridge {
 
     /// When `true`, the shell edge-swipe and shell back control defer to inner navigation first.
     var shouldDeferShellDismissGesture: Bool {
-        isHostDestinationPresented || canPopEmbeddedNavigation
+        isHostDestinationPresented || canPopEmbeddedNavigation || shellDismissGestureSuppressionCount > 0
     }
 
     /// Legacy alias — prefer `shouldDeferShellDismissGesture` / `isHostDestinationPresented`.
@@ -256,6 +259,14 @@ final class ProviderShellNavigationPopBridge {
 
     func resetHostDestinations() {
         registeredHostDestinationDepth = 0
+    }
+
+    func beginShellDismissGestureSuppression() {
+        shellDismissGestureSuppressionCount += 1
+    }
+
+    func endShellDismissGestureSuppression() {
+        shellDismissGestureSuppressionCount = max(0, shellDismissGestureSuppressionCount - 1)
     }
 
     func refreshHost(from navigationController: UINavigationController?) {

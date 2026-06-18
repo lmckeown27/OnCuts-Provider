@@ -728,6 +728,7 @@ struct AdminCampusesData: Decodable {
 struct AdminCampusPerformanceDTO: Decodable, Hashable {
     let totalBarbers: Int?
     let activeBarbers: Int?
+    let totalConsumers: Int?
     let totalBookings: Int?
     let completedBookings: Int?
     let cancelledBookings: Int?

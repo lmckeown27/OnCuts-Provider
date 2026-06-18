@@ -29,6 +29,19 @@ enum ProviderAdminService {
         return env.resolved
     }
 
+    /// `POST /admin/campuses/:campusId/manager` — assign or remove a campus manager (admin only).
+    static func assignCampusManager(campusId: String, barberUserId: String, action: String) async throws {
+        let enc = campusId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? campusId
+        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+            path: "admin/campuses/\(enc)/manager",
+            method: "POST",
+            jsonBody: [
+                "barberUserId": barberUserId,
+                "action": action,
+            ]
+        )
+    }
+
     static func aggregatePerformance() async throws -> AdminCampusPerformanceDTO? {
         let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "admin/campuses/aggregate/performance")
         let dec = CampusCutsHTTPClient.jsonDecoderSnake()

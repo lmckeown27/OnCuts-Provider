@@ -1,3 +1,4 @@
+import Charts
 import SwiftUI
 
 /// Native iOS Campus Manager dashboard.
@@ -51,6 +52,12 @@ struct ProviderCampusManagerDashboardView: View {
 
     @State private var campus: AdminCampusDTO?
     @State private var performance: AdminCampusPerformanceDTO?
+    @State private var metricsSnapshot: AdminMetricsSnapshotDTO?
+    @State private var metricsTimeline: CampusMetricsTimeline = .daily
+    @State private var metricsChartSeries: CampusMetricsChartSeries = .revenue
+    @State private var isLoadingMetrics = false
+    @State private var selectedChartDate: Date?
+    @State private var isChartScrubbing = false
     @State private var barbers: [AdminBarberDTO] = []
     @State private var bookings: [SimpleBookingDTO] = []
 
@@ -111,6 +118,7 @@ struct ProviderCampusManagerDashboardView: View {
     @State private var availableCampuses: [AdminCampusDTO] = []
     @State private var adminViewingCampusId: String?
     @State private var availableCampusesLoaded = false
+    @State private var isAssigningCampusManager = false
 
     /// Matches the three buckets exposed by `GET /bookings-simple/campus/:id?statusFilter=...`
     /// (`upcoming` → PENDING/ACCEPTED, `completed` → COMPLETED/PAID, `cancelled` → CANCELLED).
@@ -232,7 +240,23 @@ struct ProviderCampusManagerDashboardView: View {
         }
         .navigationTitle("Campus Manager")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Campus Manager")
+                    .font(.provider(.headline, weight: .semibold))
+            }
+        }
         .providerLavaScreenChrome()
+        .onChange(of: metricsTimeline) { _, _ in
+            selectedChartDate = nil
+            Task { await reloadCampusMetricsTimeline() }
+        }
+        .onChange(of: metricsChartSeries) { _, _ in
+            selectedChartDate = nil
+        }
+        .onDisappear {
+            endChartScrubbingIfNeeded()
+        }
         .confirmationDialog(
             "Remove “\(servicePendingDelete?.name ?? "")”? Barbers will no longer see this service until it is restored.",
             isPresented: Binding(
@@ -310,13 +334,8 @@ struct ProviderCampusManagerDashboardView: View {
     /// remain pinned to `homeCampusId`. Mirrors the web `CampusManagerDashboard.tsx` admin
     /// campus filter.
     private var adminCampusSwitcherHeader: some View {
-        HStack(spacing: 8) {
-            Text("Admin view")
-                .font(.provider(.caption2, weight: .bold))
-                .textCase(.uppercase)
-                .foregroundStyle(Color.lavaShellCreamSecondary)
-
-            Spacer(minLength: 8)
+        HStack {
+            Spacer(minLength: 0)
 
             Menu {
                 if let homeCampusId,
@@ -356,6 +375,8 @@ struct ProviderCampusManagerDashboardView: View {
             }
             .disabled(availableCampuses.isEmpty)
             .opacity(availableCampuses.isEmpty ? 0.6 : 1.0)
+
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
@@ -386,44 +407,480 @@ struct ProviderCampusManagerDashboardView: View {
 
     // MARK: - Overview
 
+    private enum CampusMetricsTimeline: String, CaseIterable, Identifiable {
+        case daily, weekly, monthly
+        var id: String { rawValue }
+        var segmentTitle: String {
+            switch self {
+            case .daily: return "Daily"
+            case .weekly: return "Weekly"
+            case .monthly: return "Monthly"
+            }
+        }
+        var apiPeriod: String { rawValue }
+        var helperSubtitle: String {
+            switch self {
+            case .daily: return "Each day for the past week."
+            case .weekly: return "Each week for the past month."
+            case .monthly: return "Each month for the past year."
+            }
+        }
+
+        var bucketUnitSingular: String {
+            switch self {
+            case .daily: return "day"
+            case .weekly: return "week"
+            case .monthly: return "month"
+            }
+        }
+
+        var bestBucketLabel: String { "Best \(bucketUnitSingular)" }
+
+        var primaryMetricTitle: String { "Average per \(bucketUnitSingular)" }
+    }
+
+    private enum CampusMetricsChartSeries: String, CaseIterable, Identifiable {
+        case revenue, bookings, signups
+        var id: String { rawValue }
+        var segmentTitle: String {
+            switch self {
+            case .revenue: return "Revenue"
+            case .bookings: return "Bookings"
+            case .signups: return "Sign-ups"
+            }
+        }
+    }
+
+    private struct CampusMetricPlotPoint: Identifiable {
+        let id: String
+        let date: Date
+        let revenueDollars: Double
+        let bookings: Int
+        let signups: Int
+    }
+
+    private enum CampusMetricsDateParsing {
+        static let isoFrac: ISO8601DateFormatter = {
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return f
+        }()
+
+        static let isoBasic: ISO8601DateFormatter = {
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime]
+            return f
+        }()
+
+        static func parse(_ raw: String) -> Date? {
+            isoFrac.date(from: raw) ?? isoBasic.date(from: raw)
+        }
+    }
+
+    private var chartMetricPoints: [CampusMetricPlotPoint] {
+        parsedCampusMetricPoints(from: metricsSnapshot)
+    }
+
+    private var selectedMetricPoint: CampusMetricPlotPoint? {
+        guard let selectedChartDate else { return nil }
+        return chartMetricPoints.min(by: {
+            abs($0.date.timeIntervalSince(selectedChartDate)) < abs($1.date.timeIntervalSince(selectedChartDate))
+        })
+    }
+
     private var overviewSection: some View {
         sectionCard(
-            title: "Overview",
-            subtitle: effectiveCampusLocationLine
+            title: "",
+            subtitle: nil
         ) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 16) {
                 Text(effectiveCampusDisplayName)
                     .font(.provider(.title3, weight: .semibold))
 
                 designatedManagerRow
 
-                if let perf = performance {
-                    LazyVGrid(columns: [
-                        GridItem(.flexible(), spacing: 12),
-                        GridItem(.flexible(), spacing: 12)
-                    ], alignment: .leading, spacing: 10) {
-                        metricCell(title: "Total bookings", value: "\(perf.totalBookings ?? 0)")
-                        metricCell(title: "Completed", value: "\(perf.completedBookings ?? 0)")
-                        metricCell(title: "Active barbers", value: "\(perf.activeBarbers ?? 0) / \(perf.totalBarbers ?? 0)")
-                        metricCell(title: "Avg rating", value: ratingString(perf.averageRating, reviews: perf.totalReviews))
-                        metricCell(title: "Total revenue", value: dollarString(centsLike: perf.totalRevenue))
-                        metricCell(title: "Tips", value: dollarString(centsLike: perf.totalTips))
+                campusSummaryStatsStrip
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Picker("Timeline", selection: $metricsTimeline) {
+                        ForEach(CampusMetricsTimeline.allCases) { timeline in
+                            Text(timeline.segmentTitle).tag(timeline)
+                        }
                     }
-                } else if isLoading {
-                    HStack {
-                        ProgressView().controlSize(.small)
-                        Text("Loading campus metrics…")
-                            .font(.provider(.footnote))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .pickerStyle(.segmented)
+
+                    Picker("Series", selection: $metricsChartSeries) {
+                        ForEach(CampusMetricsChartSeries.allCases) { series in
+                            Text(series.segmentTitle).tag(series)
+                        }
                     }
-                } else {
-                    Text("Campus metrics aren't available right now.")
-                        .font(.provider(.footnote))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .pickerStyle(.segmented)
+
+                    ZStack {
+                        if isLoading && metricsSnapshot == nil {
+                            HStack {
+                                ProgressView().controlSize(.small)
+                                Text("Loading chart…")
+                                    .font(.provider(.footnote))
+                                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
+                        } else {
+                            campusMetricsTimelineChartView(points: chartMetricPoints)
+                        }
+                        if isLoadingMetrics {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.black.opacity(0.25))
+                            ProgressView()
+                                .controlSize(.regular)
+                        }
+                    }
+
+                    if !chartMetricPoints.isEmpty, selectedMetricPoint == nil {
+                        Text("Press and drag on the chart to inspect a single \(metricsTimeline.bucketUnitSingular).")
+                            .font(.provider(.caption2))
+                            .foregroundStyle(Color.lavaShellCreamTertiary)
+                    }
                 }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(overviewMetricsContextLabel)
+                        .font(.provider(.subheadline, weight: .semibold))
+                        .foregroundStyle(Color.lavaShellCream)
+
+                    if selectedMetricPoint == nil {
+                        Text(metricsTimeline.helperSubtitle)
+                            .font(.provider(.caption2))
+                            .foregroundStyle(Color.lavaShellCreamTertiary)
+                    }
+                }
+
+                overviewMetricsGrid
             }
         }
     }
+
+    private var chartRangeAggregate: (revenueDollars: Double, bookings: Int, signups: Int, periodCount: Int) {
+        let points = chartMetricPoints
+        return (
+            revenueDollars: points.reduce(0) { $0 + $1.revenueDollars },
+            bookings: points.reduce(0) { $0 + $1.bookings },
+            signups: points.reduce(0) { $0 + $1.signups },
+            periodCount: points.count
+        )
+    }
+
+    private var metricsScopeTitle: String {
+        "\(metricsTimeline.segmentTitle) \(metricsChartSeries.segmentTitle)"
+    }
+
+    @ViewBuilder
+    private var campusSummaryStatsStrip: some View {
+        let isLoadingStats = isLoading && performance == nil
+        LazyVGrid(columns: [
+            GridItem(.flexible(), spacing: 12),
+            GridItem(.flexible(), spacing: 12),
+        ], alignment: .leading, spacing: 12) {
+            summaryStatCell(
+                title: "\(effectiveCampusDisplayName) Volume",
+                value: isLoadingStats ? "…" : dollarString(centsLike: performance?.totalRevenue)
+            )
+            summaryStatCell(
+                title: "Bookings",
+                value: isLoadingStats ? "…" : "\(performance?.totalBookings ?? 0)"
+            )
+            summaryStatCell(
+                title: "Barbers",
+                value: isLoadingStats ? "…" : "\(performance?.totalBarbers ?? 0)"
+            )
+            summaryStatCell(
+                title: "Students",
+                value: isLoadingStats ? "…" : "\(performance?.totalConsumers ?? 0)"
+            )
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+                )
+        )
+    }
+
+    private func summaryStatCell(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.provider(.caption2))
+                .foregroundStyle(Color.lavaShellCreamTertiary)
+            Text(value)
+                .font(.provider(.subheadline, weight: .semibold))
+                .foregroundStyle(Color.lavaShellCream)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var overviewMetricsContextLabel: String {
+        if let point = selectedMetricPoint {
+            return formattedChartPeriodLabel(for: point.date)
+        }
+        return metricsScopeTitle
+    }
+
+    @ViewBuilder
+    private var overviewMetricsGrid: some View {
+        if !chartMetricPoints.isEmpty {
+            overviewMetricsPair(selectedPoint: selectedMetricPoint)
+        } else if isLoading || isLoadingMetrics {
+            HStack {
+                ProgressView().controlSize(.small)
+                Text("Loading \(metricsScopeTitle.lowercased())…")
+                    .font(.provider(.footnote))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+            }
+        } else {
+            Text("No \(metricsScopeTitle.lowercased()) data in this range yet.")
+                .font(.provider(.footnote))
+                .foregroundStyle(Color.lavaShellCreamSecondary)
+        }
+    }
+
+    @ViewBuilder
+    private func overviewMetricsPair(selectedPoint: CampusMetricPlotPoint?) -> some View {
+        let aggregate = chartRangeAggregate
+        let periodCount = max(1, aggregate.periodCount)
+
+        LazyVGrid(columns: [
+            GridItem(.flexible(), spacing: 12),
+            GridItem(.flexible(), spacing: 12)
+        ], alignment: .leading, spacing: 10) {
+            metricCell(
+                title: primaryMetricTitle(selectedPoint: selectedPoint),
+                value: primaryMetricValue(
+                    selectedPoint: selectedPoint,
+                    aggregate: aggregate,
+                    periodCount: periodCount
+                )
+            )
+            metricCell(
+                title: metricsTimeline.bestBucketLabel,
+                value: bestMetricValue() ?? "—"
+            )
+        }
+    }
+
+    private func primaryMetricTitle(selectedPoint: CampusMetricPlotPoint?) -> String {
+        if let selectedPoint {
+            return formattedChartPeriodLabel(for: selectedPoint.date)
+        }
+        return metricsTimeline.primaryMetricTitle
+    }
+
+    private func primaryMetricValue(
+        selectedPoint: CampusMetricPlotPoint?,
+        aggregate: (revenueDollars: Double, bookings: Int, signups: Int, periodCount: Int),
+        periodCount: Int
+    ) -> String {
+        if let selectedPoint {
+            switch metricsChartSeries {
+            case .revenue: return formatRevenueDollars(selectedPoint.revenueDollars)
+            case .bookings: return "\(selectedPoint.bookings)"
+            case .signups: return "\(selectedPoint.signups)"
+            }
+        }
+
+        switch metricsChartSeries {
+        case .revenue:
+            return formatRevenueDollars(aggregate.revenueDollars / Double(periodCount))
+        case .bookings:
+            return formattedAverage(aggregate.bookings, periods: periodCount)
+        case .signups:
+            return formattedAverage(aggregate.signups, periods: periodCount)
+        }
+    }
+
+    private func bestMetricValue() -> String? {
+        let peak: CampusMetricPlotPoint?
+        switch metricsChartSeries {
+        case .revenue:
+            peak = chartMetricPoints.max(by: { $0.revenueDollars < $1.revenueDollars })
+            guard let peak else { return nil }
+            return formatRevenueDollars(peak.revenueDollars)
+        case .bookings:
+            peak = chartMetricPoints.max(by: { $0.bookings < $1.bookings })
+            guard let peak else { return nil }
+            return "\(peak.bookings)"
+        case .signups:
+            peak = chartMetricPoints.max(by: { $0.signups < $1.signups })
+            guard let peak else { return nil }
+            return "\(peak.signups)"
+        }
+    }
+
+    @ViewBuilder
+    private func campusMetricsTimelineChartView(points: [CampusMetricPlotPoint]) -> some View {
+        if points.isEmpty {
+            Text("No data in this range yet (uses paid booking timestamps).")
+                .font(.provider(.footnote))
+                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
+        } else {
+            Chart {
+                switch metricsChartSeries {
+                case .revenue:
+                    ForEach(points) { pt in
+                        let isSelected = selectedMetricPoint?.id == pt.id
+                        AreaMark(
+                            x: .value("Period", pt.date),
+                            y: .value("Revenue", pt.revenueDollars)
+                        )
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [
+                                    Color.providerOlive.opacity(isSelected || selectedMetricPoint == nil ? 0.55 : 0.25),
+                                    Color.providerOlive.opacity(isSelected || selectedMetricPoint == nil ? 0.08 : 0.04)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        LineMark(
+                            x: .value("Period", pt.date),
+                            y: .value("Revenue", pt.revenueDollars)
+                        )
+                        .foregroundStyle(Color.providerOlive.opacity(isSelected || selectedMetricPoint == nil ? 1 : 0.45))
+                        .lineStyle(StrokeStyle(lineWidth: isSelected ? 2.5 : 2))
+                    }
+                case .bookings:
+                    ForEach(points) { pt in
+                        let isSelected = selectedMetricPoint?.id == pt.id
+                        BarMark(
+                            x: .value("Period", pt.date),
+                            y: .value("Bookings", pt.bookings)
+                        )
+                        .foregroundStyle(Color.providerOlive.opacity(isSelected || selectedMetricPoint == nil ? 0.75 : 0.35))
+                    }
+                case .signups:
+                    ForEach(points) { pt in
+                        let isSelected = selectedMetricPoint?.id == pt.id
+                        BarMark(
+                            x: .value("Period", pt.date),
+                            y: .value("Sign-ups", pt.signups)
+                        )
+                        .foregroundStyle(Color.providerOlive.opacity(isSelected || selectedMetricPoint == nil ? 0.75 : 0.35))
+                    }
+                }
+
+                if let selected = selectedMetricPoint {
+                    RuleMark(x: .value("Selected", selected.date))
+                        .foregroundStyle(Color.lavaShellCream.opacity(0.45))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                }
+            }
+            .frame(height: 220)
+            .chartOverlay { proxy in
+                GeometryReader { geometry in
+                    Rectangle()
+                        .fill(.clear)
+                        .contentShape(Rectangle())
+                        .highPriorityGesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { value in
+                                    beginChartScrubShellSuppressionIfNeeded()
+                                    updateCampusChartSelection(
+                                        at: value.location,
+                                        proxy: proxy,
+                                        geometry: geometry,
+                                        points: points
+                                    )
+                                }
+                                .onEnded { _ in
+                                    endChartScrubbingIfNeeded()
+                                }
+                        )
+                }
+            }
+            .chartXAxis {
+                AxisMarks(preset: .automatic, position: .bottom)
+            }
+            .chartYAxis {
+                AxisMarks(position: .leading)
+            }
+        }
+    }
+
+    private func formattedChartPeriodLabel(for date: Date) -> String {
+        switch metricsTimeline {
+        case .daily:
+            return date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().year())
+        case .weekly:
+            return "Week of \(date.formatted(.dateTime.month(.abbreviated).day().year()))"
+        case .monthly:
+            return date.formatted(.dateTime.month(.wide).year())
+        }
+    }
+
+    private func formatRevenueDollars(_ dollars: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
+        return formatter.string(from: NSNumber(value: dollars)) ?? "$0.00"
+    }
+
+    private func formattedAverage(_ total: Int, periods: Int) -> String {
+        let average = Double(total) / Double(max(1, periods))
+        return average.formatted(.number.precision(.fractionLength(0...1)))
+    }
+
+    private func updateCampusChartSelection(
+        at location: CGPoint,
+        proxy: ChartProxy,
+        geometry: GeometryProxy,
+        points: [CampusMetricPlotPoint]
+    ) {
+        guard let plotFrame = proxy.plotFrame else { return }
+        let plotRect = geometry[plotFrame]
+        let rawX = location.x - plotRect.origin.x
+        let xInPlot = min(max(rawX, 0), plotRect.width)
+        guard plotRect.width > 0 else { return }
+
+        if let date: Date = proxy.value(atX: xInPlot, as: Date.self) {
+            selectedChartDate = date
+            return
+        }
+
+        guard let first = points.first?.date, let last = points.last?.date else { return }
+        let span = last.timeIntervalSince(first)
+        guard span > 0, plotRect.width > 0 else {
+            selectedChartDate = first
+            return
+        }
+        let fraction = Double(xInPlot / plotRect.width)
+        selectedChartDate = Date(timeIntervalSince1970: first.timeIntervalSince1970 + span * fraction)
+    }
+
+    private func endChartScrubbingIfNeeded() {
+        selectedChartDate = nil
+        endChartScrubShellSuppressionIfNeeded()
+    }
+
+    #if os(iOS)
+    private func beginChartScrubShellSuppressionIfNeeded() {
+        guard !isChartScrubbing else { return }
+        isChartScrubbing = true
+        ProviderShellNavigationPopBridge.shared.beginShellDismissGestureSuppression()
+    }
+
+    private func endChartScrubShellSuppressionIfNeeded() {
+        guard isChartScrubbing else { return }
+        isChartScrubbing = false
+        ProviderShellNavigationPopBridge.shared.endShellDismissGestureSuppression()
+    }
+    #else
+    private func beginChartScrubShellSuppressionIfNeeded() {}
+    private func endChartScrubShellSuppressionIfNeeded() {}
+    #endif
 
     /// Surfaces the designated campus manager for the campus currently being viewed. Reflects
     /// `users.first_name` / `last_name` joined by `/admin/campuses` (admin route) when available;
@@ -431,23 +888,22 @@ struct ProviderCampusManagerDashboardView: View {
     /// we fall back to the signed-in user's own name (they are the manager by definition there).
     @ViewBuilder
     private var designatedManagerRow: some View {
+        if canSwitchCampuses {
+            adminDesignatedManagerPickerRow
+        } else {
+            staticDesignatedManagerRow
+        }
+    }
+
+    private var staticDesignatedManagerRow: some View {
         let info = designatedManagerInfo()
-        HStack(alignment: .center, spacing: 10) {
-            AvatarView(url: nil, fallbackName: info.name)
-                .frame(width: 32, height: 32)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Campus Manager")
-                    .font(.provider(.caption2, weight: .semibold))
-                    .textCase(.uppercase)
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
-                HStack(spacing: 6) {
-                    Text(info.name)
-                        .font(.provider(.subheadline, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCream)
-                    if info.isCurrentUser {
-                        tag(text: "YOU", tint: Color.providerOlive)
-                    }
-                }
+        return HStack(alignment: .center, spacing: 6) {
+            designatedManagerPrefixLabel
+            Text(info.name)
+                .font(.provider(.subheadline, weight: .semibold))
+                .foregroundStyle(Color.lavaShellCream)
+            if info.isCurrentUser {
+                tag(text: "YOU", tint: Color.providerOlive)
             }
             Spacer(minLength: 0)
         }
@@ -457,6 +913,91 @@ struct ProviderCampusManagerDashboardView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.white.opacity(0.05))
         )
+    }
+
+    private var designatedManagerPrefixLabel: some View {
+        Text("Campus Manager:")
+            .font(.provider(.subheadline))
+            .foregroundStyle(Color.lavaShellCreamSecondary)
+    }
+
+    private var adminDesignatedManagerPickerRow: some View {
+        let selectedUserId = currentCampusManagerUserId
+        let displayName = designatedManagerInfo().name
+
+        return HStack(alignment: .center, spacing: 6) {
+            designatedManagerPrefixLabel
+
+            Menu {
+                Button {
+                    Task { await updateCampusManagerAssignment(barberUserId: nil) }
+                } label: {
+                    HStack {
+                        Text("No campus manager assigned")
+                        if selectedUserId == nil {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+
+                if barbers.isEmpty {
+                    Text("No barbers on this campus")
+                } else {
+                    ForEach(barbers) { barber in
+                        Button {
+                            Task { await updateCampusManagerAssignment(barberUserId: barber.id) }
+                        } label: {
+                            HStack {
+                                Text(barber.displayName)
+                                if barber.id == selectedUserId {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(displayName)
+                        .font(.provider(.subheadline, weight: .semibold))
+                        .foregroundStyle(Color.lavaShellCream)
+                        .lineLimit(1)
+                    if isAssigningCampusManager {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.provider(.caption2, weight: .semibold))
+                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                    }
+                }
+            }
+            .disabled(isAssigningCampusManager)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+        )
+    }
+
+    private var currentCampusManagerUserId: String? {
+        if let managerId = campus?.managerId?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !managerId.isEmpty
+        {
+            return managerId
+        }
+        if let cid = effectiveCampusId,
+           let row = availableCampuses.first(where: { $0.id == cid }),
+           let managerId = row.managerId?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !managerId.isEmpty
+        {
+            return managerId
+        }
+        return barbers.first(where: { $0.isCampusManager == true })?.id
     }
 
     /// Resolves who to render in `designatedManagerRow`. Order:
@@ -484,7 +1025,7 @@ struct ProviderCampusManagerDashboardView: View {
             let isMe = (row.managerId == myId) && myId != nil
             return (managerName, isMe)
         }
-        if viewingId == homeCampusId, !myName.isEmpty {
+        if !canSwitchCampuses, viewingId == homeCampusId, !myName.isEmpty {
             return (myName, true)
         }
         return ("Unassigned", false)
@@ -1493,6 +2034,7 @@ struct ProviderCampusManagerDashboardView: View {
         async let campusInfo = ProviderCampusManagerService.campusInfo(campusId: cid)
         async let perf = ProviderCampusManagerService.campusPerformance(campusId: cid)
         async let barberList = ProviderCampusManagerService.campusBarbers(campusId: cid)
+        async let metrics = fetchCampusMetricsSeries(campusId: cid, period: metricsTimeline.apiPeriod)
         do {
             let (c, p, bs) = try await (campusInfo, perf, barberList)
             campus = c
@@ -1503,6 +2045,7 @@ struct ProviderCampusManagerDashboardView: View {
         } catch {
             errorText = error.localizedDescription
         }
+        metricsSnapshot = await metrics
         await loadBookings()
         await loadPlatformServices()
         await loadApplications()
@@ -1531,12 +2074,53 @@ struct ProviderCampusManagerDashboardView: View {
         adminViewingCampusId = newCampusId
         campus = nil
         performance = nil
+        metricsSnapshot = nil
+        selectedChartDate = nil
         barbers = []
         bookings = []
         applications = []
         expandedApplicationId = nil
         errorText = nil
         await loadAll()
+    }
+
+    /// Admin-only: assign or remove the designated campus manager (mirrors web `BarberPage` admin dashboard).
+    private func updateCampusManagerAssignment(barberUserId: String?) async {
+        guard canSwitchCampuses, let cid = effectiveCampusId else { return }
+
+        isAssigningCampusManager = true
+        defer { isAssigningCampusManager = false }
+
+        do {
+            if let barberUserId, !barberUserId.isEmpty {
+                try await ProviderAdminService.assignCampusManager(
+                    campusId: cid,
+                    barberUserId: barberUserId,
+                    action: "assign"
+                )
+            } else if let currentId = currentCampusManagerUserId {
+                try await ProviderAdminService.assignCampusManager(
+                    campusId: cid,
+                    barberUserId: currentId,
+                    action: "remove"
+                )
+            } else {
+                return
+            }
+
+            async let campusInfo = ProviderCampusManagerService.campusInfo(campusId: cid)
+            async let barberList = ProviderCampusManagerService.campusBarbers(campusId: cid)
+            let (c, bs) = try await (campusInfo, barberList)
+            campus = c
+            barbers = bs
+            if availableCampusesLoaded {
+                availableCampuses = (try? await ProviderAdminService.listCampuses()) ?? availableCampuses
+            }
+        } catch let CampusCutsHTTPError.httpStatus(code, msg) {
+            errorText = msg ?? "Server returned \(code)."
+        } catch {
+            errorText = error.localizedDescription
+        }
     }
 
     private func loadBookings() async {
@@ -1549,6 +2133,33 @@ struct ProviderCampusManagerDashboardView: View {
         } catch {
             bookings = []
         }
+    }
+
+    private func reloadCampusMetricsTimeline() async {
+        guard let cid = effectiveCampusId else { return }
+        isLoadingMetrics = true
+        defer { isLoadingMetrics = false }
+        metricsSnapshot = await fetchCampusMetricsSeries(campusId: cid, period: metricsTimeline.apiPeriod)
+    }
+
+    private func fetchCampusMetricsSeries(campusId: String, period: String) async -> AdminMetricsSnapshotDTO? {
+        try? await ProviderCampusManagerService.campusMetrics(campusId: campusId, period: period)
+    }
+
+    private func parsedCampusMetricPoints(from snapshot: AdminMetricsSnapshotDTO?) -> [CampusMetricPlotPoint] {
+        guard let rows = snapshot?.data else { return [] }
+        let mapped: [CampusMetricPlotPoint] = rows.compactMap { row in
+            guard let d = CampusMetricsDateParsing.parse(row.date) else { return nil }
+            let cents = row.revenue ?? 0
+            return CampusMetricPlotPoint(
+                id: row.date,
+                date: d,
+                revenueDollars: Double(cents) / 100.0,
+                bookings: row.bookings ?? 0,
+                signups: row.users ?? 0
+            )
+        }
+        return mapped.sorted { $0.date < $1.date }
     }
 
     private func toggleBarberVisibility(_ barber: AdminBarberDTO) async {
@@ -1599,13 +2210,17 @@ struct ProviderCampusManagerDashboardView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.provider(.title3, weight: .semibold))
-                if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+            if !title.isEmpty || (subtitle.map { !$0.isEmpty } ?? false) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if !title.isEmpty {
+                        Text(title)
+                            .font(.provider(.title3, weight: .semibold))
+                    }
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.provider(.caption))
+                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                    }
                 }
             }
             content()
