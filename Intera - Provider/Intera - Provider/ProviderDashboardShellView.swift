@@ -9,6 +9,7 @@ struct ProviderDashboardShellView: View {
     @Environment(ProviderShellNavigationAppearance.self) private var shellNavigationAppearance
     @State private var navigator = ProviderShellNavigator()
     @State private var showingRequestsInbox = false
+    @State private var showingBusinessAnalytics = false
     @State private var bookingsInboxPresentationID = UUID()
     @State private var pendingInboxBookingDetailId: String?
     /// Number of *conversations* that have ≥ 1 unread inbound message — not the running total of
@@ -102,6 +103,10 @@ struct ProviderDashboardShellView: View {
             .tint(.providerOlive)
             .providerLavaScreenChrome()
             .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showingBusinessAnalytics) {
+            ProviderBusinessAnalyticsView()
+                .presentationDragIndicator(.visible)
         }
         .task {
             ProviderLocationPermissionBroker.shared.requestWhenInUseIfNeeded()
@@ -294,6 +299,9 @@ struct ProviderDashboardShellView: View {
                     navigator.pushRoute(ProviderShellRoute.services)
                 }
                 if session.hasProviderProfile {
+                    profileMenuActionButton("Business Analytics") {
+                        showingBusinessAnalytics = true
+                    }
                     profileMenuActionButton("Payout Settings") {
                         navigator.pushRoute(ProviderShellRoute.payoutSettings)
                     }
