@@ -1340,6 +1340,7 @@ router.get('/', authenticate, async (req, res, next) => {
         b."createdAt",
         b."paymentRequestedAt",
         b."paidAt",
+        b."paymentMethod",
         b."reviewRating",
         b."reviewComment",
         b."reviewedAt",
@@ -1406,6 +1407,7 @@ router.get('/', authenticate, async (req, res, next) => {
           // Payment tracking fields
           paymentRequestedAt: row.paymentRequestedAt || null,
           paidAt: row.paidAt || null,
+          paymentMethod: row.paymentMethod || null,
           // Review data (from consumer after service completion)
           review: row.reviewRating ? {
             rating: row.reviewRating,

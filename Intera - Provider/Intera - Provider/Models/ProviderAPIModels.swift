@@ -226,6 +226,7 @@ struct SimpleBookingDetailPayload: Decodable {
             paidAt: paidAt,
             tipAmountCents: tipAmountCents,
             totalPaidCents: totalPaidCents,
+            paymentMethod: nil,
             pendingRescheduleRequest: pendingRescheduleRequest,
             consumer: consumer,
             consumerName: nil,
@@ -365,6 +366,7 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
     let paidAt: Date?
     let tipAmountCents: Int?
     let totalPaidCents: Int?
+    let paymentMethod: String?
     let pendingRescheduleRequest: BookingPendingRescheduleRequestDTO?
     let consumer: SimpleBookingConsumer?
     /// `GET /bookings-simple/campus/:id` returns a single display string instead of `consumer`.
@@ -421,6 +423,10 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
     }
 
     var statusUpper: String { (status ?? "").uppercased() }
+
+    var isCashPayment: Bool {
+        paymentMethod?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "cash"
+    }
 
     var hasPendingRescheduleRequest: Bool {
         guard ProviderBookingStatusDisplay.isEligibleForPendingRescheduleRequest(status: status) else {

@@ -23,12 +23,29 @@ enum ProviderBarberBusinessAnalyticsEngine {
             return interval.contains(date)
         }
 
-        let grossVolumeCents = inPeriod.reduce(0) { $0 + revenueCents(for: $1) }
-        let paidInPeriod = inPeriod.filter { paidStatuses.contains($0.statusUpper) }
-        let cardVolumeCents = paidInPeriod.reduce(0) { $0 + revenueCents(for: $1) }
-        let platformCutCents = Int((Double(grossVolumeCents) * platformFeeRate).rounded())
-        let tipsCents = inPeriod.reduce(0) { $0 + max(0, $1.tipAmountCents ?? 0) }
-        let takeHomeCents = max(0, grossVolumeCents - platformCutCents + tipsCents)
+        let paidInPeriod = inPeriod.filter { paidStatuses.contains($0.statusUpper) && $0.paidAt != nil }
+        let grossVolumeCents = paidInPeriod.reduce(0) { $0 + revenueCents(for: $1) }
+
+        var cardVolumeCents = 0
+        var cashVolumeCents = 0
+        var cardCompletionCount = 0
+        var cashCompletionCount = 0
+        for booking in paidInPeriod {
+            let cents = revenueCents(for: booking)
+            if isCashPayment(booking) {
+                cashVolumeCents += cents
+                cashCompletionCount += 1
+            } else {
+                cardVolumeCents += cents
+                cardCompletionCount += 1
+            }
+        }
+
+        let platformCutCents = Int((Double(cardVolumeCents) * platformFeeRate).rounded())
+        let cardTakeHomeCents = max(0, cardVolumeCents - platformCutCents)
+        let cashTakeHomeCents = cashVolumeCents
+        let tipsCents = paidInPeriod.reduce(0) { $0 + max(0, $1.tipAmountCents ?? 0) }
+        let takeHomeCents = cardTakeHomeCents + cashTakeHomeCents
 
         let pendingCount = inPeriod.filter { pendingStatuses.contains($0.statusUpper) }.count
         let upcomingCount = inPeriod.filter { upcomingStatuses.contains($0.statusUpper) }.count
@@ -37,21 +54,23 @@ enum ProviderBarberBusinessAnalyticsEngine {
         let completionRate = Double(completedCount) / Double(completionDenominator)
 
         let uniqueClients = Set(
-            inPeriod.compactMap(\.consumerId).filter { !$0.isEmpty }
+            paidInPeriod.compactMap(\.consumerId).filter { !$0.isEmpty }
         ).count
 
         return BarberBusinessAnalyticsSnapshot(
             period: period,
             periodLabel: period.summaryLabel,
             grossVolumeCents: grossVolumeCents,
-            bookingCount: inPeriod.count,
+            bookingCount: paidInPeriod.count,
             uniqueClientCount: uniqueClients,
             chartPoints: chartPoints(from: inPeriod, period: period, calendar: calendar, now: now),
             cardVolumeCents: cardVolumeCents,
-            cardCompletionCount: paidInPeriod.count,
-            cashVolumeCents: 0,
-            cashCompletionCount: 0,
+            cardCompletionCount: cardCompletionCount,
+            cashVolumeCents: cashVolumeCents,
+            cashCompletionCount: cashCompletionCount,
             platformCutCents: platformCutCents,
+            cardTakeHomeCents: cardTakeHomeCents,
+            cashTakeHomeCents: cashTakeHomeCents,
             takeHomeCents: takeHomeCents,
             tipTotalCents: tipsCents,
             pendingCount: pendingCount,
@@ -97,6 +116,86 @@ enum ProviderBarberBusinessAnalyticsEngine {
         }
     }
 
+    static func normalizedMetricPoints(
+        from bookings: [SimpleBookingDTO],
+        timeline: BarberPerformanceTimeline,
+        calendar: Calendar = .current,
+        now: Date = .now
+    ) -> [BarberPerformanceMetricPoint] {
+        let paid = paidBookings(in: timeline, from: bookings, calendar: calendar, now: now)
+        let bucketDates = chartBucketDates(for: timeline, calendar: calendar, now: now)
+        var totalsByBucket: [Date: (revenueDollars: Double, bookings: Int)] = [:]
+
+        for booking in paid {
+            guard let paidAt = booking.paidAt else { continue }
+            let bucket = bucketStart(for: paidAt, timeline: timeline, calendar: calendar)
+            let existing = totalsByBucket[bucket] ?? (0, 0)
+            totalsByBucket[bucket] = (
+                revenueDollars: existing.revenueDollars + Double(revenueCents(for: booking)) / 100.0,
+                bookings: existing.bookings + 1
+            )
+        }
+
+        let dayFormatter: ISO8601DateFormatter = {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withFullDate]
+            return formatter
+        }()
+
+        return bucketDates.enumerated().map { index, bucket in
+            let totals = totalsByBucket[bucket] ?? (0, 0)
+            return BarberPerformanceMetricPoint(
+                id: dayFormatter.string(from: bucket),
+                bucketIndex: index,
+                date: bucket,
+                revenueDollars: totals.revenueDollars,
+                bookings: totals.bookings
+            )
+        }
+    }
+
+    /// Paid bookings whose `paidAt` falls in the chart window for the selected timeline.
+    static func paidBookings(
+        in timeline: BarberPerformanceTimeline,
+        from bookings: [SimpleBookingDTO],
+        calendar: Calendar = .current,
+        now: Date = .now
+    ) -> [SimpleBookingDTO] {
+        let bucketDates = Set(chartBucketDates(for: timeline, calendar: calendar, now: now))
+        return paidBookings(from: bookings).filter { booking in
+            guard let paidAt = booking.paidAt else { return false }
+            let bucket = bucketStart(for: paidAt, timeline: timeline, calendar: calendar)
+            return bucketDates.contains(bucket)
+        }
+    }
+
+    /// Backward-compatible alias used by the analytics shell snapshot builder.
+    static func bookings(
+        in timeline: BarberPerformanceTimeline,
+        from bookings: [SimpleBookingDTO],
+        calendar: Calendar = .current,
+        now: Date = .now
+    ) -> [SimpleBookingDTO] {
+        paidBookings(in: timeline, from: bookings, calendar: calendar, now: now)
+    }
+
+    static func paidBookings(from bookings: [SimpleBookingDTO]) -> [SimpleBookingDTO] {
+        bookings.filter { paidStatuses.contains($0.statusUpper) && $0.paidAt != nil }
+    }
+
+    static func bookings(forClientId clientId: String, from bookings: [SimpleBookingDTO]) -> [SimpleBookingDTO] {
+        let trimmedId = clientId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedId.isEmpty else { return [] }
+
+        return bookings
+            .filter { $0.consumerId?.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedId }
+            .sorted { lhs, rhs in
+                let left = lhs.scheduledTime ?? lhs.paidAt ?? .distantPast
+                let right = rhs.scheduledTime ?? rhs.paidAt ?? .distantPast
+                return left > right
+            }
+    }
+
     static func enrichClients(_ clients: [BarberClient], conversations: [ConversationRow]) -> [BarberClient] {
         let byUserId: [String: ConversationOtherUser] = Dictionary(
             uniqueKeysWithValues: conversations.compactMap { row in
@@ -129,6 +228,10 @@ enum ProviderBarberBusinessAnalyticsEngine {
         if let paid = booking.totalPaidCents, paid > 0 { return paid }
         if let price = booking.priceUsdCents, price > 0 { return price }
         return 0
+    }
+
+    private static func isCashPayment(_ booking: SimpleBookingDTO) -> Bool {
+        booking.isCashPayment
     }
 
     private static func avatarURL(from booking: SimpleBookingDTO) -> URL? {
@@ -217,6 +320,51 @@ enum ProviderBarberBusinessAnalyticsEngine {
                 volumeCents: entry.volume,
                 bookingCount: entry.count
             )
+        }
+    }
+
+    private static func chartBucketDates(
+        for timeline: BarberPerformanceTimeline,
+        calendar: Calendar,
+        now: Date
+    ) -> [Date] {
+        let count = timeline.chartBucketCount
+        let anchor = calendar.startOfDay(for: now)
+
+        switch timeline {
+        case .daily:
+            return (0..<count).compactMap { offset in
+                calendar.date(byAdding: .day, value: -(count - 1 - offset), to: anchor)
+            }
+
+        case .weekly:
+            let weekStart = calendar.dateInterval(of: .weekOfYear, for: anchor)?.start ?? anchor
+            return (0..<count).compactMap { offset in
+                calendar.date(byAdding: .weekOfYear, value: -(count - 1 - offset), to: weekStart)
+            }
+
+        case .monthly:
+            let monthStart = calendar.dateInterval(of: .month, for: anchor)?.start ?? anchor
+            return (0..<count).compactMap { offset in
+                calendar.date(byAdding: .month, value: -(count - 1 - offset), to: monthStart)
+            }
+        }
+    }
+
+    private static func bucketStart(
+        for date: Date,
+        timeline: BarberPerformanceTimeline,
+        calendar: Calendar
+    ) -> Date {
+        switch timeline {
+        case .daily:
+            return calendar.startOfDay(for: date)
+        case .weekly:
+            return calendar.dateInterval(of: .weekOfYear, for: date)?.start
+                ?? calendar.startOfDay(for: date)
+        case .monthly:
+            return calendar.dateInterval(of: .month, for: date)?.start
+                ?? calendar.startOfDay(for: date)
         }
     }
 }

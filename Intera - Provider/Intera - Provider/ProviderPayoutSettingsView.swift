@@ -1,11 +1,10 @@
 import SwiftUI
 
-/// Stripe Connect payouts and booking estimates — parity with web `PaymentManagementModal` (Payout Settings).
+/// Stripe Connect payouts — parity with web `PaymentManagementModal` (Payout Settings).
 struct ProviderPayoutSettingsView: View {
     @Environment(ProviderSession.self) private var session
     @Environment(\.openURL) private var openURL
 
-    @State private var summary: BarberPayoutSummaryDTO?
     @State private var connectStatus: BarberConnectStatusDTO?
     @State private var connectStatusUnknown = false
     @State private var isLoading = true
@@ -23,33 +22,25 @@ struct ProviderPayoutSettingsView: View {
                 ContentUnavailableView(
                     "No barber profile",
                     systemImage: "person.crop.circle.badge.exclamationmark",
-                    description: Text("Complete your CampusCuts barber setup on the web, then return here and pull to refresh.")
+                    description: Text("Complete barber setup on the web, then pull to refresh.")
                 )
                 .foregroundStyle(Color.lavaShellCream)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        Text("Stripe Connect payouts · booking estimates (not a platform balance)")
-                            .font(.provider(.footnote))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
-
+                    VStack(alignment: .leading, spacing: 24) {
                         if isLoading {
                             HStack(spacing: 10) {
                                 ProgressView()
                                     .tint(.providerOlive)
-                                Text("Loading payout settings…")
+                                Text("Loading…")
                                     .font(.provider(.subheadline))
                                     .foregroundStyle(Color.lavaShellCreamSecondary)
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 24)
                         } else {
-                            if let summary, summary.hasBarberProfile {
-                                revenueSection(summary)
-                            }
                             stripeConnectSection
                             stripeMobileAppSection
-                            howPaymentsWorkSection
                         }
                     }
                     .padding(16)
@@ -61,6 +52,12 @@ struct ProviderPayoutSettingsView: View {
         .providerNavigationStackDestinationBackdrop()
         .navigationTitle("Payout Settings")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Payout Settings")
+                    .font(.provider(.headline, weight: .semibold))
+            }
+        }
         .foregroundStyle(Color.lavaShellCream)
         .tint(.providerOlive)
         .providerLavaScreenChrome()
@@ -75,217 +72,93 @@ struct ProviderPayoutSettingsView: View {
         }
     }
 
-    private func revenueSection(_ s: BarberPayoutSummaryDTO) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Revenue overview", systemImage: "chart.bar.fill")
-                .font(.provider(.subheadline, weight: .semibold))
-            Text(
-                "Figures reflect paid bookings and internal records for your reference. Payout cash is not stored in a platform balance—funds flow to your Stripe Connect account per Stripe’s schedule."
-            )
-            .font(.provider(.caption))
-            .foregroundStyle(Color.lavaShellCreamSecondary)
-
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Estimated received")
-                        .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
-                    Text(s.displayTotalDollars, format: .currency(code: "USD"))
-                        .font(.provider(.title3, weight: .bold))
-                    Text(s.usesLedger ? "From ledger records (accounting); payouts still go through Stripe Connect." : "From paid bookings (~85% of service after platform fee + tips).")
-                        .font(.provider(.caption2))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Paid bookings")
-                        .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
-                    Text("\(s.paidBookingsCount)")
-                        .font(.provider(.title3, weight: .bold))
-                    Text("Completed checkout")
-                        .font(.provider(.caption2))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Last 30 days (estimate)")
-                        .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
-                    Text(Double(s.recent30DBarberCents) / 100, format: .currency(code: "USD"))
-                        .font(.provider(.headline, weight: .semibold))
-                        .foregroundStyle(Color.providerOlive)
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .gridCellColumns(2)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-            }
-
-            if s.usesLedger {
-                HStack(spacing: 8) {
-                    Text("Recorded settled: \(s.ledgerPaidOutDollars, format: .currency(code: "USD"))")
-                        .font(.provider(.caption2, weight: .medium))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.green.opacity(0.2), in: Capsule())
-                    if s.ledgerPendingDollars > 0 {
-                        Text("Recorded pending: \(s.ledgerPendingDollars, format: .currency(code: "USD"))")
-                            .font(.provider(.caption2, weight: .medium))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.orange.opacity(0.22), in: Capsule())
-                    }
-                }
-                .foregroundStyle(Color.lavaShellCreamSecondary)
-            }
-        }
-        .padding(14)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16))
-    }
-
     private var stripeConnectSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Stripe Connect", systemImage: "building.columns.fill")
-                .font(.provider(.subheadline, weight: .semibold))
-            Text("Open your Stripe Express dashboard to see payouts, balances, and bank transfers—or finish setup if you haven’t connected yet.")
-                .font(.provider(.caption))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Stripe Connect")
+                .font(.provider(.title2, weight: .semibold))
+                .foregroundStyle(Color.lavaShellCream)
 
-            if connectStatusUnknown {
-                Text("Could not load your Connect status. You can still open Stripe or start setup below.")
-                    .font(.provider(.caption2))
-                    .foregroundStyle(Color.orange.opacity(0.95))
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
-            }
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Open Stripe to view payouts or finish bank setup.")
+                    .font(.provider(.caption))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
 
-            if connectStatusUnknown || connectStatus?.hasAccount == true {
-                Button {
-                    Task { await openStripeDashboard() }
-                } label: {
-                    HStack {
-                        Image(systemName: "arrow.up.right.square")
-                        Text(connectBusy == .dashboard ? "Opening…" : "Open Stripe dashboard")
-                        Spacer()
+                if connectStatusUnknown {
+                    Text("Status unavailable — you can still open Stripe below.")
+                        .font(.provider(.caption2))
+                        .foregroundStyle(Color.orange.opacity(0.95))
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+                }
+
+                if connectStatusUnknown || connectStatus?.hasAccount == true {
+                    actionButton(
+                        title: connectBusy == .dashboard ? "Opening…" : "Open Stripe dashboard",
+                        prominent: true
+                    ) {
+                        Task { await openStripeDashboard() }
                     }
-                    .font(.provider(.body, weight: .semibold))
-                    .padding(.vertical, 12)
-                    .padding(.horizontal, 14)
-                    .frame(maxWidth: .infinity)
-                    .background(Color.providerOlive.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
                 }
-                .buttonStyle(.plain)
-                .disabled(connectBusy != nil)
-            }
 
-            Button {
-                Task { await startStripeOnboarding() }
-            } label: {
-                HStack {
-                    Image(systemName: "arrow.up.right.square")
-                    Text(onboardingButtonTitle)
-                    Spacer()
+                actionButton(
+                    title: onboardingButtonTitle,
+                    prominent: !(connectStatusUnknown || connectStatus?.hasAccount == true)
+                ) {
+                    Task { await startStripeOnboarding() }
                 }
-                .font(.provider(.body, weight: .semibold))
-                .padding(.vertical, 12)
-                .padding(.horizontal, 14)
-                .frame(maxWidth: .infinity)
-                .background(
-                    (connectStatusUnknown || connectStatus?.hasAccount == true)
-                        ? Color.white.opacity(0.1)
-                        : Color.providerOlive.opacity(0.45),
-                    in: RoundedRectangle(cornerRadius: 12)
-                )
             }
-            .buttonStyle(.plain)
-            .disabled(connectBusy != nil)
+            .padding(14)
+            .background(Color.providerOlive.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(Color.providerOlive.opacity(0.35), lineWidth: 1)
+            )
         }
-        .padding(14)
-        .background(Color.providerOlive.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(Color.providerOlive.opacity(0.35), lineWidth: 1)
-        )
     }
 
-    /// Stripe Dashboard (merchant) — official App Store listing.
     private static let stripeDashboardAppStoreURL = URL(string: "https://apps.apple.com/app/id978516833")!
 
     private var stripeMobileAppSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Manage revenue on the go", systemImage: "iphone")
-                .font(.provider(.subheadline, weight: .semibold))
-            (
-                Text("Download the ")
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Stripe App")
+                .font(.provider(.title2, weight: .semibold))
+                .foregroundStyle(Color.lavaShellCream)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Optional — track balances and payout activity on your phone.")
+                    .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
-                    + Text("Stripe Dashboard").fontWeight(.semibold).foregroundStyle(Color.lavaShellCream)
-                    + Text(
-                        " app from the App Store once your Connect account is set up. It is the easiest way to watch your balance, payouts, and deposits in real time—and Stripe can notify you about new activity."
-                    )
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-            )
-            .font(.provider(.caption))
-            Button {
-                openURL(Self.stripeDashboardAppStoreURL)
-            } label: {
-                HStack {
-                    Image(systemName: "arrow.down.circle.fill")
-                    Text("Get Stripe Dashboard on the App Store")
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.provider(.caption, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
+
+                actionButton(title: "Get Stripe Dashboard app", prominent: false) {
+                    openURL(Self.stripeDashboardAppStoreURL)
                 }
+            }
+            .padding(14)
+            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16))
+        }
+    }
+
+    private func actionButton(title: String, prominent: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
                 .font(.provider(.body, weight: .semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 12)
                 .padding(.horizontal, 14)
-                .frame(maxWidth: .infinity)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-            }
-            .buttonStyle(.plain)
-            Text("Use the web flow above first if you still need to finish Stripe Connect onboarding.")
-                .font(.provider(.caption2))
-                .foregroundStyle(Color.lavaShellCreamTertiary)
+                .background(
+                    prominent ? Color.providerOlive.opacity(0.45) : Color.white.opacity(0.1),
+                    in: RoundedRectangle(cornerRadius: 12)
+                )
         }
-        .padding(14)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16))
+        .buttonStyle(.plain)
+        .disabled(connectBusy != nil)
     }
 
     private var onboardingButtonTitle: String {
         if connectBusy == .onboarding { return "Redirecting…" }
-        if connectStatus?.hasAccount == true { return "Continue or update payout details in Stripe" }
+        if connectStatus?.hasAccount == true { return "Update payout details" }
         return "Set up Stripe Connect"
-    }
-
-    private var howPaymentsWorkSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("How payments work")
-                .font(.provider(.subheadline, weight: .semibold))
-            VStack(alignment: .leading, spacing: 6) {
-                bulletRow("Customer pays in USD through Stripe Checkout (card / enabled methods).")
-                bulletRow("Your share is paid out through Stripe Connect. The platform does not hold barber payout funds in a balance.")
-                bulletRow("Use the buttons above to open Stripe or finish Connect onboarding.")
-            }
-            .font(.provider(.caption))
-            .foregroundStyle(Color.lavaShellCreamSecondary)
-        }
-        .padding(.top, 4)
-    }
-
-    private func bulletRow(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text("•")
-            Text(text)
-                .fixedSize(horizontal: false, vertical: true)
-        }
     }
 
     private func load() async {
@@ -293,19 +166,14 @@ struct ProviderPayoutSettingsView: View {
             isLoading = true
             connectStatusUnknown = false
         }
-        async let sumTask: BarberPayoutSummaryDTO? = {
-            try? await ProviderBarberPayoutService.fetchPayoutSummary()
-        }()
-        async let connTask: Result<BarberConnectStatusDTO, Error> = {
+        let connRes: Result<BarberConnectStatusDTO, Error> = await {
             do {
                 return .success(try await ProviderBarberPayoutService.fetchConnectStatus())
             } catch {
                 return .failure(error)
             }
         }()
-        let (sum, connRes) = await (sumTask, connTask)
         await MainActor.run {
-            summary = sum
             switch connRes {
             case .success(let st):
                 connectStatus = st
@@ -326,7 +194,7 @@ struct ProviderPayoutSettingsView: View {
             await MainActor.run { openURL(url) }
         } catch {
             await MainActor.run {
-                errorAlert = Self.userMessage(for: error, fallback: "Could not open Stripe. Try completing Connect setup first.")
+                errorAlert = Self.userMessage(for: error, fallback: "Could not open Stripe. Finish Connect setup first.")
             }
         }
     }

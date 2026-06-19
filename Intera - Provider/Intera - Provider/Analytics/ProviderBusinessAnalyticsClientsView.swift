@@ -6,9 +6,11 @@ struct ProviderBusinessAnalyticsClientsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(clients.count == 1 ? "1 unique client" : "\(clients.count) unique clients")
+            Text(clients.count == 1 ? "1 client" : "\(clients.count) clients")
                 .font(.provider(.subheadline, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .multilineTextAlignment(.center)
 
             if clients.isEmpty {
                 Text("Clients appear here after their first booking with you.")
@@ -30,9 +32,6 @@ struct ProviderBusinessAnalyticsClientsView: View {
             onSelectClient(client)
         } label: {
             HStack(alignment: .center, spacing: 12) {
-                clientAvatar(client)
-                    .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
-
                 VStack(alignment: .leading, spacing: 6) {
                     Text(client.name)
                         .font(.provider(.body, weight: .bold))
@@ -77,42 +76,5 @@ struct ProviderBusinessAnalyticsClientsView: View {
             )
         }
         .buttonStyle(ProviderAnalyticsScalePressStyle())
-    }
-
-    @ViewBuilder
-    private func clientAvatar(_ client: BarberClient) -> some View {
-        Group {
-            if let url = client.profileImageURL {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    case .failure:
-                        avatarFallback(client)
-                    case .empty:
-                        ProgressView().tint(.providerOlive)
-                    @unknown default:
-                        avatarFallback(client)
-                    }
-                }
-            } else {
-                avatarFallback(client)
-            }
-        }
-        .frame(width: 52, height: 52)
-        .clipShape(Circle())
-        .overlay(
-            Circle()
-                .strokeBorder(Color.lavaShellCream.opacity(0.25), lineWidth: 1)
-        )
-    }
-
-    private func avatarFallback(_ client: BarberClient) -> some View {
-        ZStack {
-            Circle().fill(Color.providerOlive.opacity(0.25))
-            Text(String(client.name.prefix(1)).uppercased())
-                .font(.provider(.headline, weight: .bold))
-                .foregroundStyle(Color.lavaShellCream)
-        }
     }
 }

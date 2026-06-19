@@ -16,6 +16,56 @@ enum BarberAnalyticsPeriod: String, CaseIterable, Identifiable {
     var summaryLabel: String { rawValue }
 }
 
+// MARK: - Performance timeline chart (parity with Admin dashboard)
+
+enum BarberPerformanceTimeline: String, CaseIterable, Identifiable {
+    case daily, weekly, monthly
+    var id: String { rawValue }
+
+    var segmentTitle: String {
+        switch self {
+        case .daily: return "Daily"
+        case .weekly: return "Weekly"
+        case .monthly: return "Monthly"
+        }
+    }
+
+    var helperSubtitle: String {
+        switch self {
+        case .daily: return "Each day for the past week."
+        case .weekly: return "Each week for the past month."
+        case .monthly: return "Each month for the past six months."
+        }
+    }
+
+    var chartBucketCount: Int {
+        switch self {
+        case .daily: return 7
+        case .weekly: return 4
+        case .monthly: return 6
+        }
+    }
+
+    var bucketUnitSingular: String {
+        switch self {
+        case .daily: return "day"
+        case .weekly: return "week"
+        case .monthly: return "month"
+        }
+    }
+
+    var bestBucketLabel: String { "Best \(bucketUnitSingular)" }
+    var primaryMetricTitle: String { "Average per \(bucketUnitSingular)" }
+}
+
+struct BarberPerformanceMetricPoint: Identifiable, Hashable {
+    let id: String
+    let bucketIndex: Int
+    let date: Date
+    let revenueDollars: Double
+    let bookings: Int
+}
+
 // MARK: - Aggregated dashboard snapshot
 
 struct BarberBusinessAnalyticsSnapshot: Hashable {
@@ -30,6 +80,8 @@ struct BarberBusinessAnalyticsSnapshot: Hashable {
     let cashVolumeCents: Int
     let cashCompletionCount: Int
     let platformCutCents: Int
+    let cardTakeHomeCents: Int
+    let cashTakeHomeCents: Int
     let takeHomeCents: Int
     let tipTotalCents: Int
     let pendingCount: Int

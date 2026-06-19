@@ -186,18 +186,24 @@ struct ProviderDashboardShellView: View {
             Spacer(minLength: 8)
 
             if let roleLabel = headerRoleStatusText {
-                Text(roleLabel)
-                    .font(.provider(.subheadline, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCream)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.providerOlive.opacity(0.35), in: Capsule())
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(Color.lavaShellCream.opacity(0.2), lineWidth: 0.5)
-                    )
+                Button {
+                    navigator.pushRoute(ProviderShellRoute.adminDashboard)
+                } label: {
+                    Text(roleLabel)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.providerOlive.opacity(0.35), in: Capsule())
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(Color.lavaShellCream.opacity(0.2), lineWidth: 0.5)
+                        )
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.lavaShellCream)
+                .accessibilityLabel("Admin dashboard")
             }
 
             Spacer(minLength: 8)

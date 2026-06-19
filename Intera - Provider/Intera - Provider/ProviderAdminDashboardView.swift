@@ -157,6 +157,12 @@ struct ProviderAdminDashboardView: View {
         .task { await loadAll() }
         .navigationTitle("Admin")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Admin")
+                    .font(.provider(.headline, weight: .semibold))
+            }
+        }
         .providerLavaScreenChrome()
         .onChange(of: userSearch) { _, _ in
             usersVisibleCount = 25
