@@ -5,8 +5,8 @@ import SwiftUI
 ///
 /// Organized into **tabs** (Overview, Services, Barbers, Bookings) so campus managers can focus on one
 /// area at a time—mirroring the main sections of the web `CampusManagerDashboard.tsx`. The Barbers
-/// tab carries the web's nested layout: an **Applications** queue (default) and the **Current**
-/// barber roster.
+/// tab carries the web's nested layout: **Current** barbers first in the selector, then an
+/// **Applications** queue (Current is the default sub-tab).
 struct ProviderCampusManagerDashboardView: View {
     @Environment(ProviderSession.self) private var session
     @Environment(ProviderShellNavigator.self) private var shellNavigator
@@ -32,11 +32,10 @@ struct ProviderCampusManagerDashboardView: View {
 
     @State private var mainTab: CampusManagerMainTab = .overview
 
-    /// Sub-tabs under **Barbers**, matching web Campus Manager IA
-    /// (`Applications` is default, mirroring web's `barberSubTab === 'applications'` initial state).
+    /// Sub-tabs under **Barbers** (`Current` first, then `Applications`; default is Current).
     private enum BarbersSubTab: Int, CaseIterable, Identifiable {
-        case applications = 0
-        case current
+        case current = 0
+        case applications
 
         var id: Int { rawValue }
 
@@ -48,7 +47,7 @@ struct ProviderCampusManagerDashboardView: View {
         }
     }
 
-    @State private var barbersSubTab: BarbersSubTab = .applications
+    @State private var barbersSubTab: BarbersSubTab = .current
 
     @State private var campus: AdminCampusDTO?
     @State private var performance: AdminCampusPerformanceDTO?
@@ -56,7 +55,7 @@ struct ProviderCampusManagerDashboardView: View {
     @State private var metricsTimeline: CampusMetricsTimeline = .daily
     @State private var metricsChartSeries: CampusMetricsChartSeries = .revenue
     @State private var isLoadingMetrics = false
-    @State private var selectedChartDate: Date?
+    @State private var selectedBucketIndex: Int?
     @State private var isChartScrubbing = false
     @State private var barbers: [AdminBarberDTO] = []
     @State private var bookings: [SimpleBookingDTO] = []
@@ -232,11 +231,11 @@ struct ProviderCampusManagerDashboardView: View {
         }
         .providerLavaScreenChrome()
         .onChange(of: metricsTimeline) { _, _ in
-            selectedChartDate = nil
+            selectedBucketIndex = nil
             Task { await reloadCampusMetricsTimeline() }
         }
         .onChange(of: metricsChartSeries) { _, _ in
-            selectedChartDate = nil
+            selectedBucketIndex = nil
         }
         .onDisappear {
             endChartScrubbingIfNeeded()
@@ -387,7 +386,15 @@ struct ProviderCampusManagerDashboardView: View {
             switch self {
             case .daily: return "Each day for the past week."
             case .weekly: return "Each week for the past month."
-            case .monthly: return "Each month for the past year."
+            case .monthly: return "Each month for the past six months."
+            }
+        }
+
+        var chartBucketCount: Int {
+            switch self {
+            case .daily: return 7
+            case .weekly: return 4
+            case .monthly: return 6
             }
         }
 
@@ -418,6 +425,7 @@ struct ProviderCampusManagerDashboardView: View {
 
     private struct CampusMetricPlotPoint: Identifiable {
         let id: String
+        let bucketIndex: Int
         let date: Date
         let revenueDollars: Double
         let bookings: Int
@@ -443,14 +451,14 @@ struct ProviderCampusManagerDashboardView: View {
     }
 
     private var chartMetricPoints: [CampusMetricPlotPoint] {
-        parsedCampusMetricPoints(from: metricsSnapshot)
+        normalizedCampusMetricPoints(from: metricsSnapshot, timeline: metricsTimeline)
     }
 
     private var selectedMetricPoint: CampusMetricPlotPoint? {
-        guard let selectedChartDate else { return nil }
-        return chartMetricPoints.min(by: {
-            abs($0.date.timeIntervalSince(selectedChartDate)) < abs($1.date.timeIntervalSince(selectedChartDate))
-        })
+        guard let selectedBucketIndex,
+              chartMetricPoints.indices.contains(selectedBucketIndex)
+        else { return nil }
+        return chartMetricPoints[selectedBucketIndex]
     }
 
     private var overviewSection: some View {
@@ -492,6 +500,7 @@ struct ProviderCampusManagerDashboardView: View {
                             .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
                         } else {
                             campusMetricsTimelineChartView(points: chartMetricPoints)
+                                .padding(.bottom, 12)
                         }
                         if isLoadingMetrics {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -505,6 +514,7 @@ struct ProviderCampusManagerDashboardView: View {
                         Text("Press and drag on the chart to inspect a single \(metricsTimeline.bucketUnitSingular).")
                             .font(.provider(.caption2))
                             .foregroundStyle(Color.lavaShellCreamTertiary)
+                            .padding(.top, 4)
                     }
                 }
 
@@ -697,7 +707,7 @@ struct ProviderCampusManagerDashboardView: View {
                     ForEach(points) { pt in
                         let isSelected = selectedMetricPoint?.id == pt.id
                         AreaMark(
-                            x: .value("Period", pt.date),
+                            x: .value("Period", pt.bucketIndex),
                             y: .value("Revenue", pt.revenueDollars)
                         )
                         .foregroundStyle(
@@ -711,7 +721,7 @@ struct ProviderCampusManagerDashboardView: View {
                             )
                         )
                         LineMark(
-                            x: .value("Period", pt.date),
+                            x: .value("Period", pt.bucketIndex),
                             y: .value("Revenue", pt.revenueDollars)
                         )
                         .foregroundStyle(Color.providerOlive.opacity(isSelected || selectedMetricPoint == nil ? 1 : 0.45))
@@ -721,7 +731,7 @@ struct ProviderCampusManagerDashboardView: View {
                     ForEach(points) { pt in
                         let isSelected = selectedMetricPoint?.id == pt.id
                         BarMark(
-                            x: .value("Period", pt.date),
+                            x: .value("Period", pt.bucketIndex),
                             y: .value("Bookings", pt.bookings)
                         )
                         .foregroundStyle(Color.providerOlive.opacity(isSelected || selectedMetricPoint == nil ? 0.75 : 0.35))
@@ -730,7 +740,7 @@ struct ProviderCampusManagerDashboardView: View {
                     ForEach(points) { pt in
                         let isSelected = selectedMetricPoint?.id == pt.id
                         BarMark(
-                            x: .value("Period", pt.date),
+                            x: .value("Period", pt.bucketIndex),
                             y: .value("Sign-ups", pt.signups)
                         )
                         .foregroundStyle(Color.providerOlive.opacity(isSelected || selectedMetricPoint == nil ? 0.75 : 0.35))
@@ -738,40 +748,236 @@ struct ProviderCampusManagerDashboardView: View {
                 }
 
                 if let selected = selectedMetricPoint {
-                    RuleMark(x: .value("Selected", selected.date))
+                    RuleMark(x: .value("Selected", selected.bucketIndex))
                         .foregroundStyle(Color.lavaShellCream.opacity(0.45))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
                 }
             }
-            .frame(height: 220)
+            .frame(height: 236)
+            .chartXScale(domain: chartXPlotDomain(for: points), range: .plotDimension(padding: 0))
+            .chartYScale(domain: CampusMetricsChartScale.yDomain(for: points, series: metricsChartSeries))
+            .chartXAxis(.hidden)
             .chartOverlay { proxy in
                 GeometryReader { geometry in
-                    Rectangle()
-                        .fill(.clear)
-                        .contentShape(Rectangle())
-                        .highPriorityGesture(
-                            DragGesture(minimumDistance: 0)
-                                .onChanged { value in
-                                    beginChartScrubShellSuppressionIfNeeded()
-                                    updateCampusChartSelection(
-                                        at: value.location,
-                                        proxy: proxy,
-                                        geometry: geometry,
-                                        points: points
-                                    )
+                    if let plotFrame = proxy.plotFrame {
+                        let plotRect = geometry[plotFrame]
+                        let labelY = plotRect.maxY + 14
+                        let gridColor = Color.lavaShellCream.opacity(0.12)
+                        let gridStroke = StrokeStyle(lineWidth: 0.35)
+
+                        ZStack {
+                            campusMetricsPlotGrid(
+                                points: points,
+                                plotRect: plotRect,
+                                proxy: proxy,
+                                color: gridColor,
+                                stroke: gridStroke
+                            )
+
+                            ForEach(points) { pt in
+                                if let xPosition = proxy.position(forX: pt.bucketIndex) {
+                                    anchoredXAxisLabel(text: chartXAxisLabel(for: pt.date))
+                                        .position(x: plotRect.minX + xPosition, y: labelY)
                                 }
-                                .onEnded { _ in
-                                    endChartScrubbingIfNeeded()
-                                }
-                        )
+                            }
+
+                            Rectangle()
+                                .fill(.clear)
+                                .contentShape(Rectangle())
+                                .frame(width: plotRect.width, height: plotRect.height)
+                                .position(x: plotRect.midX, y: plotRect.midY)
+                                .highPriorityGesture(
+                                    DragGesture(minimumDistance: 0)
+                                        .onChanged { value in
+                                            beginChartScrubShellSuppressionIfNeeded()
+                                            updateCampusChartSelection(
+                                                at: value.location,
+                                                proxy: proxy,
+                                                geometry: geometry,
+                                                points: points
+                                            )
+                                        }
+                                        .onEnded { _ in
+                                            endChartScrubbingIfNeeded()
+                                        }
+                                )
+                        }
+                    }
                 }
             }
-            .chartXAxis {
-                AxisMarks(preset: .automatic, position: .bottom)
-            }
             .chartYAxis {
-                AxisMarks(position: .leading)
+                AxisMarks(
+                    position: .leading,
+                    values: CampusMetricsChartScale.yAxisTickValues(
+                        in: CampusMetricsChartScale.yDomain(for: points, series: metricsChartSeries)
+                    )
+                ) { value in
+                    AxisValueLabel {
+                        if let number = value.as(Double.self) {
+                            Text(campusMetricsYAxisLabel(for: number))
+                                .font(.provider(.caption2))
+                                .foregroundStyle(Color.lavaShellCreamSecondary)
+                        }
+                    }
+                }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func campusMetricsPlotGrid(
+        points: [CampusMetricPlotPoint],
+        plotRect: CGRect,
+        proxy: ChartProxy,
+        color: Color,
+        stroke: StrokeStyle
+    ) -> some View {
+        let yTicks = CampusMetricsChartScale.yAxisTickValues(
+            in: CampusMetricsChartScale.yDomain(for: points, series: metricsChartSeries)
+        )
+
+        ZStack {
+            ForEach(yTicks, id: \.self) { tick in
+                if let yPosition = proxy.position(forY: tick) {
+                    Path { path in
+                        path.move(to: CGPoint(x: plotRect.minX, y: plotRect.minY + yPosition))
+                        path.addLine(to: CGPoint(x: plotRect.maxX, y: plotRect.minY + yPosition))
+                    }
+                    .stroke(color, style: stroke)
+                }
+            }
+
+            ForEach(points) { pt in
+                if let xPosition = proxy.position(forX: pt.bucketIndex) {
+                    Path { path in
+                        path.move(to: CGPoint(x: plotRect.minX + xPosition, y: plotRect.minY))
+                        path.addLine(to: CGPoint(x: plotRect.minX + xPosition, y: plotRect.maxY))
+                    }
+                    .stroke(color, style: stroke)
+                }
+            }
+        }
+    }
+
+    private func campusMetricsYAxisLabel(for value: Double) -> String {
+        switch metricsChartSeries {
+        case .revenue: return chartYAxisRevenueLabel(for: value)
+        case .bookings, .signups: return chartYAxisCountLabel(for: value)
+        }
+    }
+
+    private enum CampusMetricsChartScale {
+        static func yValue(for point: CampusMetricPlotPoint, series: CampusMetricsChartSeries) -> Double {
+            switch series {
+            case .revenue: return point.revenueDollars
+            case .bookings: return Double(point.bookings)
+            case .signups: return Double(point.signups)
+            }
+        }
+
+        static func yDomain(
+            for points: [CampusMetricPlotPoint],
+            series: CampusMetricsChartSeries
+        ) -> ClosedRange<Double> {
+            let maxValue = points.map { yValue(for: $0, series: series) }.max() ?? 0
+            switch series {
+            case .revenue:
+                return 0 ... niceUpperBound(for: maxValue, minimum: 100, stepCount: 5)
+            case .bookings, .signups:
+                return 0 ... niceUpperBound(for: maxValue, minimum: 4, stepCount: 5)
+            }
+        }
+
+        static func niceUpperBound(for value: Double, minimum: Double, stepCount: Int) -> Double {
+            guard value > 0 else { return minimum }
+            let padded = value * 1.12
+            let rawStep = padded / Double(max(1, stepCount - 1))
+            guard rawStep > 0 else { return minimum }
+            let magnitude = pow(10, floor(log10(rawStep)))
+            let niceStep = max(magnitude, ceil(rawStep / magnitude) * magnitude)
+            return niceStep * Double(stepCount - 1)
+        }
+
+        static func yAxisTickValues(in domain: ClosedRange<Double>) -> [Double] {
+            let tickCount = 5
+            let span = domain.upperBound - domain.lowerBound
+            guard span > 0 else { return [0, 1, 2, 3, 4] }
+            let step = span / Double(tickCount - 1)
+            return (0..<tickCount).map { domain.lowerBound + step * Double($0) }
+        }
+    }
+
+    /// Places the label so a specific character sits on the gridline: middle letter (Daily) or "/" (Weekly).
+    private func anchoredXAxisLabel(text: String) -> some View {
+        let font = UIFont.provider(size: 11, weight: .regular, textStyle: .caption2)
+        let anchorIndex = chartXAxisAnchorCharacterIndex(for: text)
+        let shift = chartXAxisAnchorShift(text: text, anchorIndex: anchorIndex, font: font)
+
+        return Color.clear
+            .frame(width: 0, height: 14)
+            .overlay {
+                Text(text)
+                    .font(.provider(.caption2))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .fixedSize()
+                    .offset(x: shift)
+            }
+    }
+
+    private func chartXAxisAnchorCharacterIndex(for text: String) -> Int {
+        switch metricsTimeline {
+        case .daily:
+            return max(0, (text.count - 1) / 2)
+        case .weekly:
+            if let slashIndex = text.firstIndex(of: "/") {
+                return text.distance(from: text.startIndex, to: slashIndex)
+            }
+            return max(0, (text.count - 1) / 2)
+        case .monthly:
+            return max(0, (text.count - 1) / 2)
+        }
+    }
+
+    private func chartXAxisAnchorShift(text: String, anchorIndex: Int, font: UIFont) -> CGFloat {
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        let nsText = text as NSString
+        let totalWidth = nsText.size(withAttributes: attributes).width
+        guard !text.isEmpty, anchorIndex < text.count else { return 0 }
+
+        let prefix = nsText.substring(to: anchorIndex) as NSString
+        let prefixWidth = prefix.size(withAttributes: attributes).width
+        let anchorChar = nsText.substring(with: NSRange(location: anchorIndex, length: 1)) as NSString
+        let charWidth = anchorChar.size(withAttributes: attributes).width
+        let anchorCenterX = prefixWidth + charWidth / 2
+        return totalWidth / 2 - anchorCenterX
+    }
+
+    /// Tight x domain so the plot fills the chart width with no faded margin columns.
+    private func chartXPlotDomain(for points: [CampusMetricPlotPoint]) -> ClosedRange<Int> {
+        guard let lastIndex = points.last?.bucketIndex, lastIndex >= 0 else { return 0 ... 0 }
+        return 0 ... lastIndex
+    }
+
+    private func chartYAxisRevenueLabel(for value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
+        formatter.maximumFractionDigits = value >= 100 || value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 2
+        return formatter.string(from: NSNumber(value: value)) ?? "$0"
+    }
+
+    private func chartYAxisCountLabel(for value: Double) -> String {
+        String(Int(value.rounded()))
+    }
+
+    private func chartXAxisLabel(for date: Date) -> String {
+        switch metricsTimeline {
+        case .daily:
+            return date.formatted(.dateTime.weekday(.abbreviated))
+        case .weekly:
+            return date.formatted(.dateTime.month(.defaultDigits).day())
+        case .monthly:
+            return date.formatted(.dateTime.month(.abbreviated).year(.twoDigits))
         }
     }
 
@@ -804,29 +1010,24 @@ struct ProviderCampusManagerDashboardView: View {
         geometry: GeometryProxy,
         points: [CampusMetricPlotPoint]
     ) {
-        guard let plotFrame = proxy.plotFrame else { return }
+        guard !points.isEmpty, let plotFrame = proxy.plotFrame else { return }
         let plotRect = geometry[plotFrame]
         let rawX = location.x - plotRect.origin.x
         let xInPlot = min(max(rawX, 0), plotRect.width)
         guard plotRect.width > 0 else { return }
 
-        if let date: Date = proxy.value(atX: xInPlot, as: Date.self) {
-            selectedChartDate = date
+        if let index: Int = proxy.value(atX: xInPlot, as: Int.self) {
+            selectedBucketIndex = min(max(0, index), points.count - 1)
             return
         }
 
-        guard let first = points.first?.date, let last = points.last?.date else { return }
-        let span = last.timeIntervalSince(first)
-        guard span > 0, plotRect.width > 0 else {
-            selectedChartDate = first
-            return
-        }
         let fraction = Double(xInPlot / plotRect.width)
-        selectedChartDate = Date(timeIntervalSince1970: first.timeIntervalSince1970 + span * fraction)
+        let rawIndex = Int((fraction * Double(points.count)).rounded(.down))
+        selectedBucketIndex = min(max(0, rawIndex), points.count - 1)
     }
 
     private func endChartScrubbingIfNeeded() {
-        selectedChartDate = nil
+        selectedBucketIndex = nil
         endChartScrubShellSuppressionIfNeeded()
     }
 
@@ -1710,7 +1911,7 @@ struct ProviderCampusManagerDashboardView: View {
         campus = nil
         performance = nil
         metricsSnapshot = nil
-        selectedChartDate = nil
+        selectedBucketIndex = nil
         barbers = []
         bookings = []
         applications = []
@@ -1781,20 +1982,87 @@ struct ProviderCampusManagerDashboardView: View {
         try? await ProviderCampusManagerService.campusMetrics(campusId: campusId, period: period)
     }
 
-    private func parsedCampusMetricPoints(from snapshot: AdminMetricsSnapshotDTO?) -> [CampusMetricPlotPoint] {
-        guard let rows = snapshot?.data else { return [] }
-        let mapped: [CampusMetricPlotPoint] = rows.compactMap { row in
-            guard let d = CampusMetricsDateParsing.parse(row.date) else { return nil }
+    private func normalizedCampusMetricPoints(
+        from snapshot: AdminMetricsSnapshotDTO?,
+        timeline: CampusMetricsTimeline
+    ) -> [CampusMetricPlotPoint] {
+        let calendar = Calendar.current
+        let bucketDates = Self.chartBucketDates(for: timeline, calendar: calendar)
+        var totalsByBucket: [Date: (revenueDollars: Double, bookings: Int, signups: Int)] = [:]
+
+        for row in snapshot?.data ?? [] {
+            guard let parsedDate = CampusMetricsDateParsing.parse(row.date) else { continue }
+            let bucket = Self.bucketStart(for: parsedDate, timeline: timeline, calendar: calendar)
             let cents = row.revenue ?? 0
-            return CampusMetricPlotPoint(
-                id: row.date,
-                date: d,
-                revenueDollars: Double(cents) / 100.0,
-                bookings: row.bookings ?? 0,
-                signups: row.users ?? 0
+            let existing = totalsByBucket[bucket] ?? (0, 0, 0)
+            totalsByBucket[bucket] = (
+                revenueDollars: existing.revenueDollars + Double(cents) / 100.0,
+                bookings: existing.bookings + (row.bookings ?? 0),
+                signups: existing.signups + (row.users ?? 0)
             )
         }
-        return mapped.sorted { $0.date < $1.date }
+
+        let dayFormatter: ISO8601DateFormatter = {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withFullDate]
+            return formatter
+        }()
+
+        return bucketDates.enumerated().map { index, bucket in
+            let totals = totalsByBucket[bucket] ?? (0, 0, 0)
+            return CampusMetricPlotPoint(
+                id: dayFormatter.string(from: bucket),
+                bucketIndex: index,
+                date: bucket,
+                revenueDollars: totals.revenueDollars,
+                bookings: totals.bookings,
+                signups: totals.signups
+            )
+        }
+    }
+
+    private static func chartBucketDates(
+        for timeline: CampusMetricsTimeline,
+        calendar: Calendar
+    ) -> [Date] {
+        let count = timeline.chartBucketCount
+        let anchor = calendar.startOfDay(for: Date())
+
+        switch timeline {
+        case .daily:
+            return (0..<count).compactMap { offset in
+                calendar.date(byAdding: .day, value: -(count - 1 - offset), to: anchor)
+            }
+
+        case .weekly:
+            let weekStart = calendar.dateInterval(of: .weekOfYear, for: anchor)?.start ?? anchor
+            return (0..<count).compactMap { offset in
+                calendar.date(byAdding: .weekOfYear, value: -(count - 1 - offset), to: weekStart)
+            }
+
+        case .monthly:
+            let monthStart = calendar.dateInterval(of: .month, for: anchor)?.start ?? anchor
+            return (0..<count).compactMap { offset in
+                calendar.date(byAdding: .month, value: -(count - 1 - offset), to: monthStart)
+            }
+        }
+    }
+
+    private static func bucketStart(
+        for date: Date,
+        timeline: CampusMetricsTimeline,
+        calendar: Calendar
+    ) -> Date {
+        switch timeline {
+        case .daily:
+            return calendar.startOfDay(for: date)
+        case .weekly:
+            return calendar.dateInterval(of: .weekOfYear, for: date)?.start
+                ?? calendar.startOfDay(for: date)
+        case .monthly:
+            return calendar.dateInterval(of: .month, for: date)?.start
+                ?? calendar.startOfDay(for: date)
+        }
     }
 
     private func toggleBarberVisibility(_ barber: AdminBarberDTO) async {
