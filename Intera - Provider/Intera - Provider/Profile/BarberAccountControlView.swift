@@ -33,8 +33,7 @@ struct BarberAccountControlView: View {
     @State private var alertMessage = ""
     @State private var showAlert = false
 
-    private let profileAvatarSize: CGFloat = 120
-    private let profileAvatarCornerRadius: CGFloat = 14
+    private let profileAvatarSize: CGFloat = ProviderSquaredAvatarMetrics.profileSize
     private let profileCameraButtonSize: CGFloat = 32
 
     var body: some View {
@@ -178,38 +177,11 @@ struct BarberAccountControlView: View {
         let fallbackName = [firstName, lastName].joined(separator: " ").trimmingCharacters(in: .whitespaces)
         let displayName = fallbackName.isEmpty ? session.displayName : fallbackName
 
-        ZStack {
-            RoundedRectangle(cornerRadius: profileAvatarCornerRadius, style: .continuous)
-                .fill(Color.white.opacity(0.12))
-            if let avatarURL {
-                AsyncImage(url: avatarURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        squaredAvatarInitials(displayName)
-                    }
-                }
-            } else {
-                squaredAvatarInitials(displayName)
-            }
-        }
-        .frame(width: profileAvatarSize, height: profileAvatarSize)
-        .clipShape(RoundedRectangle(cornerRadius: profileAvatarCornerRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: profileAvatarCornerRadius, style: .continuous)
-                .strokeBorder(Color.lavaShellCream.opacity(0.3), lineWidth: 0.6)
+        ProviderSquaredAvatarView(
+            url: avatarURL,
+            fallbackName: displayName,
+            size: profileAvatarSize
         )
-    }
-
-    private func squaredAvatarInitials(_ name: String) -> some View {
-        let parts = name.split(separator: " ").map(String.init)
-        let chars = parts.prefix(2).compactMap { $0.first.map(String.init) }
-        let initials = chars.joined().uppercased()
-
-        return Text(initials.isEmpty ? "?" : initials)
-            .font(.provider(.title3, weight: .bold))
-            .foregroundStyle(Color.lavaShellCream)
     }
 
     private var coreDetailsSection: some View {

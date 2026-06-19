@@ -9,6 +9,7 @@ struct ProviderAdminBarberDetailView: View {
     @State private var bookings: [AdminBarberBookingDTO] = []
     @State private var isLoading = true
     @State private var isToggling = false
+    @State private var isMessaging = false
     @State private var errorText: String?
 
     init(barber: AdminBarberDTO) {
@@ -43,8 +44,11 @@ struct ProviderAdminBarberDetailView: View {
         sectionCard(title: "Profile", subtitle: barber.email) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
-                    AvatarView(url: barber.avatarURL, fallbackName: barber.displayName)
-                        .frame(width: 56, height: 56)
+                    ProviderSquaredAvatarView(
+                        url: barber.avatarURL,
+                        fallbackName: barber.displayName,
+                        size: 56
+                    )
                     VStack(alignment: .leading, spacing: 2) {
                         Text(barber.displayName)
                             .font(.provider(.title3, weight: .semibold))
@@ -62,7 +66,46 @@ struct ProviderAdminBarberDetailView: View {
                     Spacer()
                 }
                 visibilityRow
+                messageBarberButton
             }
+        }
+    }
+
+    private var messageBarberButton: some View {
+        Button {
+            Task { await messageBarber() }
+        } label: {
+            HStack {
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                Text(isMessaging ? "Opening chat…" : "Message barber")
+                    .font(.provider(.subheadline, weight: .semibold))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.provider(.caption))
+                    .foregroundStyle(Color.lavaShellCreamTertiary)
+            }
+            .foregroundStyle(Color.lavaShellCream)
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.providerOlive.opacity(0.22))
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isMessaging)
+    }
+
+    @MainActor
+    private func messageBarber() async {
+        isMessaging = true
+        defer { isMessaging = false }
+        errorText = nil
+        do {
+            _ = try await ProviderBarberChatOpener.openSupportChat(barberUserId: barber.id)
+        } catch let CampusCutsHTTPError.httpStatus(code, msg) {
+            errorText = msg ?? "Could not open chat (\(code))."
+        } catch {
+            errorText = error.localizedDescription
         }
     }
 

@@ -270,6 +270,63 @@ router.post('/cm-barber', authenticate, async (req, res, next) => {
     }
 
     const user = userResult.rows[0];
+
+    // Admin initiating a support thread with a specific barber (no campus on admin account required).
+    if (user.role === 'ADMIN' && req.body.barberUserId) {
+      const otherUserId = req.body.barberUserId;
+
+      const barberCheck = await pool.query(
+        `SELECT u.id FROM users u
+         JOIN barbers b ON b."userId" = u.id
+         WHERE u.id = $1 AND u.role = 'BARBER'`,
+        [otherUserId]
+      );
+
+      if (barberCheck.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Barber not found' });
+      }
+
+      const existingConv = await pool.query(
+        `SELECT * FROM conversations 
+         WHERE booking_id IS NULL 
+           AND is_active = true
+           AND ((user1_id = $1 AND user2_id = $2) OR (user1_id = $2 AND user2_id = $1))
+         LIMIT 1`,
+        [userId, otherUserId]
+      );
+
+      if (existingConv.rows.length > 0) {
+        const conv = existingConv.rows[0];
+        return res.json({
+          success: true,
+          data: {
+            conversation: {
+              id: conv.id,
+              otherUserId,
+              isNew: false
+            }
+          }
+        });
+      }
+
+      const newConv = await pool.query(
+        `INSERT INTO conversations (user1_id, user2_id, booking_id, is_active, created_at, updated_at)
+         VALUES ($1, $2, NULL, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING id`,
+        [userId, otherUserId]
+      );
+
+      return res.status(201).json({
+        success: true,
+        data: {
+          conversation: {
+            id: newConv.rows[0].id,
+            otherUserId,
+            isNew: true
+          }
+        }
+      });
+    }
     
     // Use barber's campus if available
     const campusId = user.barber_campus_id;
@@ -308,9 +365,9 @@ router.post('/cm-barber', authenticate, async (req, res, next) => {
 
     const campusManager = cmResult.rows[0];
 
-    // Determine who is the CM and who is the barber
-    const isCM = user.isCampusManager === true || user.role === 'CAMPUS_MANAGER';
-    const otherUserId = isCM ? req.body.barberUserId : campusManager.user_id;
+    // Determine who is the CM/staff and who is the barber
+    const isStaff = user.isCampusManager === true || user.role === 'CAMPUS_MANAGER' || user.role === 'ADMIN';
+    const otherUserId = isStaff ? req.body.barberUserId : campusManager.user_id;
 
     if (!otherUserId) {
       return res.status(400).json({ success: false, error: 'Could not determine conversation partner' });
@@ -403,8 +460,9 @@ router.get('/cm-barber/conversations', authenticate, async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'You must be associated with a campus to view barber chats' });
     }
 
-    // Get all active barbers in this campus (excluding self and demoted users)
-    // Only show users who are still BARBER role AND have isActive = true
+    // Admins see all barbers on the campus (including hidden/inactive); others only active barbers.
+    const activeBarberFilter = isAdmin ? '' : 'AND b."isActive" = true';
+
     const barbersResult = await pool.query(
       `SELECT 
          u.id as user_id,
@@ -414,6 +472,7 @@ router.get('/cm-barber/conversations', authenticate, async (req, res, next) => {
          u.email,
          b.id as barber_id,
          b."isCampusManager",
+         b."isActive" as is_active,
          c.id as conversation_id,
          (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message,
          (SELECT created_at FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message_at,
@@ -424,7 +483,7 @@ router.get('/cm-barber/conversations', authenticate, async (req, res, next) => {
          AND c.is_active = true
          AND ((c.user1_id = $1 AND c.user2_id = u.id) OR (c.user1_id = u.id AND c.user2_id = $1))
        WHERE b."campusId" = $2 
-         AND b."isActive" = true 
+         ${activeBarberFilter}
          AND b."isCampusManager" = false
          AND b."userId" != $1
          AND u.role = 'BARBER'
@@ -443,6 +502,7 @@ router.get('/cm-barber/conversations', authenticate, async (req, res, next) => {
           name: `${row.first_name} ${row.last_name}`,
           avatarUrl: row.avatarUrl,
           email: row.email,
+          isActive: row.is_active,
           conversationId: row.conversation_id,
           lastMessage: row.last_message,
           lastMessageAt: row.last_message_at,

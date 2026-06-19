@@ -304,6 +304,11 @@ struct ProviderDashboardShellView: View {
                         navigator.pushRoute(ProviderShellRoute.payoutSettings)
                     }
                 }
+                if session.hasProviderProfile || session.authUser?.hasAdminPrivileges == true {
+                    profileMenuActionButton("Barber Chats") {
+                        navigator.pushRoute(ProviderShellRoute.barberChats)
+                    }
+                }
             }
             if session.authUser?.hasAdminPrivileges == true {
                 Section("Admin") {
@@ -415,12 +420,8 @@ struct ProviderDashboardShellView: View {
             ProviderAdminDashboardView()
                 .providerPushedDestinationChrome(for: route)
                 .providerShellBackToolbar()
-        case .adminBarberDetail(let barber):
-            ProviderAdminBarberDetailView(barber: barber)
-                .providerPushedDestinationChrome(for: route)
-                .providerShellBackToolbar()
-        case .adminUserDetail(let user):
-            ProviderAdminUserDetailView(user: user)
+        case .barberChats:
+            ProviderBarberChatsListView()
                 .providerPushedDestinationChrome(for: route)
                 .providerShellBackToolbar()
         }

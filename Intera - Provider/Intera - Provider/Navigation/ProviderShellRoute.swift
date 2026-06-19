@@ -14,19 +14,18 @@ enum ProviderShellRoute: Hashable {
     /// Parity with web `PaymentManagementModal` / Payout Settings.
     case payoutSettings
     /// Native Admin dashboard (platform stats, campuses, barbers, users). Surfaced only when
-    /// `AuthMeUser.hasAdminPrivileges` is true.
+    /// `AuthMeUser.hasAdminPrivileges` is true. Barber / user detail pushes happen inside the
+    /// dashboard's own `NavigationStack`, not as separate shell stack entries.
     case adminDashboard
-    /// Push for `/admin/barbers/:id/bookings` and visibility controls.
-    case adminBarberDetail(AdminBarberDTO)
-    /// Push for `/admin/users/:id/bookings`.
-    case adminUserDetail(AdminPlatformUserDTO)
+    /// Campus barber roster for peer coordination (barbers) or admin support messaging.
+    case barberChats
 }
 
 extension ProviderShellRoute {
     /// Backdrop for this route only (travels with the push transition — no shared shell underlay).
     var pushedBackdropStyle: ProviderNavigationStackDestinationBackdropStyle {
         switch self {
-        case .messages:
+        case .messages, .barberChats:
             return .neutralGrey
         default:
             return .shell

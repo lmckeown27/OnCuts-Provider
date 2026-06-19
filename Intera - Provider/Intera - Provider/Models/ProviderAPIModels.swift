@@ -1091,6 +1091,20 @@ struct ConversationOtherUser: Decodable, Hashable {
     let lastName: String?
     let displayName: String?
     let profilePicture: String?
+
+    init(
+        id: String?,
+        firstName: String? = nil,
+        lastName: String? = nil,
+        displayName: String? = nil,
+        profilePicture: String? = nil
+    ) {
+        self.id = id
+        self.firstName = firstName
+        self.lastName = lastName
+        self.displayName = displayName
+        self.profilePicture = profilePicture
+    }
 }
 
 struct ConversationRow: Decodable, Identifiable, Hashable {
@@ -1100,6 +1114,22 @@ struct ConversationRow: Decodable, Identifiable, Hashable {
     let unreadCount: Int?
     let lastMessage: ConversationLastMessage?
     let otherUser: ConversationOtherUser?
+
+    init(
+        id: Int,
+        bookingId: String? = nil,
+        booking: ConversationBookingSummary? = nil,
+        unreadCount: Int? = nil,
+        lastMessage: ConversationLastMessage? = nil,
+        otherUser: ConversationOtherUser? = nil
+    ) {
+        self.id = id
+        self.bookingId = bookingId
+        self.booking = booking
+        self.unreadCount = unreadCount
+        self.lastMessage = lastMessage
+        self.otherUser = otherUser
+    }
 }
 
 struct ConversationBookingSummary: Decodable, Hashable {
@@ -1126,6 +1156,12 @@ struct ConversationLastMessage: Decodable, Hashable {
     /// party sent the latest message (you have something waiting), dark green when *you* sent it
     /// (ball is in their court). `nil` only on conversations with no messages yet.
     let senderId: String?
+
+    init(content: String? = nil, time: Date? = nil, senderId: String? = nil) {
+        self.content = content
+        self.time = time
+        self.senderId = senderId
+    }
 }
 
 struct MessagesEnvelope: Decodable {
@@ -1181,6 +1217,194 @@ struct BlockedConsumerRow: Decodable, Identifiable, Hashable {
     let id: String
     let displayName: String?
     let blockedAt: Date?
+}
+
+// MARK: - Barber Chats (peer + admin support rosters)
+
+/// Row from `GET /messages/barber-chats/barbers` or `GET /messages/cm-barber/conversations`.
+struct BarberChatRowDTO: Decodable, Hashable, Identifiable {
+    let userId: String
+    let barberId: String
+    let name: String
+    let firstName: String?
+    let lastName: String?
+    let avatarUrl: String?
+    let email: String
+    let isCampusManager: Bool?
+    let conversationId: Int?
+    let lastMessage: String?
+    let lastMessageAt: String?
+    let unreadCount: Int
+    /// Populated client-side when merging per-campus admin rosters.
+    let campusId: String?
+    /// Whether the barber is visible to consumers (`barbers.isActive`).
+    let isActive: Bool?
+
+    var id: String { userId }
+
+    var avatarURL: URL? {
+        guard let raw = avatarUrl?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        return URL(string: raw)
+    }
+
+    init(
+        userId: String,
+        barberId: String,
+        name: String,
+        firstName: String?,
+        lastName: String?,
+        avatarUrl: String?,
+        email: String,
+        isCampusManager: Bool?,
+        conversationId: Int?,
+        lastMessage: String?,
+        lastMessageAt: String?,
+        unreadCount: Int,
+        campusId: String? = nil,
+        isActive: Bool? = nil
+    ) {
+        self.userId = userId
+        self.barberId = barberId
+        self.name = name
+        self.firstName = firstName
+        self.lastName = lastName
+        self.avatarUrl = avatarUrl
+        self.email = email
+        self.isCampusManager = isCampusManager
+        self.conversationId = conversationId
+        self.lastMessage = lastMessage
+        self.lastMessageAt = lastMessageAt
+        self.unreadCount = unreadCount
+        self.campusId = campusId
+        self.isActive = isActive
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        userId = try container.decode(String.self, forKey: .userId)
+        barberId = try container.decode(String.self, forKey: .barberId)
+        name = try container.decode(String.self, forKey: .name)
+        firstName = try container.decodeIfPresent(String.self, forKey: .firstName)
+        lastName = try container.decodeIfPresent(String.self, forKey: .lastName)
+        avatarUrl = try container.decodeIfPresent(String.self, forKey: .avatarUrl)
+        email = try container.decode(String.self, forKey: .email)
+        isCampusManager = try container.decodeIfPresent(Bool.self, forKey: .isCampusManager)
+        conversationId = try container.decodeIfPresent(Int.self, forKey: .conversationId)
+        lastMessage = try container.decodeIfPresent(String.self, forKey: .lastMessage)
+        lastMessageAt = try container.decodeIfPresent(String.self, forKey: .lastMessageAt)
+        unreadCount = try container.decodeIfPresent(Int.self, forKey: .unreadCount) ?? 0
+        campusId = try container.decodeIfPresent(String.self, forKey: .campusId)
+        isActive = try container.decodeIfPresent(Bool.self, forKey: .isActive)
+    }
+
+    func tagged(campusId: String) -> BarberChatRowDTO {
+        BarberChatRowDTO(
+            userId: userId,
+            barberId: barberId,
+            name: name,
+            firstName: firstName,
+            lastName: lastName,
+            avatarUrl: avatarUrl,
+            email: email,
+            isCampusManager: isCampusManager,
+            conversationId: conversationId,
+            lastMessage: lastMessage,
+            lastMessageAt: lastMessageAt,
+            unreadCount: unreadCount,
+            campusId: campusId,
+            isActive: isActive
+        )
+    }
+
+    func conversationRow(conversationId: Int) -> ConversationRow {
+        ConversationRow(
+            id: conversationId,
+            bookingId: nil,
+            booking: nil,
+            unreadCount: unreadCount,
+            lastMessage: ConversationLastMessage(
+                content: lastMessage,
+                time: BarberChatTimestampParsing.parse(lastMessageAt),
+                senderId: nil
+            ),
+            otherUser: ConversationOtherUser(
+                id: userId,
+                firstName: firstName,
+                lastName: lastName,
+                displayName: name,
+                profilePicture: avatarUrl
+            )
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case userId, barberId, name, firstName, lastName, avatarUrl, email
+        case isCampusManager, conversationId, lastMessage, lastMessageAt, unreadCount, campusId, isActive
+    }
+}
+
+struct BarberChatsListEnvelope: Decodable {
+    let success: Bool?
+    let data: BarberChatsListData?
+}
+
+struct BarberChatsListData: Decodable {
+    let barbers: [BarberChatRowDTO]?
+}
+
+struct StartBarberChatConversationEnvelope: Decodable {
+    let success: Bool?
+    let data: StartBarberChatConversationData?
+}
+
+struct StartBarberChatConversationData: Decodable {
+    let conversation: StartBarberChatConversationRef?
+}
+
+struct StartBarberChatConversationRef: Decodable {
+    let id: Int
+    let otherUserId: String?
+    let isNew: Bool?
+}
+
+enum BarberChatTimestampParsing {
+    private static let isoFrac: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private static let isoBasic: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    static func parse(_ raw: String?) -> Date? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        return isoFrac.date(from: raw) ?? isoBasic.date(from: raw)
+    }
+
+    static func formatListTimestamp(_ raw: String?) -> String {
+        guard let date = parse(raw) else { return "" }
+        let calendar = Calendar.current
+        let now = Date()
+        if calendar.isDateInToday(date) {
+            return date.formatted(date: .omitted, time: .shortened)
+        }
+        if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        }
+        let dayDiff = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)).day ?? 0
+        if dayDiff < 7 {
+            return date.formatted(.dateTime.weekday(.abbreviated))
+        }
+        return date.formatted(.dateTime.month(.abbreviated).day())
+    }
 }
 
 // MARK: - Barber applications (Campus Manager / Admin queue)

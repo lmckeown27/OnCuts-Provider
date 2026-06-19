@@ -191,7 +191,10 @@ final class ProviderShellNavigator {
         syncMessagesDetailPath()
         if stack.isEmpty {
             appearance.clearContainerBackdropImmediately()
+            slideProgress = 0
         } else if let top = stack.last {
+            // After popping a nested shell route, the revealed screen must stay fully on-screen.
+            slideProgress = 1
             switch top {
             case .route(let route):
                 appearance.setContainerBackdrop(route.pushedBackdropStyle)
