@@ -33,7 +33,7 @@ struct BarberSpecialtyPickerView: View {
                     .padding(24)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if catalog.isEmpty {
-                    Text("No campus services are configured yet. A Campus Manager or Admin can add services in the dashboard.")
+                    Text("No campus services are configured yet. An Admin can add services in the Admin dashboard.")
                         .font(.provider(.subheadline))
                         .foregroundStyle(Color.lavaShellCream.opacity(0.85))
                         .multilineTextAlignment(.center)

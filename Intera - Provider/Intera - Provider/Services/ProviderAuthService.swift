@@ -29,7 +29,7 @@ enum ProviderAuthService {
     }
 
     /// Exchange the stored refresh token for a new access token whose `role` claim matches the
-    /// current database role. Admin / campus-manager users can pass `GET /auth/me` while still
+    /// current database role. Admin users can pass `GET /auth/me` while still
     /// carrying an older JWT (e.g. from before promotion) that `/admin/*` rejects.
     @discardableResult
     static func refreshAccessTokenIfPossible() async throws -> Bool {
@@ -80,10 +80,9 @@ enum ProviderAuthService {
         return true
     }
 
-    /// After `auth/me`, refresh the JWT when the account has elevated privileges so admin and
-    /// campus-manager API calls use an up-to-date role claim.
+    /// After `auth/me`, refresh the JWT when the account is admin so `/admin/*` calls use an up-to-date role claim.
     static func syncAccessTokenForElevatedPrivileges(_ user: AuthMeUser) async {
-        guard user.hasAdminPrivileges || user.hasCampusManagerPrivileges else { return }
+        guard user.hasAdminPrivileges else { return }
         _ = try? await refreshAccessTokenIfPossible()
     }
 

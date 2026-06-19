@@ -50,7 +50,6 @@ struct ProviderAdminBarberDetailView: View {
                             .font(.provider(.title3, weight: .semibold))
                         if let cn = barber.campusName { Text(cn).font(.provider(.caption)).foregroundStyle(Color.lavaShellCreamSecondary) }
                         HStack(spacing: 6) {
-                            if barber.isCampusManager == true { tag(text: "Campus manager", tint: Color.providerOlive) }
                             if barber.hasStripeSetup == true {
                                 tag(text: "Payouts on", tint: Color.green.opacity(0.55))
                             } else if barber.hasStripeAccountOnly == true {

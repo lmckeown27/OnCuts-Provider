@@ -3,13 +3,14 @@ import SwiftUI
 
 /// Native iOS Admin dashboard.
 ///
-/// Three tabs mirror the daily-driver flows of the web `AdminDashboard.tsx`:
+/// Tabs mirror the daily-driver flows of the web `AdminDashboard.tsx`:
 ///   * **Performance** — platform totals, **time-series chart** (daily / weekly / monthly / yearly), plus
 ///     **campus search** (typeahead) to scope or clear to aggregate headline revenue / bookings / payout metrics.
 ///   * **Barbers** — every barber (optionally scoped by campus) with Stripe status badges; tap → push the
-///     admin barber-detail screen (bookings + visibility toggle, shared with the CM dashboard).
+///     admin barber-detail screen (bookings + visibility toggle).
 ///   * **Users** — every platform user (optionally scoped by campus) with simple in-memory search; tap →
 ///     push the admin user-detail screen (consumer bookings).
+///   * **Services** — platform service catalog (price / duration bounds, activate / deactivate).
 struct ProviderAdminDashboardView: View {
     @Environment(ProviderShellNavigator.self) private var shellNavigator
 
@@ -17,6 +18,7 @@ struct ProviderAdminDashboardView: View {
         case performance = "Performance"
         case barbers = "Barbers"
         case users = "Users"
+        case services = "Services"
         case safety = "Safety"
         var id: String { rawValue }
     }
@@ -111,6 +113,7 @@ struct ProviderAdminDashboardView: View {
                 case .performance: performanceTab
                 case .barbers: barbersTab
                 case .users: usersTab
+                case .services: ProviderAdminServicesView()
                 case .safety: safetyTab
                 }
             }
@@ -670,7 +673,6 @@ struct ProviderAdminDashboardView: View {
                     HStack(spacing: 6) {
                         Text(barber.displayName)
                             .font(.provider(.subheadline, weight: .semibold))
-                        if barber.isCampusManager == true { tag(text: "CM", tint: Color.providerOlive) }
                         if barber.isActive == false { tag(text: "Hidden", tint: Color.red.opacity(0.7)) }
                     }
                     Text(barber.email ?? "—")

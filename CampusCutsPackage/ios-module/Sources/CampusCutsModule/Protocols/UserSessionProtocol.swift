@@ -23,8 +23,11 @@ public protocol UserSessionProtocol {
     /// User's display name
     var userName: String { get }
     
-    /// User's role in the system (CONSUMER, BARBER, CAMPUS_MANAGER, ADMIN)
+    /// User's role: CONSUMER, BARBER, or ADMIN (legacy CAMPUS_MANAGER should be treated as BARBER)
     var userRole: String { get }
+
+    /// When the Shell stores `/me`, use this to expose admin dashboard entry points.
+    var isAdmin: Bool { get }
     
     /// Refresh token for obtaining new access tokens (optional)
     var refreshToken: String? { get }
@@ -39,6 +42,9 @@ public protocol UserSessionProtocol {
 /// Extension with default implementations for optional methods
 public extension UserSessionProtocol {
     var refreshToken: String? { nil }
+
+    /// Default when the Shell does not persist `/me` admin flag.
+    var isAdmin: Bool { false }
     
     func refreshAccessToken() async throws -> String {
         // Default: return current token (Shell should override)

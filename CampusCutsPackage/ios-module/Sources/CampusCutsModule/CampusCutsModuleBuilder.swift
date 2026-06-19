@@ -33,8 +33,8 @@ public struct CampusCutsModuleBuilder {
 
     @MainActor
     public static func buildRoleBasedView(with session: UserSessionProtocol, client: CampusCutsClient) -> some View {
-        switch session.userRole {
-        case "BARBER", "CAMPUS_MANAGER", "ADMIN":
+        switch session.userRole.uppercased() {
+        case "ADMIN", "BARBER", "CAMPUS_MANAGER":
             return AnyView(buildBarberDashboard(with: session, client: client))
         default:
             return AnyView(buildConsumerView(with: session, client: client))

@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Campus Manager **Services** tab: same ledger layout as `ProviderBarberServicesView`, but toggling a
+/// Admin **Services** tab: same ledger layout as `ProviderBarberServicesView`, but toggling a
 /// service adds/removes it from the campus catalog and sets **price / duration ranges** barbers choose within.
-struct ProviderCampusManagerServicesView: View {
+struct ProviderAdminServicesView: View {
     @State private var rows: [CampusCatalogEditRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
@@ -423,7 +423,7 @@ struct ProviderCampusManagerServicesView: View {
         defer { isLoading = false }
 
         do {
-            let catalog = try await ProviderCampusManagerService.listPlatformServices(
+            let catalog = try await ProviderAdminService.listPlatformServices(
                 includeInactive: showDeletedServices
             )
             rows = Self.mappedRows(from: catalog)
@@ -448,10 +448,10 @@ struct ProviderCampusManagerServicesView: View {
 
         do {
             if available {
-                try await ProviderCampusManagerService.setPlatformServiceActive(id: row.id, isActive: true)
+                try await ProviderAdminService.setPlatformServiceActive(id: row.id, isActive: true)
                 toast = "\(row.name) is now available for barbers."
             } else {
-                try await ProviderCampusManagerService.deactivatePlatformService(id: row.id)
+                try await ProviderAdminService.deactivatePlatformService(id: row.id)
                 toast = "\(row.name) was removed from the catalog."
             }
             await load()
@@ -478,7 +478,7 @@ struct ProviderCampusManagerServicesView: View {
         rows[idx].maxPriceText = "\(parsed.max)"
 
         do {
-            try await ProviderCampusManagerService.updatePlatformServiceBounds(
+            try await ProviderAdminService.updatePlatformServiceBounds(
                 id: rows[idx].id,
                 minPriceCents: parsed.min * 100,
                 maxPriceCents: parsed.max * 100,
@@ -510,7 +510,7 @@ struct ProviderCampusManagerServicesView: View {
         rows[idx].maxDurationText = "\(parsed.max)"
 
         do {
-            try await ProviderCampusManagerService.updatePlatformServiceBounds(
+            try await ProviderAdminService.updatePlatformServiceBounds(
                 id: rows[idx].id,
                 minPriceCents: rows[idx].committedMinPriceDollars * 100,
                 maxPriceCents: rows[idx].committedMaxPriceDollars * 100,
@@ -570,7 +570,7 @@ struct ProviderCampusManagerServicesView: View {
         defer { saving = false }
 
         do {
-            try await ProviderCampusManagerService.createPlatformService(
+            try await ProviderAdminService.createPlatformService(
                 name: name,
                 description: nil,
                 minPriceCents: minPrice * 100,

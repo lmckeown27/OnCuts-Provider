@@ -27,8 +27,8 @@ final class ProviderSession {
     /// (mirrors web redirecting non-barbers away from `BarberPage` toward application).
     var needsConsumerProviderEnrollment: Bool {
         guard isSignedIn, !hasProviderProfile else { return false }
-        if authUser?.hasCampusManagerPrivileges == true { return false }
-        if authUser?.isBarberOrManagerRole == true { return false }
+        if authUser?.hasAdminPrivileges == true { return false }
+        if authUser?.isBarberRole == true { return false }
         return true
     }
 

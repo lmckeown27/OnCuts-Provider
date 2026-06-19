@@ -212,11 +212,9 @@ struct ProviderDashboardShellView: View {
         .background(.ultraThinMaterial, ignoresSafeAreaEdges: [])
     }
 
-    /// Shown in the center of the header when the signed-in user has elevated privileges. Admin wins over campus manager.
+    /// Shown in the center of the header when the signed-in user has admin privileges.
     private var headerRoleStatusText: String? {
-        if session.authUser?.hasAdminPrivileges == true { return "Admin" }
-        if session.authUser?.hasCampusManagerPrivileges == true { return "Campus Manager" }
-        return nil
+        session.authUser?.hasAdminPrivileges == true ? "Admin" : nil
     }
 
     private var requestsTrayButton: some View {
@@ -304,13 +302,6 @@ struct ProviderDashboardShellView: View {
                     }
                     profileMenuActionButton("Payout Settings") {
                         navigator.pushRoute(ProviderShellRoute.payoutSettings)
-                    }
-                }
-            }
-            if session.authUser?.hasCampusManagerPrivileges == true {
-                Section("Campus Manager") {
-                    profileMenuActionButton("Campus dashboard") {
-                        navigator.pushRoute(ProviderShellRoute.campusManagerDashboard)
                     }
                 }
             }
@@ -418,10 +409,6 @@ struct ProviderDashboardShellView: View {
                 .providerShellBackToolbar()
         case .payoutSettings:
             ProviderPayoutSettingsView()
-                .providerPushedDestinationChrome(for: route)
-                .providerShellBackToolbar()
-        case .campusManagerDashboard:
-            ProviderCampusManagerDashboardView()
                 .providerPushedDestinationChrome(for: route)
                 .providerShellBackToolbar()
         case .adminDashboard:

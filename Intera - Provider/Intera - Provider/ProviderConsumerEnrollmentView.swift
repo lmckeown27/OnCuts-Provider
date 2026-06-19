@@ -107,7 +107,7 @@ struct ProviderConsumerEnrollmentView: View {
             .alert("Application submitted", isPresented: $showSubmitSuccess) {
                 Button("Got it", role: .cancel) {}
             } message: {
-                Text("Your CampusCuts barber application has been submitted. A campus manager will be in touch with you shortly.")
+                Text("Your CampusCuts barber application has been submitted. The CampusCut team will be in touch with you shortly.")
             }
         }
         .foregroundStyle(Color.lavaShellCream)
@@ -387,7 +387,7 @@ struct ProviderConsumerEnrollmentView: View {
                         .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 } else if licenseDeclared == false {
-                    Text("Some states require proof of licensure before barbering. A campus manager may still ask for documentation.")
+                    Text("Some states require proof of licensure before barbering. The CampusCut team may still ask for documentation.")
                         .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
@@ -409,7 +409,7 @@ struct ProviderConsumerEnrollmentView: View {
                 Image(systemName: licenseAttestation ? "checkmark.square.fill" : "square")
                     .font(.provider(size: 22))
                     .foregroundStyle(licenseAttestation ? Color.providerOlive : Color.lavaShellCreamTertiary)
-                Text("I attest that the license information I've provided is accurate to the best of my knowledge. A campus manager may verify it before approval.")
+                Text("I attest that the license information I've provided is accurate to the best of my knowledge. The CampusCut team may verify it before approval.")
                     .font(.provider(.footnote))
                     .foregroundStyle(Color.lavaShellCream)
                     .multilineTextAlignment(.leading)
@@ -1247,14 +1247,14 @@ enum ProviderBarberApplicationOptions {
         case "pending":
             return StatusCopy(
                 title: "Application under review",
-                description: "Your application has been submitted and is being reviewed by the campus manager.",
+                description: "Your application has been submitted and is being reviewed by the CampusCut team.",
                 symbol: "hourglass",
                 tint: .yellow
             )
         case "under_review":
             return StatusCopy(
                 title: "Application under review",
-                description: "Your application is actively being reviewed. The campus manager will reach out with next steps.",
+                description: "Your application is actively being reviewed. The CampusCut team will reach out with next steps.",
                 symbol: "doc.text.magnifyingglass",
                 tint: .blue
             )

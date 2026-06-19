@@ -29,19 +29,6 @@ enum ProviderAdminService {
         return env.resolved
     }
 
-    /// `POST /admin/campuses/:campusId/manager` — assign or remove a campus manager (admin only).
-    static func assignCampusManager(campusId: String, barberUserId: String, action: String) async throws {
-        let enc = campusId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? campusId
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
-            path: "admin/campuses/\(enc)/manager",
-            method: "POST",
-            jsonBody: [
-                "barberUserId": barberUserId,
-                "action": action,
-            ]
-        )
-    }
-
     static func aggregatePerformance() async throws -> AdminCampusPerformanceDTO? {
         let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "admin/campuses/aggregate/performance")
         let dec = CampusCutsHTTPClient.jsonDecoderSnake()
@@ -107,6 +94,99 @@ enum ProviderAdminService {
         let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
         let dec = CampusCutsHTTPClient.jsonDecoderSnake()
         return try dec.decode(AdminBarberBookingsEnvelope.self, from: data).resolved
+    }
+
+    // MARK: - Campus bookings (`GET /bookings-simple/campus/:campusId`)
+
+    static func campusBookings(
+        campusId: String,
+        barberFilter: String? = nil,
+        paymentFilter: String? = nil,
+        statusFilter: String? = nil,
+        limit: Int = 100
+    ) async throws -> [SimpleBookingDTO] {
+        var query = "limit=\(limit)"
+        if let barberFilter, !barberFilter.isEmpty { query += "&barberFilter=\(barberFilter)" }
+        if let paymentFilter, !paymentFilter.isEmpty { query += "&paymentFilter=\(paymentFilter)" }
+        if let statusFilter, !statusFilter.isEmpty { query += "&statusFilter=\(statusFilter)" }
+        let path = "bookings-simple/campus/\(campusId)?\(query)"
+        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
+        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let env = try dec.decode(BookingsSimpleListEnvelope.self, from: data)
+        return env.data?.bookings ?? []
+    }
+
+    // MARK: - Platform service catalog (`/admin/services`)
+
+    static func listPlatformServices(includeInactive: Bool) async throws -> [AdminServiceCatalogItem] {
+        let q = includeInactive ? "?includeInactive=true" : ""
+        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "admin/services\(q)")
+        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let env = try dec.decode(AdminServicesListEnvelope.self, from: data)
+        return env.data ?? []
+    }
+
+    static func createPlatformService(
+        name: String,
+        description: String?,
+        minPriceCents: Int,
+        maxPriceCents: Int,
+        minDurationMinutes: Int,
+        maxDurationMinutes: Int
+    ) async throws {
+        let basePriceCents = (minPriceCents + maxPriceCents) / 2
+        var body: [String: Any] = [
+            "name": name,
+            "basePriceCents": basePriceCents,
+            "minPriceCents": minPriceCents,
+            "maxPriceCents": maxPriceCents,
+            "minDurationMinutes": minDurationMinutes,
+            "maxDurationMinutes": maxDurationMinutes,
+        ]
+        if let description, !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            body["description"] = description
+        }
+        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+            path: "admin/services",
+            method: "POST",
+            jsonBody: body
+        )
+    }
+
+    static func updatePlatformServiceBounds(
+        id: Int,
+        minPriceCents: Int,
+        maxPriceCents: Int,
+        minDurationMinutes: Int,
+        maxDurationMinutes: Int
+    ) async throws {
+        let basePriceCents = (minPriceCents + maxPriceCents) / 2
+        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+            path: "admin/services/\(id)",
+            method: "PUT",
+            jsonBody: [
+                "basePriceCents": basePriceCents,
+                "minPriceCents": minPriceCents,
+                "maxPriceCents": maxPriceCents,
+                "minDurationMinutes": minDurationMinutes,
+                "maxDurationMinutes": maxDurationMinutes,
+            ]
+        )
+    }
+
+    static func setPlatformServiceActive(id: Int, isActive: Bool) async throws {
+        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+            path: "admin/services/\(id)",
+            method: "PUT",
+            jsonBody: ["isActive": isActive]
+        )
+    }
+
+    static func deactivatePlatformService(id: Int) async throws {
+        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+            path: "admin/services/\(id)",
+            method: "DELETE"
+        )
     }
 
     // MARK: - Users

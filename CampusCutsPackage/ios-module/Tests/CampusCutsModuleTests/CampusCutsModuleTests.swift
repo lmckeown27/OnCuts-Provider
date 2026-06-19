@@ -15,6 +15,7 @@ final class CampusCutsModuleTests: XCTestCase {
         XCTAssertEqual(mockSession.accessToken, "test_token")
         XCTAssertEqual(mockSession.userId, "123")
         XCTAssertNil(mockSession.refreshToken)
+        XCTAssertFalse(mockSession.isAdmin)
     }
     
     func testModuleBuilderCreatesViews() async {
@@ -28,6 +29,22 @@ final class CampusCutsModuleTests: XCTestCase {
             let _ = CampusCutsModuleBuilder.buildRoleBasedView(with: mockSession)
         }
     }
+
+    func testRoleBasedView_AdminUsesBarberDashboard() async {
+        let session = MockUserSession()
+        session.userRole = "ADMIN"
+        await MainActor.run {
+            let _ = CampusCutsModuleBuilder.buildRoleBasedView(with: session)
+        }
+    }
+
+    func testRoleBasedView_LegacyCampusManagerUsesBarberDashboard() async {
+        let session = MockUserSession()
+        session.userRole = "CAMPUS_MANAGER"
+        await MainActor.run {
+            let _ = CampusCutsModuleBuilder.buildRoleBasedView(with: session)
+        }
+    }
 }
 
 // MARK: - Mock Session for Testing
@@ -38,6 +55,7 @@ class MockUserSession: UserSessionProtocol {
     var userEmail: String = "test@example.com"
     var userName: String = "Test User"
     var userRole: String = "CONSUMER"
+    var isAdmin: Bool = false
     var refreshToken: String? = nil
     
     var logoutCalled = false
@@ -50,4 +68,3 @@ class MockUserSession: UserSessionProtocol {
         logoutCalled = true
     }
 }
-

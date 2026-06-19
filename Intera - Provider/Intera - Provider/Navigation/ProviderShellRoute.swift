@@ -13,9 +13,6 @@ enum ProviderShellRoute: Hashable {
     /// Stripe Connect: dashboard + onboarding (`GET/POST /barber/connect/*`, `GET /barber/payout/summary`).
     /// Parity with web `PaymentManagementModal` / Payout Settings.
     case payoutSettings
-    /// Native Campus Manager dashboard (campus barbers list, visibility toggles, campus bookings).
-    /// Surfaced only when `AuthMeUser.hasCampusManagerPrivileges` is true.
-    case campusManagerDashboard
     /// Native Admin dashboard (platform stats, campuses, barbers, users). Surfaced only when
     /// `AuthMeUser.hasAdminPrivileges` is true.
     case adminDashboard

@@ -14,28 +14,43 @@ struct AuthMeUser: Decodable {
     let lastName: String?
     let userType: String?
     let isAdmin: Bool?
-    let isCampusManager: Bool?
-    /// `users."campusId"` — required for the Campus Manager dashboard to know which campus to scope to.
+    let hasBarberProfile: Bool?
+    /// `users."campusId"` — scopes admin filters when present.
     let campusId: String?
     /// From `GET /auth/me` — `true` when the user has not set a CampusCuts password (typical for Sign in with Apple).
     /// Drives account-deletion UX: these accounts may omit the password body after device authentication.
     let needsPlatformPassword: Bool?
 
-    /// `user_type` from API: `student`, `barber`, `campus_manager`, `admin`.
+    /// `user_type` from API: `student`, `barber`, `admin` (legacy `campus_manager` maps to barber).
     var userTypeLowercased: String { (userType ?? "").lowercased() }
 
     var isConsumerAccount: Bool {
-        userTypeLowercased == "student"
+        resolvedAppRole == .consumer
     }
 
-    var isBarberOrManagerRole: Bool {
-        userTypeLowercased == "barber" || userTypeLowercased == "campus_manager"
+    /// Legacy DB `CAMPUS_MANAGER` and `campus_manager` user_type are treated as barbers.
+    var isBarberRole: Bool {
+        if hasBarberProfile == true { return true }
+        switch userTypeLowercased {
+        case "barber", "campus_manager": return true
+        default: return false
+        }
     }
 
     var hasAdminPrivileges: Bool { isAdmin == true || userTypeLowercased == "admin" }
 
-    /// Backend treats admins as implicit campus managers; mirror that on iOS for menu / badge gating.
-    var hasCampusManagerPrivileges: Bool { isCampusManager == true || isAdmin == true }
+    var resolvedAppRole: AppRole {
+        if hasAdminPrivileges { return .admin }
+        if isBarberRole { return .barber }
+        return .consumer
+    }
+}
+
+/// Signed-in account role for routing and elevated UI (admin is the only management role).
+enum AppRole: Equatable {
+    case consumer
+    case barber
+    case admin
 }
 
 struct BarberMeEnvelope: Decodable {
@@ -1250,7 +1265,7 @@ struct BarberApplicationListRowDTO: Decodable, Identifiable, Hashable {
 
     /// Mirrors web Campus Manager filter (`pending` plus approved guests without an account).
     /// These are the rows that actually need a manager action.
-    var isActionableInCampusManagerQueue: Bool {
+    var isActionableInAdminApplicationQueue: Bool {
         if status == BarberApplicationStatus.pending.rawValue { return true }
         if status == BarberApplicationStatus.approved.rawValue,
            origin == .guest,
