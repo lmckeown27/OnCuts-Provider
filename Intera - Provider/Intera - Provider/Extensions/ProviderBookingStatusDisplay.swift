@@ -157,6 +157,33 @@ enum ProviderBookingStatusDisplay {
             return true
         }
     }
+
+    /// Whether a booking still occupies the calendar for overlap / conflict checks.
+    /// Paid and concluded appointments (including completed) no longer block new times.
+    static func blocksScheduleConflict(_ booking: SimpleBookingDTO) -> Bool {
+        if booking.paidAt != nil { return false }
+        switch normalized(booking.status) {
+        case "cancelled", "canceled", "completed", "paid", "rejected", "refunded", "disputed", "pending":
+            return false
+        default:
+            return true
+        }
+    }
+}
+
+/// Status pill matching `BookingDetailViewController` — solid olive for accepted, etc.
+struct ProviderBookingDetailStatusPill: View {
+    let status: String?
+
+    var body: some View {
+        let colors = ProviderBookingStatusDisplay.detailPillColors(for: status)
+        Text(ProviderBookingStatusDisplay.title(for: status))
+            .font(.provider(.caption, weight: .semibold))
+            .foregroundStyle(colors.foreground)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(colors.background, in: Capsule())
+    }
 }
 
 extension SimpleBookingDTO {

@@ -31,8 +31,8 @@ final class ProviderShellNavigator {
 
     private var slideAnimationTask: Task<Void, Never>?
 
-    /// Messages inbox → conversation path (stored here so shell re-renders do not reset navigation).
-    var messagesDetailPath = NavigationPath()
+    /// Messages inbox → conversation trail (stored here so shell re-renders do not reset navigation).
+    var messagesDetailPath: [Int] = []
 
     var isHub: Bool { stack.isEmpty && slideProgress < 0.01 && !isInteractiveDragging }
     var hubAcceptsTouches: Bool { stack.isEmpty && slideProgress < 0.01 && !isInteractiveDragging }
@@ -143,19 +143,39 @@ final class ProviderShellNavigator {
 
     /// Opens Messages, optionally deep-linking into a conversation thread (push tap / in-app route).
     func openMessages(conversationId: Int? = nil) {
-        if let conversationId {
-            ProviderConversationMessagesPrefetch.prefetch(conversationId: conversationId)
-        }
         if case .route(.messages) = stack.last {
             if let conversationId {
-                messagesDetailPath.append(conversationId)
+                focusMessagesConversation(conversationId)
             }
             return
         }
+
         resetAndPushRoute(.messages)
         if let conversationId {
-            messagesDetailPath.append(conversationId)
+            prepareConversationDeepLink(conversationId)
+            messagesDetailPath = [conversationId]
         }
+    }
+
+    /// Ensures a push/deep-link lands on one conversation screen — never stacks duplicates.
+    private func focusMessagesConversation(_ conversationId: Int) {
+        prepareConversationDeepLink(conversationId)
+
+        if messagesDetailPath.last == conversationId {
+            NotificationCenter.default.post(
+                name: .providerMessagingConversationShouldRefresh,
+                object: nil,
+                userInfo: ["conversationId": conversationId]
+            )
+            return
+        }
+
+        messagesDetailPath = [conversationId]
+    }
+
+    private func prepareConversationDeepLink(_ conversationId: Int) {
+        ProviderConversationMessagesPrefetch.invalidate(conversationId: conversationId)
+        ProviderConversationMessagesPrefetch.prefetch(conversationId: conversationId)
     }
 
     private func beginSlideIn() {
@@ -206,7 +226,7 @@ final class ProviderShellNavigator {
 
     private func syncMessagesDetailPath() {
         guard case .route(.messages)? = stack.last else {
-            messagesDetailPath = NavigationPath()
+            messagesDetailPath = []
             return
         }
     }
@@ -482,7 +502,22 @@ private struct ProviderShellInteractiveSlideModifier: ViewModifier {
 }
 #endif
 
+private enum ProviderShellNavigatorOptionalEnvironmentKey: EnvironmentKey {
+    static let defaultValue: ProviderShellNavigator? = nil
+}
+
+extension EnvironmentValues {
+    var optionalProviderShellNavigator: ProviderShellNavigator? {
+        get { self[ProviderShellNavigatorOptionalEnvironmentKey.self] }
+        set { self[ProviderShellNavigatorOptionalEnvironmentKey.self] = newValue }
+    }
+}
+
 extension View {
+    func optionalProviderShellNavigatorEnvironment(_ navigator: ProviderShellNavigator?) -> some View {
+        environment(\.optionalProviderShellNavigator, navigator)
+    }
+
     func providerShellBackToolbar() -> some View {
         modifier(ProviderShellBackToolbarModifier())
     }

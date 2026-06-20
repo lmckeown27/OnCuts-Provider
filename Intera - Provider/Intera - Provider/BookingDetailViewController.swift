@@ -91,6 +91,8 @@ final class BookingDetailViewController: UIViewController {
     private var isWorking = false {
         didSet {
             for button in actionButtons { button.isEnabled = !isWorking }
+            messageCustomerControlView?.isUserInteractionEnabled = !isWorking
+            messageCustomerControlView?.alpha = isWorking ? 0.55 : 1
             spinnerOverlay.isHidden = !isWorking
             if isWorking { spinner.startAnimating() } else { spinner.stopAnimating() }
         }
@@ -99,6 +101,7 @@ final class BookingDetailViewController: UIViewController {
     /// Collected so `isWorking` can disable all of them at once without each section
     /// needing to expose its own enable handle.
     private var actionButtons: [UIButton] = []
+    private weak var messageCustomerControlView: UIView?
 
     /// Held so we can rebuild the actions stack in place when `booking` is replaced after
     /// a successful mutation (e.g. PENDING → ACCEPTED removes the Accept/Decline pair and
@@ -174,7 +177,8 @@ final class BookingDetailViewController: UIViewController {
         // idempotently, and defer `applyCurrent()` because `isViewLoaded` is still
         // false here. `viewDidLoad`'s `buildSections()` call picks up the correct UI on
         // first layout.
-        if ProviderAwaitingPaymentTracker.shared.requestedIds.contains(booking.id),
+        if ProviderAwaitingPaymentTracker.shared.requestedIds.contains(booking.id)
+            || booking.paymentRequestedAt != nil,
            Self.canShowAwaitingPayment(for: booking) {
             paymentRequested = true
         } else if Self.isPaymentResolved(booking) {
@@ -219,7 +223,6 @@ final class BookingDetailViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Token.background
-        title = "Booking Details"
         navigationItem.largeTitleDisplayMode = .never
 
         setupHierarchy()
@@ -377,18 +380,30 @@ final class BookingDetailViewController: UIViewController {
     // MARK: - Sections — Header (status capsule)
 
     private func makeHeader() -> UIView {
+        let titleLabel = UILabel()
+        titleLabel.text = "Booking Details"
+        titleLabel.font = .provider(size: 22, weight: .semibold)
+        titleLabel.textColor = Token.primaryText
+        titleLabel.textAlignment = .center
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
         let capsule = makeStatusCapsule(forStatus: current.statusUpper)
         capsule.translatesAutoresizingMaskIntoConstraints = false
 
+        let stack = UIStackView(arrangedSubviews: [titleLabel, capsule])
+        stack.axis = .vertical
+        stack.spacing = 10
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
         let row = UIView()
-        row.addSubview(capsule)
+        row.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            capsule.topAnchor.constraint(equalTo: row.topAnchor),
-            capsule.bottomAnchor.constraint(equalTo: row.bottomAnchor),
-            capsule.centerXAnchor.constraint(equalTo: row.centerXAnchor),
-            capsule.leadingAnchor.constraint(greaterThanOrEqualTo: row.leadingAnchor),
-            capsule.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: row.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: row.bottomAnchor),
         ])
         return row
     }
@@ -468,13 +483,18 @@ final class BookingDetailViewController: UIViewController {
 
     private func makeOpenConversationSection() -> UIView? {
         guard showsOpenConversationButton else { return nil }
-        return makeSecondaryActionButton(
-            title: "Message Customer",
-            icon: "message",
-            background: Token.accent.withAlphaComponent(0.22),
-            foreground: Token.primaryText,
-            action: #selector(openConversationTapped)
+
+        let host = UIHostingController(
+            rootView: MessageCustomerButtonView(
+                background: Color(uiColor: Token.accent.withAlphaComponent(0.22)),
+                action: { [weak self] in self?.openConversationTapped() }
+            )
         )
+        host.view.backgroundColor = .clear
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        host.view.heightAnchor.constraint(greaterThanOrEqualToConstant: 50).isActive = true
+        messageCustomerControlView = host.view
+        return host.view
     }
 
     @objc private func openConversationTapped() {
@@ -849,7 +869,6 @@ final class BookingDetailViewController: UIViewController {
             secondaryButtons.append(
                 makeSecondaryActionButton(
                     title: "Reschedule",
-                    icon: "calendar.badge.clock",
                     background: Token.statusYellow,
                     foreground: UIColor(white: 0.1, alpha: 1),
                     action: #selector(rescheduleTapped)
@@ -1208,7 +1227,7 @@ final class BookingDetailViewController: UIViewController {
         } onSuccess: { [weak self] in
             guard let self else { return }
             self.paymentRequested = true
-            self.current = self.with(status: "COMPLETED")
+            self.current = self.with(status: "COMPLETED").updatingPaymentRequestedAt(Date())
         }
     }
 
@@ -1380,6 +1399,7 @@ final class BookingDetailViewController: UIViewController {
             serviceName: current.serviceName,
             review: current.review,
             paidAt: current.paidAt,
+            paymentRequestedAt: current.paymentRequestedAt,
             tipAmountCents: current.tipAmountCents,
             totalPaidCents: current.totalPaidCents,
             paymentMethod: current.paymentMethod,
@@ -1395,29 +1415,8 @@ final class BookingDetailViewController: UIViewController {
     /// Same idea but for the rescheduled time — we mutate locally so the WHEN cards
     /// flip before the parent refresh lands.
     private func applyOptimisticScheduledTime(_ date: Date) {
-        current = SimpleBookingDTO(
-            id: current.id,
-            consumerId: current.consumerId,
-            barberId: current.barberId,
-            serviceType: current.serviceType,
-            priceUsdCents: current.priceUsdCents,
-            scheduledTime: date,
-            status: current.status,
-            location: current.location,
-            notes: current.notes,
-            serviceName: current.serviceName,
-            review: current.review,
-            paidAt: current.paidAt,
-            tipAmountCents: current.tipAmountCents,
-            totalPaidCents: current.totalPaidCents,
-            paymentMethod: current.paymentMethod,
-            pendingRescheduleRequest: current.pendingRescheduleRequest,
-            consumer: current.consumer,
-            consumerName: current.consumerName,
-            barber: current.barber,
-            barberName: current.barberName,
-            conversationId: current.conversationId
-        )
+        let clearPending = current.statusUpper == "PENDING" && current.hasPendingRescheduleRequest
+        current = current.updatingScheduledTime(date, clearPendingReschedule: clearPending)
     }
 
     // MARK: - Misc helpers
@@ -1497,9 +1496,39 @@ struct BookingDetailHost: UIViewControllerRepresentable {
         detail = uiViewController as? BookingDetailViewController
         #endif
         guard detail != nil else { return }
-        // Each destination push creates a fresh VC via `makeUIViewController`; no in-place
-        // updates needed. If the parent re-renders with a different `booking` while the
-        // detail is still on screen (rare — SwiftUI normally rebuilds on path change),
-        // the VC's own optimistic-mutation flow already covers state drift.
+    }
+}
+
+/// Booking detail screen — title is rendered in-page; navigation uses swipe-back.
+struct BookingDetailScreen: View {
+    let booking: SimpleBookingDTO
+    let onChanged: () async -> Void
+
+    var body: some View {
+        BookingDetailHost(booking: booking, onChanged: onChanged)
+            .navigationBarBackButtonHidden(true)
+            .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+private struct MessageCustomerButtonView: View {
+    let background: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "message")
+                    .font(.provider(.body, weight: .semibold))
+                    .foregroundStyle(Color.lavaShellCream)
+                ProviderBlackOutlinedText("Message Customer")
+                    .font(.provider(.body, weight: .semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 18)
+            .background(background, in: Capsule())
+        }
+        .buttonStyle(.plain)
     }
 }

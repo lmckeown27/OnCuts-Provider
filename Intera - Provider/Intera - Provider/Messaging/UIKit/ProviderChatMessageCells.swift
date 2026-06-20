@@ -16,6 +16,10 @@ final class ProviderChatMessageCell: UITableViewCell {
     private var leadingConstraint: NSLayoutConstraint?
     private var trailingConstraint: NSLayoutConstraint?
     private var imageHeightConstraint: NSLayoutConstraint?
+    private var bubbleContentTopConstraint: NSLayoutConstraint?
+    private var bubbleContentLeadingConstraint: NSLayoutConstraint?
+    private var bubbleContentTrailingConstraint: NSLayoutConstraint?
+    private var bubbleContentBottomConstraint: NSLayoutConstraint?
     private var imageLoadTask: URLSessionDataTask?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
@@ -64,8 +68,8 @@ final class ProviderChatMessageCell: UITableViewCell {
 
         messageImageView.contentMode = .scaleAspectFill
         messageImageView.clipsToBounds = true
-        messageImageView.layer.cornerRadius = 12
-        messageImageView.backgroundColor = UIColor.white.withAlphaComponent(0.08)
+        messageImageView.layer.cornerRadius = ProviderChatDesignTokens.Metrics.bubbleCornerRadius
+        messageImageView.backgroundColor = .clear
         messageImageView.isHidden = true
 
         bubbleContentStack.addArrangedSubview(messageLabel)
@@ -89,14 +93,23 @@ final class ProviderChatMessageCell: UITableViewCell {
         )
         imageHeightConstraint?.priority = .defaultHigh
 
+        let contentTop = bubbleContentStack.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10)
+        let contentLeading = bubbleContentStack.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12)
+        let contentTrailing = bubbleContentStack.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -12)
+        let contentBottom = bubbleContentStack.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -10)
+        bubbleContentTopConstraint = contentTop
+        bubbleContentLeadingConstraint = contentLeading
+        bubbleContentTrailingConstraint = contentTrailing
+        bubbleContentBottomConstraint = contentBottom
+
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
             stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4),
 
-            bubbleContentStack.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10),
-            bubbleContentStack.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
-            bubbleContentStack.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -12),
-            bubbleContentStack.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -10),
+            contentTop,
+            contentLeading,
+            contentTrailing,
+            contentBottom,
 
             messageImageView.widthAnchor.constraint(lessThanOrEqualToConstant: 240),
             imageHeightConstraint!,
@@ -120,6 +133,8 @@ final class ProviderChatMessageCell: UITableViewCell {
 
     func configure(message: ChatMessageDTO, pendingImage: UIImage? = nil) {
         let isOwn = message.isOwn == true
+        let showsImageOnly = pendingImage != nil
+            || (message.isImage && !(message.mediaUrl ?? "").isEmpty)
 
         if let date = message.createdAt {
             timestampLabel.text = date.formatted(date: .omitted, time: .shortened)
@@ -128,20 +143,20 @@ final class ProviderChatMessageCell: UITableViewCell {
         }
 
         if isOwn {
-            bubbleView.backgroundColor = ProviderChatDesignTokens.Color.providerSentBubble
             messageLabel.textColor = ProviderChatDesignTokens.Color.providerSentBubbleText
             timestampLabel.textAlignment = .right
             leadingConstraint?.constant = 72
             trailingConstraint?.constant = -ProviderChatDesignTokens.Metrics.horizontalPadding
             stack.alignment = .trailing
         } else {
-            bubbleView.backgroundColor = ProviderChatDesignTokens.Color.consumerBubble
             messageLabel.textColor = ProviderChatDesignTokens.Color.consumerBubbleText
             timestampLabel.textAlignment = .left
             leadingConstraint?.constant = ProviderChatDesignTokens.Metrics.horizontalPadding
             trailingConstraint?.constant = -72
             stack.alignment = .leading
         }
+
+        applyBubbleChrome(showsImageOnly: showsImageOnly, isOwn: isOwn)
 
         if let pendingImage {
             imageLoadTask?.cancel()
@@ -164,6 +179,28 @@ final class ProviderChatMessageCell: UITableViewCell {
             messageImageView.image = nil
             messageLabel.isHidden = false
             messageLabel.text = message.content ?? ""
+        }
+    }
+
+    private func applyBubbleChrome(showsImageOnly: Bool, isOwn: Bool) {
+        if showsImageOnly {
+            bubbleView.backgroundColor = .clear
+            bubbleView.layer.borderWidth = 0
+            bubbleView.layer.borderColor = nil
+            bubbleContentTopConstraint?.constant = 0
+            bubbleContentLeadingConstraint?.constant = 0
+            bubbleContentTrailingConstraint?.constant = 0
+            bubbleContentBottomConstraint?.constant = 0
+        } else {
+            bubbleView.backgroundColor = isOwn
+                ? ProviderChatDesignTokens.Color.providerSentBubble
+                : ProviderChatDesignTokens.Color.consumerBubble
+            bubbleView.layer.borderWidth = 0
+            bubbleView.layer.borderColor = nil
+            bubbleContentTopConstraint?.constant = 10
+            bubbleContentLeadingConstraint?.constant = 12
+            bubbleContentTrailingConstraint?.constant = -12
+            bubbleContentBottomConstraint?.constant = -10
         }
     }
 

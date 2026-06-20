@@ -118,6 +118,9 @@ struct ProviderRequestsInboxContent: View {
                 await loadRequests(settlesPresentation: false)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: ProviderAwaitingPaymentTracker.didChangeNotification)) { _ in
+            syncCompletedSectionExpansionForAwaitingPayment()
+        }
         .onChange(of: pendingBookingDetailId) { _, bookingId in
             openPendingBookingDetailIfPossible(bookingId)
         }
@@ -398,7 +401,7 @@ struct ProviderRequestsInboxContent: View {
     @ViewBuilder
     private func bookingDetailDestination(bookingId: String) -> some View {
         if let booking = bookingItems.first(where: { $0.id == bookingId }) {
-            BookingDetailHost(booking: booking) {
+            BookingDetailScreen(booking: booking) {
                 await loadBookings(isUserPullToRefresh: false)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -434,6 +437,13 @@ struct ProviderRequestsInboxContent: View {
         pendingBookingDetailId = nil
     }
 
+    private func syncCompletedSectionExpansionForAwaitingPayment() {
+        guard bookingItems.contains(where: \.isCompletedAwaitingConsumerPayment) else { return }
+        if !expandedFilters.contains(.completed) {
+            expandedFilters.insert(.completed)
+        }
+    }
+
     // MARK: - Request interactions
 
     private func toggleExpansion(_ id: String) {
@@ -465,15 +475,43 @@ struct ProviderRequestsInboxContent: View {
                 location: booking.location,
                 notes: booking.notes
             )
+
+            let refreshed = (try? await ProviderBookingsService.fetchBooking(id: booking.id))
+                ?? booking.updatingScheduledTime(date, clearPendingReschedule: true)
+            let merged = mergeRescheduledBooking(refreshed, rescheduledTo: date)
+            replaceBookingInItems(merged)
+
+            NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
             NotificationCenter.default.post(name: .providerRequestsListShouldRefresh, object: nil)
             NotificationCenter.default.post(name: .providerBookingsListShouldRefresh, object: nil)
-            await loadRequests(settlesPresentation: false)
+
+            guard let bid = session.barberProfile?.id else { return }
+            triageItems = try await ProviderBookingRequestsService.loadTriageQueue(
+                barberTableId: bid,
+                bookingsHint: bookingItems
+            )
             await loadBookings(isUserPullToRefresh: false)
+
             if let keepExpanded {
                 expandedRequestId = keepExpanded
             }
         } catch {
             requestsErrorText = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+        }
+    }
+
+    /// After a barber reschedule on a pending inquiry, the provider's slot overrides any consumer counter-request.
+    private func mergeRescheduledBooking(_ booking: SimpleBookingDTO, rescheduledTo: Date) -> SimpleBookingDTO {
+        guard booking.statusUpper == "PENDING" else { return booking }
+        let scheduled = booking.scheduledTime ?? rescheduledTo
+        return booking.updatingScheduledTime(scheduled, clearPendingReschedule: true)
+    }
+
+    private func replaceBookingInItems(_ booking: SimpleBookingDTO) {
+        if let index = bookingItems.firstIndex(where: { $0.id == booking.id }) {
+            bookingItems[index] = booking
+        } else {
+            bookingItems.append(booking)
         }
     }
 
@@ -489,9 +527,9 @@ struct ProviderRequestsInboxContent: View {
             }
         }
 
-        async let requests: Void = loadRequests(settlesPresentation: false)
         async let bookings: Void = loadBookings(isUserPullToRefresh: isUserPullToRefresh)
-        _ = await (requests, bookings)
+        _ = await bookings
+        await loadRequests(settlesPresentation: false)
     }
 
     private func loadRequests(settlesPresentation: Bool) async {
@@ -513,7 +551,10 @@ struct ProviderRequestsInboxContent: View {
         requestsErrorText = nil
         defer { isRequestsLoading = false }
         do {
-            triageItems = try await ProviderBookingRequestsService.loadTriageQueue(barberTableId: bid)
+            triageItems = try await ProviderBookingRequestsService.loadTriageQueue(
+                barberTableId: bid,
+                bookingsHint: hasLoadedBookings ? bookingItems : nil
+            )
             if let id = expandedRequestId, !triageItems.contains(where: { $0.id == id }) {
                 expandedRequestId = nil
             }
@@ -538,6 +579,8 @@ struct ProviderRequestsInboxContent: View {
         }
         do {
             bookingItems = try await ProviderBookingsService.listBookings(role: "barber")
+            ProviderAwaitingPaymentTracker.shared.reconcile(with: bookingItems)
+            syncCompletedSectionExpansionForAwaitingPayment()
         } catch {
             guard !providerAllBookingsIsBenignCancellation(error) else { return }
             bookingsErrorText = (error as? LocalizedError)?.errorDescription ?? String(describing: error)

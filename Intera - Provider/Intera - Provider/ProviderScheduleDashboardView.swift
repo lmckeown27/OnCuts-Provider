@@ -17,6 +17,7 @@ private func providerIsBenignRequestCancellation(_ error: Error) -> Bool {
 struct ProviderScheduleDashboardView: View {
     @Environment(ProviderSession.self) private var session
     @Environment(ProviderShellNavigator.self) private var shellNavigator
+    @Environment(\.colorScheme) private var colorScheme
 
     /// Direct reference to the shared `@Observable` tracker. Accessing
     /// `awaitingPaymentTracker.requestedIds` from `body` *should* register an observation
@@ -756,16 +757,11 @@ struct ProviderScheduleDashboardView: View {
     }
 
     private var awaitingPaymentBookings: [SimpleBookingDTO] {
-        // Touch the refresh tick so SwiftUI's body-time dependency tracking includes the
-        // notification-driven backstop. The integer's actual value is irrelevant — every
-        // mutation to `awaitingPaymentTracker.requestedIds` increments it, which is
-        // enough to invalidate this computed property and re-render the banner.
         _ = awaitingPaymentRefreshTick
-        let ids = awaitingPaymentTracker.requestedIds
-        guard !ids.isEmpty else { return [] }
-        return bookings.filter {
-            ids.contains($0.id)
-                && ProviderAwaitingPaymentTracker.isAwaitingEligible(status: $0.statusUpper, paidAt: $0.paidAt)
+        return bookings.filter { booking in
+            ProviderAwaitingPaymentTracker.isAwaitingEligible(status: booking.statusUpper, paidAt: booking.paidAt)
+                && (booking.isCompletedAwaitingConsumerPayment
+                    || awaitingPaymentTracker.requestedIds.contains(booking.id))
         }
     }
 
@@ -833,12 +829,14 @@ struct ProviderScheduleDashboardView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 9)
                         .foregroundStyle(
-                            isPresetActive(preset) ? Color.lavaShellCream : Color.lavaShellCream.opacity(0.88)
+                            isPresetActive(preset)
+                                ? ProviderOliveChromeStyle.zoomSegmentActiveForeground(colorScheme)
+                                : ProviderOliveChromeStyle.zoomSegmentInactiveForeground(colorScheme)
                         )
                         .background {
                             if isPresetActive(preset) {
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(Color.providerOlive.opacity(0.62))
+                                    .fill(ProviderOliveChromeStyle.zoomSegmentActiveFill(colorScheme))
                             }
                         }
                         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))

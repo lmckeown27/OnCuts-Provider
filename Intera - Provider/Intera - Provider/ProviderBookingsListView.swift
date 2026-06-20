@@ -69,7 +69,7 @@ struct ProviderBookingsListView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .navigationTitle("Bookings")
             .navigationDestination(for: SimpleBookingDTO.self) { booking in
-                BookingDetailHost(booking: booking, onChanged: { await load(isUserPullToRefresh: false) })
+                BookingDetailScreen(booking: booking, onChanged: { await load(isUserPullToRefresh: false) })
             }
             .refreshable { await load(isUserPullToRefresh: true) }
             .overlay {

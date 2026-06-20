@@ -10,10 +10,18 @@ enum ProviderBookingRequestsService {
     }
 
     /// Pending queue plus same-day schedule intersect (bookings + availability).
-    static func loadTriageQueue(barberTableId: String) async throws -> [RequestTriageItem] {
+    static func loadTriageQueue(
+        barberTableId: String,
+        bookingsHint: [SimpleBookingDTO]? = nil
+    ) async throws -> [RequestTriageItem] {
         async let pendingTask = listPending(barberTableId: barberTableId)
-        async let bookingsTask = ProviderBookingsService.listBookings(role: "barber")
-        let (pending, bookings) = try await (pendingTask, bookingsTask)
+        let bookings: [SimpleBookingDTO]
+        if let bookingsHint, !bookingsHint.isEmpty {
+            bookings = bookingsHint
+        } else {
+            bookings = try await ProviderBookingsService.listBookings(role: "barber")
+        }
+        let pending = try await pendingTask
         return await ProviderRequestTriageEngine.build(
             pending: pending,
             bookings: bookings,

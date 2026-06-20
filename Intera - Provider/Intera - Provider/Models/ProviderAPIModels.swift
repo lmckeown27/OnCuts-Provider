@@ -196,6 +196,7 @@ struct SimpleBookingDetailPayload: Decodable {
     let location: String?
     let notes: String?
     let paidAt: Date?
+    let paymentRequestedAt: Date?
     let tipAmountCents: Int?
     let totalPaidCents: Int?
     let reviewRating: Double?
@@ -224,6 +225,7 @@ struct SimpleBookingDetailPayload: Decodable {
             serviceName: serviceName,
             review: review,
             paidAt: paidAt,
+            paymentRequestedAt: paymentRequestedAt,
             tipAmountCents: tipAmountCents,
             totalPaidCents: totalPaidCents,
             paymentMethod: nil,
@@ -364,6 +366,7 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
     let serviceName: String?
     let review: SimpleBookingReview?
     let paidAt: Date?
+    let paymentRequestedAt: Date?
     let tipAmountCents: Int?
     let totalPaidCents: Int?
     let paymentMethod: String?
@@ -426,6 +429,14 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
 
     var isCashPayment: Bool {
         paymentMethod?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "cash"
+    }
+
+    /// Completed visit where the provider requested payment and the consumer has not paid yet.
+    var isCompletedAwaitingConsumerPayment: Bool {
+        guard paidAt == nil else { return false }
+        guard ProviderBookingStatusDisplay.normalized(status) == "completed" else { return false }
+        if paymentRequestedAt != nil { return true }
+        return ProviderAwaitingPaymentTracker.shared.requestedIds.contains(id)
     }
 
     var hasPendingRescheduleRequest: Bool {

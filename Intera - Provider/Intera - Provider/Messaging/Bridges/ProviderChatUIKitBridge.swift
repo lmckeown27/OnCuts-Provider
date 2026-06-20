@@ -172,7 +172,7 @@ struct ProviderMessagesInboxView: View {
                             navigator.messagesDetailPath.removeLast()
                         },
                         onBlocked: {
-                            navigator.messagesDetailPath = NavigationPath()
+                            navigator.messagesDetailPath = []
                             inboxReloadToken = UUID()
                         }
                     )

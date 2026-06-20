@@ -88,7 +88,8 @@ async function fetchAlternativeBarbers(
         FROM bookings
         WHERE "barberId" = $1
           AND DATE("requestedAt" AT TIME ZONE 'America/Los_Angeles') = $2
-          AND status IN ('ACCEPTED', 'PENDING', 'COMPLETED')
+          AND status IN ('ACCEPTED', 'PENDING', 'IN_PROGRESS')
+          AND "paidAt" IS NULL
         UNION ALL
         SELECT
           TO_CHAR(start_time, 'HH24:MI') as start_time,

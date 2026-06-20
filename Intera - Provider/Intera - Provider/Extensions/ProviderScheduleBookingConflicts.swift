@@ -89,12 +89,7 @@ enum ProviderScheduleBookingConflicts {
     }
 
     private static func countsForScheduleConflict(_ booking: SimpleBookingDTO) -> Bool {
-        switch ProviderBookingStatusDisplay.normalized(booking.status) {
-        case "cancelled", "canceled", "completed", "paid", "rejected", "refunded", "disputed":
-            return false
-        default:
-            return true
-        }
+        ProviderBookingStatusDisplay.blocksScheduleConflict(booking)
     }
 
     private static func isBookingCovered(

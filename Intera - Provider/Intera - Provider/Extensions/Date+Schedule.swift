@@ -10,15 +10,95 @@ extension Date {
 }
 
 extension SimpleBookingDTO {
-    /// For **PENDING** bookings, a consumer reschedule request replaces the original submitted ask.
-    /// **ACCEPTED** bookings keep `scheduledTime` as confirmed until the barber approves the change.
-    var providerEffectiveScheduledTime: Date? {
-        if statusUpper == "PENDING",
-           hasPendingRescheduleRequest,
-           let proposed = pendingRescheduleRequest?.proposedScheduledTime {
-            return proposed
+    /// Pending booking display time with override hierarchy:
+    /// 1. Provider reschedule (`scheduledTime` moved off the initial submission)
+    /// 2. Consumer pending reschedule request (`proposedScheduledTime`)
+    /// 3. Initial submission (`scheduledTime` / booking-request row)
+    func providerPendingScheduleTime(originalSubmission: Date? = nil) -> Date? {
+        guard statusUpper == "PENDING" else { return scheduledTime }
+
+        guard let scheduled = scheduledTime else {
+            return pendingRescheduleRequest?.proposedScheduledTime ?? originalSubmission
         }
-        return scheduledTime
+
+        guard hasPendingRescheduleRequest,
+              let proposed = pendingRescheduleRequest?.proposedScheduledTime,
+              !Calendar.current.isDate(proposed, equalTo: scheduled, toGranularity: .minute) else {
+            return scheduled
+        }
+
+        if let submission = originalSubmission {
+            if Calendar.current.isDate(scheduled, equalTo: submission, toGranularity: .minute) {
+                return proposed
+            }
+            return scheduled
+        }
+
+        return proposed
+    }
+
+    /// Effective pending time for schedule, chat, and booking detail surfaces.
+    var providerEffectiveScheduledTime: Date? {
+        providerPendingScheduleTime(originalSubmission: nil)
+    }
+
+    /// Effective pending time for booking-request triage cards.
+    func providerBookingRequestScheduledTime(requestRow: BookingRequestRow) -> Date? {
+        providerPendingScheduleTime(originalSubmission: requestRow.requestedScheduleInstant)
+    }
+
+    func updatingScheduledTime(_ time: Date, clearPendingReschedule: Bool = false) -> SimpleBookingDTO {
+        SimpleBookingDTO(
+            id: id,
+            consumerId: consumerId,
+            barberId: barberId,
+            serviceType: serviceType,
+            priceUsdCents: priceUsdCents,
+            scheduledTime: time,
+            status: status,
+            location: location,
+            notes: notes,
+            serviceName: serviceName,
+            review: review,
+            paidAt: paidAt,
+            paymentRequestedAt: paymentRequestedAt,
+            tipAmountCents: tipAmountCents,
+            totalPaidCents: totalPaidCents,
+            paymentMethod: paymentMethod,
+            pendingRescheduleRequest: clearPendingReschedule ? nil : pendingRescheduleRequest,
+            consumer: consumer,
+            consumerName: consumerName,
+            barber: barber,
+            barberName: barberName,
+            conversationId: conversationId
+        )
+    }
+
+    func updatingPaymentRequestedAt(_ date: Date?) -> SimpleBookingDTO {
+        SimpleBookingDTO(
+            id: id,
+            consumerId: consumerId,
+            barberId: barberId,
+            serviceType: serviceType,
+            priceUsdCents: priceUsdCents,
+            scheduledTime: scheduledTime,
+            status: status,
+            location: location,
+            notes: notes,
+            serviceName: serviceName,
+            review: review,
+            paidAt: paidAt,
+            paymentRequestedAt: date,
+            tipAmountCents: tipAmountCents,
+            totalPaidCents: totalPaidCents,
+            paymentMethod: paymentMethod,
+            pendingRescheduleRequest: pendingRescheduleRequest,
+            consumer: consumer,
+            consumerName: consumerName,
+            barber: barber,
+            barberName: barberName,
+            conversationId: conversationId
+        )
     }
 
     func formattedProviderEffectiveSchedule(reference: Date = .now) -> String {

@@ -32,11 +32,6 @@ enum ProviderRequestTriageEngine {
     private static let defaultDurationMinutes = 45
     /// Matches schedule dashboard / availability API appointment blocks (1 hour).
     private static let bookingSlotMinutes = 60
-    /// Statuses that actually occupy the calendar (barber has committed).
-    private static let committedStatuses: Set<String> = [
-        "ACCEPTED", "CONFIRMED", "PAID", "COMPLETED", "SCHEDULED", "IN_PROGRESS",
-    ]
-
     private static let pendingStatuses: Set<String> = ["PENDING"]
 
     static func build(
@@ -104,7 +99,7 @@ enum ProviderRequestTriageEngine {
                 let interval = DateInterval(start: scheduled, duration: durationSeconds)
                 let svc = booking.serviceDisplayName
 
-                if committedStatuses.contains(status) {
+                if ProviderBookingStatusDisplay.blocksScheduleConflict(booking) {
                     committedIntervals.append(interval)
                     timelineEntries.append((interval, svc, .booked))
                 } else if pendingStatuses.contains(status), !pendingBookingIds.contains(booking.id) {
@@ -353,7 +348,7 @@ enum ProviderRequestTriageEngine {
             guard booking.id != editingBookingId else { continue }
             guard let scheduled = booking.scheduledTime else { continue }
             guard yyyyMMdd(scheduled, timeZone: timeZone) == dayKey else { continue }
-            guard committedStatuses.contains(booking.statusUpper) else { continue }
+            guard ProviderBookingStatusDisplay.blocksScheduleConflict(booking) else { continue }
             committedIntervals.append(DateInterval(start: scheduled, duration: durationSeconds))
         }
 
@@ -480,9 +475,8 @@ enum ProviderRequestTriageEngine {
         bookings: [SimpleBookingDTO]
     ) -> Date? {
         if let booking = bookings.first(where: { $0.id == row.bookingId }),
-           pendingStatuses.contains(booking.statusUpper),
-           let scheduled = booking.providerEffectiveScheduledTime {
-            return scheduled
+           pendingStatuses.contains(booking.statusUpper) {
+            return booking.providerBookingRequestScheduledTime(requestRow: row)
         }
         return parseRequestedInstant(row)
     }

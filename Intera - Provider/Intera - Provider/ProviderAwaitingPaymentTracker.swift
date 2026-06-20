@@ -105,7 +105,11 @@ final class ProviderAwaitingPaymentTracker {
                 .filter { Self.isAwaitingEligible(status: $0.statusUpper, paidAt: $0.paidAt) }
                 .map(\.id)
         )
-        requestedIds = requestedIds.intersection(stillEligible)
+        var ids = requestedIds.intersection(stillEligible)
+        for booking in bookings where booking.isCompletedAwaitingConsumerPayment {
+            ids.insert(booking.id)
+        }
+        requestedIds = ids
     }
 
     /// Single source of truth for whether a booking *status* is compatible with the
@@ -122,5 +126,18 @@ final class ProviderAwaitingPaymentTracker {
         if s.contains("PAID") { return false }
         if s.contains("CANCEL") || s.contains("REJECT") { return false }
         return s == "ACCEPTED" || s == "COMPLETED"
+    }
+
+    /// Bookings the provider has requested payment on that are still unpaid.
+    static func awaitingPaymentBookings(from bookings: [SimpleBookingDTO]) -> [SimpleBookingDTO] {
+        bookings.filter { booking in
+            booking.isCompletedAwaitingConsumerPayment
+                || (shared.requestedIds.contains(booking.id)
+                    && isAwaitingEligible(status: booking.statusUpper, paidAt: booking.paidAt))
+        }
+    }
+
+    static func hasCompletedAwaitingPayment(in bookings: [SimpleBookingDTO]) -> Bool {
+        bookings.contains(where: \.isCompletedAwaitingConsumerPayment)
     }
 }

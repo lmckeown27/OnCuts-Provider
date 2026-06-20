@@ -35,4 +35,8 @@ extension Notification.Name {
     /// Sent when any push implies the messaging unread count may have changed. The dashboard
     /// header observes this to refetch `/messages/unread-count` (or list conversations + sum).
     static let providerMessagingUnreadCountShouldRefresh = Notification.Name("ProviderMessagingUnreadCountShouldRefresh")
+
+    /// Posted when the user should reload an already-visible conversation (e.g. message push
+    /// while that thread is open). Includes `userInfo["conversationId"]: Int`.
+    static let providerMessagingConversationShouldRefresh = Notification.Name("ProviderMessagingConversationShouldRefresh")
 }

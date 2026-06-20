@@ -7,6 +7,7 @@ import UserNotifications
 struct ProviderDashboardShellView: View {
     @Environment(ProviderSession.self) private var session
     @Environment(ProviderShellNavigationAppearance.self) private var shellNavigationAppearance
+    @Environment(\.colorScheme) private var colorScheme
     @State private var navigator = ProviderShellNavigator()
     @State private var showingRequestsInbox = false
     @State private var showingBusinessAnalytics = false
@@ -18,6 +19,7 @@ struct ProviderDashboardShellView: View {
     @State private var unreadConversationCount = 0
     @State private var pendingRequestCount = 0
     @State private var pendingRescheduleRequestCount = 0
+    @State private var hasAwaitingPaymentAttention = false
 
     private var bookingsTrayAttentionCount: Int {
         pendingRequestCount + pendingRescheduleRequestCount
@@ -43,6 +45,7 @@ struct ProviderDashboardShellView: View {
                             .providerShellNavigationDepthTracking()
                     }
                     .id(topScreen)
+                    .optionalProviderShellNavigatorEnvironment(navigator)
                     .providerShellNavigationContainerChrome(
                         backdrop: shellNavigationAppearance.navigationContainerBackdropStyle
                     )
@@ -57,6 +60,7 @@ struct ProviderDashboardShellView: View {
         .tint(.providerOlive)
         .providerLavaToolbarChrome()
         .environment(navigator)
+        .optionalProviderShellNavigatorEnvironment(navigator)
         #if os(iOS)
         .environment(ProviderShellNavigationPopBridge.shared)
         #endif
@@ -113,8 +117,8 @@ struct ProviderDashboardShellView: View {
             await refreshHeaderCounts()
         }
         // Push router → in-app routing. Three observer cases:
-        //   1. `interaOpenMessagingConversation` → push Messages and append conversation id to
-        //      `messagesDetailPath` (same pattern as Bookings → detail).
+        //   1. `interaOpenMessagingConversation` → push Messages and focus the conversation in
+        //      `messagesDetailPath` (replaces duplicates; refreshes if already open).
         //   2. `providerMessagingUnreadCountShouldRefresh` → refetch unread badge count.
         //   3. `providerBookingsListShouldRefresh` / `providerRequestsListShouldRefresh` →
         //      refresh pending count badge so the header is consistent with the server state.
@@ -162,14 +166,17 @@ struct ProviderDashboardShellView: View {
                 navigator.pushRoute(ProviderShellRoute.messages)
             } label: {
                 HStack(spacing: 6) {
-                    NavigationChatsIcon(unreadCount: unreadConversationCount)
+                    NavigationChatsIcon(
+                        unreadCount: unreadConversationCount,
+                        tint: ProviderOliveChromeStyle.headerIconTint(colorScheme)
+                    )
                         .frame(width: 18, height: 18)
                     Text("Chats")
                         .fontWeight(.semibold)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(Color.providerOlive.opacity(0.35), in: Capsule())
+                .background(ProviderOliveChromeStyle.headerPillFill(colorScheme), in: Capsule())
                 .overlay(alignment: .topTrailing) {
                     if unreadConversationCount > 0 {
                         Text(unreadConversationCount > 99 ? "99+" : "\(unreadConversationCount)")
@@ -181,7 +188,7 @@ struct ProviderDashboardShellView: View {
                 }
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.lavaShellCream)
+            .foregroundStyle(ProviderOliveChromeStyle.headerPillForeground(colorScheme))
 
             Spacer(minLength: 8)
 
@@ -195,14 +202,14 @@ struct ProviderDashboardShellView: View {
                         .minimumScaleFactor(0.75)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(Color.providerOlive.opacity(0.35), in: Capsule())
+                        .background(ProviderOliveChromeStyle.headerPillFill(colorScheme), in: Capsule())
                         .overlay(
                             Capsule()
-                                .strokeBorder(Color.lavaShellCream.opacity(0.2), lineWidth: 0.5)
+                                .strokeBorder(ProviderOliveChromeStyle.headerPillBorder(colorScheme), lineWidth: 0.5)
                         )
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Color.lavaShellCream)
+                .foregroundStyle(ProviderOliveChromeStyle.headerPillForeground(colorScheme))
                 .accessibilityLabel("Admin dashboard")
             }
 
@@ -225,38 +232,62 @@ struct ProviderDashboardShellView: View {
 
     private var requestsTrayButton: some View {
         Button(action: presentBookingsInbox) {
-            NavigationInboxIcon(unreadCount: bookingsTrayAttentionCount)
+            NavigationInboxIcon(
+                unreadCount: bookingsTrayAttentionCount,
+                tint: ProviderOliveChromeStyle.headerIconTint(colorScheme)
+            )
                 .frame(width: 22, height: 22)
                 .frame(width: 36, height: 36)
-                .background(Color.providerOlive.opacity(0.35), in: Circle())
+                .background(ProviderOliveChromeStyle.headerPillFill(colorScheme), in: Circle())
                 .overlay(
                     Circle()
-                        .strokeBorder(Color.lavaShellCream.opacity(0.35), lineWidth: 0.8)
+                        .strokeBorder(ProviderOliveChromeStyle.headerPillBorder(colorScheme), lineWidth: 0.8)
                 )
-                .overlay(alignment: .topTrailing) {
-                    if bookingsTrayAttentionCount > 0 {
-                        requestsPendingCountBadge(bookingsTrayAttentionCount)
-                            .offset(x: 5, y: -5)
-                    }
-                }
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .topTrailing) {
+            ZStack(alignment: .topTrailing) {
+                if bookingsTrayAttentionCount > 0 {
+                    requestsPendingCountBadge(bookingsTrayAttentionCount)
+                        .offset(x: hasAwaitingPaymentAttention ? -10 : 5, y: -5)
+                }
+                if hasAwaitingPaymentAttention {
+                    awaitingPaymentWarningBadge
+                        .offset(x: 5, y: -5)
+                }
+            }
+        }
         .accessibilityLabel(bookingsTrayAccessibilityLabel)
     }
 
     private var bookingsTrayAccessibilityLabel: String {
-        switch (pendingRequestCount, pendingRescheduleRequestCount) {
-        case (0, 0):
-            return "Bookings"
-        case let (requests, 0):
-            return "Bookings, \(requests) pending request\(requests == 1 ? "" : "s")"
-        case let (0, changes):
-            return "Bookings, \(changes) schedule change request\(changes == 1 ? "" : "s")"
-        case let (requests, changes):
-            let total = requests + changes
-            return "Bookings, \(total) pending (\(requests) request\(requests == 1 ? "" : "s"), \(changes) schedule change\(changes == 1 ? "" : "s"))"
+        var parts: [String] = ["Bookings"]
+        if pendingRequestCount > 0 {
+            parts.append("\(pendingRequestCount) pending request\(pendingRequestCount == 1 ? "" : "s")")
         }
+        if pendingRescheduleRequestCount > 0 {
+            parts.append("\(pendingRescheduleRequestCount) schedule change request\(pendingRescheduleRequestCount == 1 ? "" : "s")")
+        }
+        if hasAwaitingPaymentAttention {
+            parts.append("awaiting payment")
+        }
+        guard parts.count > 1 else { return parts[0] }
+        return parts[0] + ", " + parts.dropFirst().joined(separator: ", ")
+    }
+
+    /// Yellow warning ticker for completed bookings awaiting consumer payment.
+    private var awaitingPaymentWarningBadge: some View {
+        Text("!")
+            .font(.provider(size: 12, weight: .black))
+            .foregroundStyle(Color(white: 0.1))
+            .frame(width: 18, height: 18)
+            .background(Color(uiColor: ProviderChatDesignTokens.Color.statusYellow), in: Circle())
+            .overlay(
+                Circle()
+                    .strokeBorder(Color.lavaShellCream.opacity(0.85), lineWidth: 1.5)
+            )
+            .accessibilityLabel("Awaiting payment")
     }
 
     /// Circular ticker for pending booking requests on the header tray control.
@@ -389,13 +420,12 @@ struct ProviderDashboardShellView: View {
         case .route(let route):
             shellRouteDestination(route)
         case .booking(let booking):
-            BookingDetailHost(booking: booking) {
+            BookingDetailScreen(booking: booking) {
                 await MainActor.run {
                     NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
                 }
             }
             .providerPushedDestinationChrome()
-            .providerShellBackToolbar()
         }
     }
 
@@ -448,6 +478,7 @@ struct ProviderDashboardShellView: View {
         guard let bid = session.barberProfile?.id else {
             pendingRequestCount = 0
             pendingRescheduleRequestCount = 0
+            hasAwaitingPaymentAttention = false
             syncApplicationIconBadge()
             return
         }
@@ -470,8 +501,11 @@ struct ProviderDashboardShellView: View {
         do {
             let bookings = try await ProviderBookingsService.listBookings(role: "barber")
             pendingRescheduleRequestCount = bookings.filter(\.hasPendingRescheduleRequest).count
+            ProviderAwaitingPaymentTracker.shared.reconcile(with: bookings)
+            hasAwaitingPaymentAttention = bookings.contains(where: \.isCompletedAwaitingConsumerPayment)
         } catch {
             pendingRescheduleRequestCount = 0
+            hasAwaitingPaymentAttention = false
         }
     }
 

@@ -12,6 +12,8 @@ struct ProviderExpandableRequestTriageCard: View {
     let isOpeningMessage: Bool
     let onMessage: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+
     /// Cached expanded height so reopening animates smoothly and siblings slide instead of jumping.
     @State private var expandedContentHeight: CGFloat = 0
 
@@ -183,11 +185,29 @@ struct ProviderExpandableRequestTriageCard: View {
         } else {
             Text("Slot open")
                 .font(.provider(.caption, weight: .bold))
+                .foregroundStyle(slotOpenBadgeForeground)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .foregroundStyle(Color.providerOlive)
-                .background(Color.providerOlive.opacity(0.22), in: Capsule())
+                .background(slotOpenBadgeBackground, in: Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(slotOpenBadgeBorder, lineWidth: 1)
+                )
         }
+    }
+
+    private var slotOpenBadgeForeground: Color {
+        colorScheme == .dark ? Color.providerOliveLight : Color.providerOlive
+    }
+
+    private var slotOpenBadgeBackground: Color {
+        colorScheme == .dark
+            ? Color.providerOlive.opacity(0.22)
+            : Color.providerOliveLight.opacity(0.42)
+    }
+
+    private var slotOpenBadgeBorder: Color {
+        Color.providerOlive.opacity(colorScheme == .dark ? 0.35 : 0.28)
     }
 
     private var expandableContent: some View {
@@ -204,14 +224,19 @@ struct ProviderExpandableRequestTriageCard: View {
                     .frame(maxWidth: .infinity)
 
                 Button(action: onMessage) {
-                    ProviderBlackOutlinedButtonLabel(
-                        isOpeningMessage ? "Opening…" : "Message"
-                    )
+                    Text(isOpeningMessage ? "Opening…" : "Message")
+                        .font(.provider(.body, weight: .semibold))
+                        .foregroundStyle(messageButtonForeground)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(messageButtonBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(messageButtonBorder, lineWidth: 1)
+                        )
                 }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.providerOliveLight)
-                    .frame(maxWidth: .infinity)
-                    .disabled(isOpeningMessage)
+                .buttonStyle(.plain)
+                .disabled(isOpeningMessage)
             }
 
             Divider()
@@ -223,11 +248,17 @@ struct ProviderExpandableRequestTriageCard: View {
                     .tint(ProviderRequestSheetColors.lavaRed)
                     .frame(maxWidth: .infinity)
 
-                Button("Approve", action: onAccept)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.providerOlive)
-                    .frame(maxWidth: .infinity)
-                    .disabled(item.hasConflict)
+                Button(action: onAccept) {
+                    Text("Approve")
+                        .font(.provider(.body, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(approveButtonBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(item.hasConflict)
+                .opacity(item.hasConflict ? 0.45 : 1)
             }
         }
         .padding(.horizontal, 14)
@@ -238,33 +269,61 @@ struct ProviderExpandableRequestTriageCard: View {
         }
     }
 
+    private var messageButtonForeground: Color {
+        colorScheme == .dark ? Color.lavaShellCream : Color.providerOlive
+    }
+
+    private var messageButtonBackground: Color {
+        colorScheme == .dark
+            ? Color.providerOliveLight.opacity(0.28)
+            : Color.providerOliveLight.opacity(0.52)
+    }
+
+    private var messageButtonBorder: Color {
+        Color.providerOlive.opacity(colorScheme == .dark ? 0.4 : 0.32)
+    }
+
+    private var approveButtonBackground: Color {
+        colorScheme == .dark
+            ? Color.providerOlive
+            : ProviderRequestSheetColors.approveGreen
+    }
 }
 
-// MARK: - Outlined button label
+// MARK: - Outlined text
 
-private struct ProviderBlackOutlinedButtonLabel: View {
+struct ProviderBlackOutlinedText: View {
     let text: String
+    var fill: Color = Color.lavaShellCream
 
-    private static let outlineOffsets: [CGSize] = [
-        CGSize(width: -1, height: 0), CGSize(width: 1, height: 0),
-        CGSize(width: 0, height: -1), CGSize(width: 0, height: 1),
-        CGSize(width: -1, height: -1), CGSize(width: 1, height: -1),
-        CGSize(width: -1, height: 1), CGSize(width: 1, height: 1),
+    @Environment(\.colorScheme) private var colorScheme
+
+    private static let darkOutlineOffsets: [CGSize] = [
+        CGSize(width: -1.5, height: 0), CGSize(width: 1.5, height: 0),
+        CGSize(width: 0, height: -1.5), CGSize(width: 0, height: 1.5),
+        CGSize(width: -1.5, height: -1.5), CGSize(width: 1.5, height: -1.5),
+        CGSize(width: -1.5, height: 1.5), CGSize(width: 1.5, height: 1.5),
     ]
 
-    init(_ text: String) {
+    init(_ text: String, fill: Color = Color.lavaShellCream) {
         self.text = text
+        self.fill = fill
     }
 
     var body: some View {
-        ZStack {
-            ForEach(Array(Self.outlineOffsets.enumerated()), id: \.offset) { _, offset in
+        if colorScheme == .dark {
+            ZStack {
+                ForEach(Array(Self.darkOutlineOffsets.enumerated()), id: \.offset) { _, offset in
+                    Text(text)
+                        .offset(x: offset.width, y: offset.height)
+                        .foregroundStyle(.black)
+                }
                 Text(text)
-                    .offset(x: offset.width, y: offset.height)
-                    .foregroundStyle(.black)
+                    .foregroundStyle(fill)
             }
+        } else {
             Text(text)
-                .foregroundStyle(Color.lavaShellCream)
+                .foregroundStyle(fill)
         }
     }
 }

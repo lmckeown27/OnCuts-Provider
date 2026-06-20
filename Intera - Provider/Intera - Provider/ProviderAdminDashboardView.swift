@@ -36,6 +36,17 @@ struct ProviderAdminDashboardView: View {
             case .safety: "shield.lefthalf.filled"
             }
         }
+
+        /// Compact label under the tab icon — fits five segments on narrow phones.
+        var tabLabel: String {
+            switch self {
+            case .performance: "Perf."
+            case .barbers: "Barbers"
+            case .users: "Users"
+            case .services: "Services"
+            case .safety: "Safety"
+            }
+        }
     }
 
     /// Reports status chip on the Safety tab. `all` is the only value that omits the `status`
@@ -106,6 +117,8 @@ struct ProviderAdminDashboardView: View {
     @State private var busyUnbanUserId: String?
     @State private var pendingReportResolution: PendingReportResolution?
     @State private var pendingUnban: AdminBannedUserDTO?
+
+    @Environment(\.colorScheme) private var colorScheme
 
     private struct PendingReportResolution: Identifiable, Equatable {
         let id: UUID = UUID()
@@ -401,10 +414,10 @@ struct ProviderAdminDashboardView: View {
                 .padding(.horizontal, 36)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(0.06))
+                        .fill(Color.providerScheduleTrackFill)
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+                                .strokeBorder(Color.providerScheduleTrackStroke, lineWidth: 0.6)
                         )
                 )
                 .overlay(alignment: .trailing) {
@@ -427,10 +440,10 @@ struct ProviderAdminDashboardView: View {
         .padding(4)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.06))
+                .fill(ProviderOliveChromeStyle.adminTabTrackFill(colorScheme))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+                        .strokeBorder(ProviderOliveChromeStyle.adminTabTrackStroke(colorScheme), lineWidth: 0.6)
                 )
         )
         .accessibilityElement(children: .contain)
@@ -440,19 +453,33 @@ struct ProviderAdminDashboardView: View {
     private func adminTabButton(_ item: Tab) -> some View {
         let isSelected = tab == item
         return Button {
-            tab = item
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                tab = item
+            }
         } label: {
-            Image(systemName: item.systemImage)
-                .font(.provider(.body, weight: isSelected ? .semibold : .regular))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(isSelected ? Color.providerOlive : Color.lavaShellCreamSecondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(
+            VStack(spacing: 3) {
+                Image(systemName: item.systemImage)
+                    .font(.provider(.body, weight: isSelected ? .semibold : .regular))
+                    .symbolRenderingMode(.monochrome)
+                Text(item.tabLabel)
+                    .font(.provider(.caption2, weight: isSelected ? .semibold : .medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+            }
+            .foregroundStyle(
+                isSelected
+                    ? ProviderOliveChromeStyle.adminTabActiveForeground(colorScheme)
+                    : ProviderOliveChromeStyle.adminTabInactiveForeground(colorScheme)
+            )
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background {
+                if isSelected {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isSelected ? Color.white.opacity(0.1) : Color.clear)
-                )
-                .contentShape(Rectangle())
+                        .fill(ProviderOliveChromeStyle.adminTabActiveFill(colorScheme))
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(item.rawValue)
@@ -1172,7 +1199,7 @@ struct ProviderAdminDashboardView: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.white.opacity(0.05))
+                    .fill(Color.providerElevatedSurface)
             )
 
             ForEach(group.barbers) { barber in
@@ -1221,7 +1248,7 @@ struct ProviderAdminDashboardView: View {
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
+                    .fill(Color.providerElevatedSurface)
             )
         }
         .buttonStyle(.plain)
@@ -1235,7 +1262,7 @@ struct ProviderAdminDashboardView: View {
             } else if barber.hasStripeAccountOnly == true {
                 tag(text: "Stripe pending", tint: Color.orange.opacity(0.55))
             } else {
-                tag(text: "No Stripe", tint: Color.white.opacity(0.18))
+                tag(text: "No Stripe", tint: Color.providerElevatedSurface)
             }
         }
     }
@@ -1286,7 +1313,11 @@ struct ProviderAdminDashboardView: View {
                 .padding(10)
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.white.opacity(0.06))
+                        .fill(Color.providerScheduleTrackFill)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Color.providerScheduleTrackStroke, lineWidth: 0.5)
+                        )
                 )
                 if filteredUsers.isEmpty {
                     Text(isLoading ? "Loading users…" : "No matching users.")
@@ -1345,7 +1376,7 @@ struct ProviderAdminDashboardView: View {
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
+                    .fill(Color.providerElevatedSurface)
             )
         }
         .buttonStyle(.plain)
@@ -1468,7 +1499,7 @@ struct ProviderAdminDashboardView: View {
                     .padding(8)
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.white.opacity(0.05))
+                            .fill(Color.providerElevatedSurface)
                     )
             }
             if !report.isOpen,
@@ -1498,11 +1529,11 @@ struct ProviderAdminDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.06))
+                .fill(Color.providerElevatedSurface)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(report.isOpen ? Color.orange.opacity(0.35) : Color.white.opacity(0.1), lineWidth: 0.5)
+                .strokeBorder(report.isOpen ? Color.orange.opacity(0.35) : Color.providerElevatedSurfaceStroke, lineWidth: 0.5)
         )
         .opacity(isBusy ? 0.55 : 1.0)
     }
@@ -1532,7 +1563,7 @@ struct ProviderAdminDashboardView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(Color.white.opacity(0.12), in: Capsule())
+                .background(Color.providerElevatedSurface, in: Capsule())
                 .foregroundStyle(Color.lavaShellCream)
             }
             .disabled(isBusy)
@@ -1699,7 +1730,7 @@ struct ProviderAdminDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.06))
+                .fill(Color.providerElevatedSurface)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -1771,7 +1802,11 @@ struct ProviderAdminDashboardView: View {
             .padding(10)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
+                    .fill(Color.providerScheduleTrackFill)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(Color.providerScheduleTrackStroke, lineWidth: 0.5)
+                    )
             )
         }
         .accessibilityLabel("\(title) filter")
@@ -2061,10 +2096,10 @@ struct ProviderAdminDashboardView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.08))
+                .fill(Color.providerScheduleCardFill)
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5)
+                        .strokeBorder(Color.providerScheduleCardStroke, lineWidth: 0.6)
                 )
         )
     }
@@ -2081,7 +2116,7 @@ struct ProviderAdminDashboardView: View {
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.05))
+                .fill(Color.providerElevatedSurface)
         )
     }
 

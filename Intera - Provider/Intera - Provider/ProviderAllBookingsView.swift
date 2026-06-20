@@ -239,12 +239,7 @@ struct ProviderBookingsDropdownListContent: View {
                 .font(.provider(.subheadline))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
             HStack {
-                Text(booking.statusDisplayTitle)
-                    .font(.provider(.caption, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCream)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(booking.statusDisplayTint, in: Capsule())
+                ProviderBookingDetailStatusPill(status: booking.status)
                 Spacer(minLength: 0)
                 Text(booking.formattedSchedule())
                     .font(.provider(.caption))
@@ -267,12 +262,7 @@ struct ProviderBookingsDropdownListContent: View {
                 .foregroundStyle(Color.lavaShellCreamSecondary)
 
             HStack {
-                Text(booking.statusDisplayTitle)
-                    .font(.provider(.caption, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCream)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(booking.statusDisplayTint, in: Capsule())
+                ProviderBookingDetailStatusPill(status: booking.status)
                 Spacer(minLength: 0)
             }
 

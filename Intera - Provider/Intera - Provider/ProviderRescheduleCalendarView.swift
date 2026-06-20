@@ -7,6 +7,7 @@ struct ProviderRescheduleCalendarView: View {
     var isLoadingAllowedDays: Bool
     var onVisibleMonthChange: (Date) -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var displayedMonth: Date
 
     private var calendar: Calendar {
@@ -175,7 +176,7 @@ struct ProviderRescheduleCalendarView: View {
 
                 Text("\(calendar.component(.day, from: day))")
                     .font(.provider(.body, weight: .semibold))
-                    .foregroundStyle(selected ? Color.lavaShellCream : Color.lavaShellCream)
+                    .foregroundStyle(selected ? selectedDayForeground : Color.lavaShellCream)
                     .opacity(labelOpacity)
             }
             .frame(width: 40, height: 40)
@@ -184,6 +185,10 @@ struct ProviderRescheduleCalendarView: View {
         .buttonStyle(.plain)
         .disabled(!selectable)
         .accessibilityAddTraits(selectable ? [] : .isStaticText)
+    }
+
+    private var selectedDayForeground: Color {
+        colorScheme == .dark ? Color.lavaShellCream : Color.providerOnOliveFill
     }
 
     private var canGoPreviousMonth: Bool {

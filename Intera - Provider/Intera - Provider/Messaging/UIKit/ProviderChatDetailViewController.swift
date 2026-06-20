@@ -81,6 +81,12 @@ final class ProviderChatDetailViewController: UIViewController {
             name: .providerBookingsChanged,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleConversationShouldRefreshNotification),
+            name: .providerMessagingConversationShouldRefresh,
+            object: nil
+        )
     }
 
     deinit {
@@ -89,6 +95,48 @@ final class ProviderChatDetailViewController: UIViewController {
 
     @objc private func handleBookingsChangedNotification() {
         Task { await refreshLinkedBooking() }
+    }
+
+    @objc private func handleConversationShouldRefreshNotification(_ notification: Notification) {
+        guard conversationId(from: notification.userInfo) == conversation.id else { return }
+        ProviderConversationMessagesPrefetch.invalidate(conversationId: conversation.id)
+        reloadMessagesFromServer()
+    }
+
+    private func conversationId(from userInfo: [AnyHashable: Any]?) -> Int? {
+        guard let userInfo else { return nil }
+        switch userInfo["conversationId"] {
+        case let value as Int: return value
+        case let value as Int64: return Int(value)
+        case let value as NSNumber: return value.intValue
+        case let value as String: return Int(value.trimmingCharacters(in: .whitespacesAndNewlines))
+        default: return nil
+        }
+    }
+
+    private func reloadMessagesFromServer() {
+        guard !isLoading else { return }
+        isLoading = true
+        updateLoadingOverlay()
+
+        Task { @MainActor in
+            defer {
+                isLoading = false
+                updateLoadingOverlay()
+            }
+
+            Task { try? await ProviderMessagesService.markRead(conversationId: conversation.id) }
+
+            do {
+                let messages = try await ProviderMessagesService.listMessages(conversationId: conversation.id)
+                ProviderConversationMessagesPrefetch.store(conversationId: conversation.id, messages: messages)
+                applyMessages(messages)
+            } catch {
+                if feedItems.isEmpty {
+                    presentError(error)
+                }
+            }
+        }
     }
 
     private func setupRescheduleBanner() {
@@ -448,6 +496,7 @@ final class ProviderChatDetailViewController: UIViewController {
         guard !isSending else { return }
         isSending = true
         inputBar.setSending(true)
+        inputBar.clearDraftPhoto()
 
         let pendingID = generatePendingMessageID()
         pendingOutgoingMessageIDs.insert(pendingID)
@@ -465,6 +514,7 @@ final class ProviderChatDetailViewController: UIViewController {
                 await finalizeSend(replacingPendingID: pendingID)
             } catch {
                 removePendingMessage(id: pendingID)
+                inputBar.setDraftPhoto(image)
                 presentError(error)
             }
         }
@@ -798,7 +848,11 @@ extension ProviderChatDetailViewController: UITableViewDelegate {
 // MARK: - ProviderChatInputAccessoryViewDelegate
 
 extension ProviderChatDetailViewController: ProviderChatInputAccessoryViewDelegate {
-    func chatInputAccessoryViewDidTapSend(_ view: ProviderChatInputAccessoryView, text: String) {
+    func chatInputAccessoryViewDidTapSend(_ view: ProviderChatInputAccessoryView, text: String, draftPhoto: UIImage?) {
+        if let draftPhoto {
+            sendPhoto(draftPhoto)
+            return
+        }
         sendMessage(text)
     }
 
@@ -873,7 +927,7 @@ extension ProviderChatDetailViewController: UIImagePickerControllerDelegate, UIN
     ) {
         picker.dismiss(animated: true)
         guard let image = info[.originalImage] as? UIImage else { return }
-        sendPhoto(image)
+        inputBar.setDraftPhoto(image)
     }
 }
 
@@ -884,7 +938,7 @@ extension ProviderChatDetailViewController: PHPickerViewControllerDelegate {
         provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
             guard let image = object as? UIImage else { return }
             Task { @MainActor in
-                self?.sendPhoto(image)
+                self?.inputBar.setDraftPhoto(image)
             }
         }
     }

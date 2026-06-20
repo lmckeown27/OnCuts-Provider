@@ -11,6 +11,7 @@ struct ProviderPendingRequestScheduleEditor: View {
     @Binding var hasConflict: Bool
     var showsSelectedDayHeadline: Bool = true
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var dayAvailability: BarberAvailabilityDayData?
     @State private var dayBookings: [SimpleBookingDTO] = []
     @State private var isLoading = false
@@ -24,6 +25,8 @@ struct ProviderPendingRequestScheduleEditor: View {
         cal.timeZone = .current
         return cal
     }
+
+    private static let scheduleStepMinutes = 15
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -47,7 +50,7 @@ struct ProviderPendingRequestScheduleEditor: View {
                     .foregroundStyle(Color.lavaShellCream)
             }
 
-            Text("Tap an available hour for this appointment")
+            Text("Scroll the wheel to choose an available time")
                 .font(.provider(.caption))
                 .foregroundStyle(Color.lavaShellCreamTertiary)
 
@@ -63,7 +66,7 @@ struct ProviderPendingRequestScheduleEditor: View {
                     .font(.provider(.footnote))
                     .foregroundStyle(.red.opacity(0.9))
             } else {
-                scheduleHourList
+                timeWheelSection
             }
         }
         .task(id: dayTaskKey) { await reloadDay() }
@@ -108,127 +111,92 @@ struct ProviderPendingRequestScheduleEditor: View {
     }
 
     @ViewBuilder
-    private var scheduleHourList: some View {
-        let intervals = dayAvailability?.intervals ?? []
-        let slots = ProviderScheduleHourlySlot.generate(from: intervals)
-        if slots.isEmpty {
-            Text("No working hours on this day.")
+    private var timeWheelSection: some View {
+        let times = allSelectableStartTimes
+        if times.isEmpty {
+            Text("No available times on this day.")
                 .font(.provider(.footnote))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
         } else {
-            VStack(spacing: 8) {
-                ForEach(slots, id: \.start) { slot in
-                    hourRow(for: slot)
+            VStack(alignment: .leading, spacing: 12) {
+                selectedTimeSummary
+
+                VStack(spacing: 0) {
+                    Picker("Available time", selection: wheelMinutesBinding) {
+                        ForEach(times, id: \.self) { startMinutes in
+                            Text(Self.format12h(minutes: startMinutes))
+                                .font(.provider(.body, weight: .medium))
+                                .tag(startMinutes)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 180)
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(scheduleChromeBackground(cornerRadius: 14, style: .neutral))
+                .id(dayTaskKey)
             }
         }
     }
 
-    @ViewBuilder
-    private func hourRow(for slot: ProviderScheduleHourlySlot) -> some View {
-        let booking = booking(for: slot)
-        let isSelected = isDraftHour(slot)
-        if let booking, booking.id != bookingId {
-            bookedRow(slot: slot, booking: booking)
-        } else if isSelected {
-            proposedRow(slot: slot)
-        } else if isHourBookedByAvailability(slot) {
-            blockedRow(slot: slot)
-        } else {
-            Button {
-                selectHour(slot)
-            } label: {
-                availableRow(slot: slot)
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private func proposedRow(slot: ProviderScheduleHourlySlot) -> some View {
+    private var selectedTimeSummary: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(slot.displayRange)
+                Text(selectedDateTime.formatted(date: .omitted, time: .shortened))
                     .font(.provider(.subheadline, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCream)
+                    .foregroundStyle(onOliveChromePrimary)
                 Spacer()
                 proposedSlotStatusPill
             }
             Text(customerName)
                 .font(.provider(.title3, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream)
+                .foregroundStyle(onOliveChromePrimary)
             Text(serviceType)
                 .font(.provider(.subheadline))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
-            Text("Selected time — tap another open hour to move")
+                .foregroundStyle(onOliveChromeSecondary)
+            Text("45-minute appointment")
                 .font(.provider(.caption2))
-                .foregroundStyle(Color.lavaShellCreamTertiary)
+                .foregroundStyle(onOliveChromeTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(scheduleChromeBackground(cornerRadius: 14, style: .selected))
     }
 
-    private func bookedRow(slot: ProviderScheduleHourlySlot, booking: SimpleBookingDTO) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(slot.displayRange)
-                    .font(.provider(.subheadline, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-                Spacer()
-                bookingStatusPill(booking.status)
+    private var wheelMinutesBinding: Binding<Int> {
+        Binding(
+            get: {
+                let current = selectedMinutesOfDay
+                let times = allSelectableStartTimes
+                if times.contains(current) { return current }
+                return times.first ?? current
+            },
+            set: { selectStartTime($0) }
+        )
+    }
+
+    private var allSelectableStartTimes: [Int] {
+        let intervals = dayAvailability?.intervals ?? []
+        guard !intervals.isEmpty else { return [] }
+
+        var times: [Int] = []
+        var seen = Set<Int>()
+        for interval in intervals {
+            let intervalStart = ProviderScheduleHourlySlot.minutesFromHHMM(interval.start)
+            let intervalEnd = ProviderScheduleHourlySlot.minutesFromHHMM(interval.end)
+            var minute = intervalStart
+            while minute + ProviderScheduleHourlySlot.bookableSlotMinutes <= intervalEnd {
+                if !seen.contains(minute), isValidStartTime(minute) {
+                    seen.insert(minute)
+                    times.append(minute)
+                }
+                minute += Self.scheduleStepMinutes
             }
-            Text(booking.consumerDisplayName)
-                .font(.provider(.title3, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
-            Text(booking.serviceDisplayName)
-                .font(.provider(.subheadline))
-                .foregroundStyle(Color.lavaShellCreamTertiary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(scheduleChromeBackground(cornerRadius: 14, style: .booked))
-        .allowsHitTesting(false)
-        .accessibilityAddTraits(.isStaticText)
-    }
-
-    private func availableRow(slot: ProviderScheduleHourlySlot) -> some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(Color.providerOlive)
-                .frame(width: 8, height: 8)
-            Text(slot.displayRange)
-                .font(.provider(.subheadline, weight: .medium))
-                .foregroundStyle(Color.lavaShellCream)
-            Spacer()
-            Text("Available")
-                .font(.provider(.caption2, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 10)
-        .padding(.horizontal, 12)
-        .background(scheduleChromeBackground(cornerRadius: 12, style: .neutral))
-    }
-
-    private func blockedRow(slot: ProviderScheduleHourlySlot) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "hand.raised.fill")
-                .font(.provider(.subheadline))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
-            Text(slot.displayRange)
-                .font(.provider(.subheadline, weight: .medium))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
-            Spacer()
-            Text("Blocked")
-                .font(.provider(.caption2, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCreamTertiary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 10)
-        .padding(.horizontal, 12)
-        .background(scheduleChromeBackground(cornerRadius: 12, style: .neutral))
-        .allowsHitTesting(false)
-        .accessibilityAddTraits(.isStaticText)
+        return times.sorted()
     }
 
     @ViewBuilder
@@ -250,12 +218,30 @@ struct ProviderPendingRequestScheduleEditor: View {
                 )
         case .selected:
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(Color.providerOlive.opacity(0.52))
+                .fill(selectedChromeFill)
                 .overlay(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.providerOlive.opacity(0.75), lineWidth: 0.6)
+                        .strokeBorder(Color.providerOlive.opacity(colorScheme == .dark ? 0.75 : 0.85), lineWidth: 0.6)
                 )
         }
+    }
+
+    private var selectedChromeFill: Color {
+        colorScheme == .dark
+            ? Color.providerOlive.opacity(0.52)
+            : Color.providerOlive.opacity(0.92)
+    }
+
+    private var onOliveChromePrimary: Color {
+        colorScheme == .dark ? Color.lavaShellCream : Color.providerOnOliveFill
+    }
+
+    private var onOliveChromeSecondary: Color {
+        colorScheme == .dark ? Color.lavaShellCreamSecondary : Color.providerOnOliveFillSecondary
+    }
+
+    private var onOliveChromeTertiary: Color {
+        colorScheme == .dark ? Color.lavaShellCreamTertiary : Color.providerOnOliveFillTertiary
     }
 
     private enum Chrome {
@@ -273,10 +259,10 @@ struct ProviderPendingRequestScheduleEditor: View {
             } else {
                 Text("Selected")
                     .font(.provider(.caption2, weight: .bold))
-                    .foregroundStyle(Color.lavaShellCream)
+                    .foregroundStyle(onOliveChromePrimary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.providerOlive.opacity(0.35), in: Capsule())
+                    .background(Color.providerOlive.opacity(colorScheme == .dark ? 0.35 : 0.55), in: Capsule())
             }
         }
     }
@@ -310,7 +296,7 @@ struct ProviderPendingRequestScheduleEditor: View {
                 guard let st = booking.scheduledTime else { return false }
                 return calendar.isDate(st, inSameDayAs: dayStart)
             }
-            snapToSelectableHourIfNeeded()
+            snapToSelectableTimeIfNeeded()
             refreshConflict()
         } catch {
             loadError = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
@@ -358,22 +344,12 @@ struct ProviderPendingRequestScheduleEditor: View {
         }
     }
 
-    private func snapToSelectableHourIfNeeded() {
-        let intervals = dayAvailability?.intervals ?? []
-        let slots = ProviderScheduleHourlySlot.generate(from: intervals)
-        guard !slots.isEmpty else { return }
-
-        if let current = slots.first(where: isDraftHour),
-           booking(for: current)?.id == bookingId
-            || (booking(for: current) == nil && !isHourBookedByAvailability(current)) {
-            return
-        }
-
-        if let firstOpen = slots.first(where: { slot in
-            if let existing = booking(for: slot), existing.id != bookingId { return false }
-            return !isHourBookedByAvailability(slot)
-        }) {
-            selectHour(firstOpen)
+    private func snapToSelectableTimeIfNeeded() {
+        let times = allSelectableStartTimes
+        guard !times.isEmpty else { return }
+        if times.contains(selectedMinutesOfDay) { return }
+        if let first = times.first {
+            selectStartTime(first)
         }
     }
 
@@ -392,37 +368,77 @@ struct ProviderPendingRequestScheduleEditor: View {
         )
     }
 
-    private func booking(for slot: ProviderScheduleHourlySlot) -> SimpleBookingDTO? {
-        dayBookings.first { b in
-            guard let st = b.scheduledTime else { return false }
-            let mins = calendar.component(.hour, from: st) * 60 + calendar.component(.minute, from: st)
-            return mins >= slot.startMinutes && mins < slot.endMinutes
-        }
-    }
-
-    private func isDraftHour(_ slot: ProviderScheduleHourlySlot) -> Bool {
-        let mins = calendar.component(.hour, from: selectedDateTime) * 60
+    private var selectedMinutesOfDay: Int {
+        calendar.component(.hour, from: selectedDateTime) * 60
             + calendar.component(.minute, from: selectedDateTime)
-        return mins >= slot.startMinutes && mins < slot.endMinutes
     }
 
-    private func isHourBookedByAvailability(_ slot: ProviderScheduleHourlySlot) -> Bool {
-        if isDraftHour(slot) { return false }
-        let dayKey = yyyyMMdd(selectedDateTime)
-        guard let slotStart = dateFrom(dayKey: dayKey, minutes: slot.startMinutes) else { return false }
-        return ProviderRequestTriageEngine.isHourBlockedWhileEditing(
-            slotStart: slotStart,
-            editingBookingId: bookingId,
+    private func isValidStartTime(_ startMinutes: Int) -> Bool {
+        guard isWithinWorkingIntervals(startMinutes: startMinutes) else { return false }
+        guard isAPISlotWindowAvailable(startMinutes: startMinutes) else { return false }
+        guard booking(atStartMinutes: startMinutes) == nil else { return false }
+
+        let dayStart = calendar.startOfDay(for: selectedDateTime)
+        guard let startDate = calendar.date(byAdding: .minute, value: startMinutes, to: dayStart) else {
+            return false
+        }
+
+        return !ProviderRequestTriageEngine.hasCommittedConflict(
+            proposedStart: startDate,
+            bookingId: bookingId,
             bookings: dayBookings,
             dayAvailability: dayAvailability,
             timeZone: calendar.timeZone
         )
     }
 
-    private func selectHour(_ slot: ProviderScheduleHourlySlot) {
+    private func isWithinWorkingIntervals(startMinutes: Int) -> Bool {
+        let appointmentMinutes = ProviderScheduleHourlySlot.bookableSlotMinutes
+        let intervals = dayAvailability?.intervals ?? []
+        return intervals.contains { interval in
+            let intervalStart = ProviderScheduleHourlySlot.minutesFromHHMM(interval.start)
+            let intervalEnd = ProviderScheduleHourlySlot.minutesFromHHMM(interval.end)
+            return startMinutes >= intervalStart
+                && startMinutes + appointmentMinutes <= intervalEnd
+        }
+    }
+
+    private func isAPISlotWindowAvailable(startMinutes: Int) -> Bool {
+        guard let slots = dayAvailability?.slots, !slots.isEmpty else { return true }
+
+        let appointmentMinutes = ProviderScheduleHourlySlot.bookableSlotMinutes
+        for offset in stride(from: 0, to: appointmentMinutes, by: Self.scheduleStepMinutes) {
+            let minuteMark = startMinutes + offset
+            let timeKey = ProviderScheduleHourlySlot.hhmm(from: minuteMark)
+            guard let slot = slots.first(where: { $0.time == timeKey }) else { return false }
+            guard slot.available else { return false }
+        }
+        return true
+    }
+
+    private func booking(atStartMinutes startMinutes: Int) -> SimpleBookingDTO? {
         let dayStart = calendar.startOfDay(for: selectedDateTime)
-        guard let hourDate = calendar.date(byAdding: .minute, value: slot.startMinutes, to: dayStart) else { return }
-        selectedDateTime = hourDate
+        guard let startDate = calendar.date(byAdding: .minute, value: startMinutes, to: dayStart) else {
+            return nil
+        }
+        let duration = TimeInterval(ProviderScheduleHourlySlot.bookableSlotMinutes * 60)
+        let candidate = DateInterval(start: startDate, duration: duration)
+
+        return dayBookings.first { booking in
+            guard booking.id != bookingId, let scheduled = booking.scheduledTime else { return false }
+            let existing = DateInterval(start: scheduled, duration: duration)
+            return candidate.intersects(existing)
+        }
+    }
+
+    private func selectStartTime(_ startMinutes: Int) {
+        let dayStart = calendar.startOfDay(for: selectedDateTime)
+        guard let date = calendar.date(byAdding: .minute, value: startMinutes, to: dayStart) else { return }
+        selectedDateTime = date
+    }
+
+    private static func format12h(minutes: Int) -> String {
+        ProviderScheduleHourlySlot.format12h(minutes: minutes)
     }
 
     private func yyyyMMdd(_ date: Date) -> String {
@@ -539,14 +555,14 @@ struct ProviderScheduleHourlySlot: Hashable {
         return slots.sorted { $0.startMinutes < $1.startMinutes }
     }
 
-    private static func minutesFromHHMM(_ hhmm: String) -> Int {
+    static func minutesFromHHMM(_ hhmm: String) -> Int {
         let parts = hhmm.split(separator: ":")
         let h = parts.first.flatMap { Int($0) } ?? 0
         let m = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
         return h * 60 + m
     }
 
-    private static func hhmm(from totalMinutes: Int) -> String {
+    static func hhmm(from totalMinutes: Int) -> String {
         String(format: "%02d:%02d", totalMinutes / 60, totalMinutes % 60)
     }
 
@@ -556,7 +572,7 @@ struct ProviderScheduleHourlySlot: Hashable {
         return h
     }
 
-    private static func format12h(minutes: Int) -> String {
+    static func format12h(minutes: Int) -> String {
         var c = DateComponents()
         c.hour = minutes / 60
         c.minute = minutes % 60

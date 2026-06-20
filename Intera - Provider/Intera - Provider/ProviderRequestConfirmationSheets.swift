@@ -191,11 +191,13 @@ struct ProviderApproveBookingConfirmSheet: View {
             lineLimit: 2
           )
           ScaledSheetText(
-            text: "This locks \(customerName) into your \(scheduleSummary) calendar.",
+            text: "This locks \(customerName) into your calendar on \(scheduleSummary)",
             font: .provider(size: 14, weight: .regular),
             color: ProviderRequestSheetColors.bodyText,
             lineLimit: 4
           )
+          .multilineTextAlignment(.center)
+          .frame(maxWidth: .infinity, alignment: .center)
         }
         .padding(.horizontal, ProviderRequestSheetMetrics.horizontalPadding)
         .padding(.top, 14)
@@ -203,14 +205,13 @@ struct ProviderApproveBookingConfirmSheet: View {
         Spacer(minLength: 8)
 
         Button(action: onApprove) {
-          Text("Approve")
+          ProviderBlackOutlinedText("Approve", fill: .white)
             .font(.provider(size: 17, weight: .bold))
-            .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .frame(height: ProviderRequestSheetMetrics.buttonHeight)
         }
         .background(
-          RoundedRectangle(cornerRadius: ProviderRequestSheetMetrics.buttonCornerRadius, style: .continuous)
+          Capsule()
             .fill(ProviderRequestSheetColors.approveGreen)
         )
         .padding(.horizontal, ProviderRequestSheetMetrics.horizontalPadding)

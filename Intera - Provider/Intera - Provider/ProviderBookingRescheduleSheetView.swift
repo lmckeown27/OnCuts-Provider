@@ -10,6 +10,8 @@ struct ProviderBookingRescheduleSheetView: View {
     @State private var selectedDateTime: Date
     @State private var hasConflict = false
 
+    @Environment(\.colorScheme) private var colorScheme
+
     init(
         booking: SimpleBookingDTO,
         barberId: String,
@@ -20,7 +22,9 @@ struct ProviderBookingRescheduleSheetView: View {
         self.barberId = barberId
         self.onSave = onSave
         self.onCancel = onCancel
-        _selectedDateTime = State(initialValue: booking.providerEffectiveScheduledTime ?? Date())
+        _selectedDateTime = State(
+            initialValue: booking.providerPendingScheduleTime(originalSubmission: nil) ?? Date()
+        )
     }
 
     var body: some View {
@@ -102,8 +106,11 @@ struct ProviderBookingRescheduleSheetView: View {
     }
 
     private var consumerReferenceDate: Date? {
-        if booking.hasPendingRescheduleRequest {
-            return booking.pendingRescheduleRequest?.proposedScheduledTime ?? booking.scheduledTime
+        if booking.hasPendingRescheduleRequest,
+           let proposed = booking.pendingRescheduleRequest?.proposedScheduledTime,
+           let scheduled = booking.scheduledTime,
+           !Calendar.current.isDate(proposed, equalTo: scheduled, toGranularity: .minute) {
+            return proposed
         }
         return booking.scheduledTime
     }
@@ -134,41 +141,63 @@ struct ProviderBookingRescheduleSheetView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.provider(.caption, weight: .semibold))
-                .foregroundStyle(emphasized ? Color.providerOlive : Color.lavaShellCreamSecondary)
+                .foregroundStyle(emphasized ? onEmphasizedCardSecondary : Color.lavaShellCreamSecondary)
 
             if let date {
                 Text(formattedDateLine(for: date))
                     .font(.provider(.title3, weight: emphasized ? .semibold : .medium))
-                    .foregroundStyle(Color.lavaShellCream)
+                    .foregroundStyle(emphasized ? onEmphasizedCardPrimary : Color.lavaShellCream)
                 Text(formattedTimeLine(for: date))
                     .font(.provider(.subheadline, weight: emphasized ? .semibold : .regular))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .foregroundStyle(emphasized ? onEmphasizedCardSecondary : Color.lavaShellCreamSecondary)
             } else {
                 Text("Time TBD")
                     .font(.provider(.title3, weight: .medium))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .foregroundStyle(emphasized ? onEmphasizedCardSecondary : Color.lavaShellCreamSecondary)
             }
 
             if let footnote {
                 Text(footnote)
                     .font(.provider(.caption))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(emphasized ? onEmphasizedCardTertiary : Color.lavaShellCreamTertiary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(emphasized ? Color.providerOlive.opacity(0.18) : Color.providerScheduleCardFill)
+                .fill(emphasized ? emphasizedCardFill : Color.providerScheduleCardFill)
                 .overlay {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .strokeBorder(
-                            emphasized ? Color.providerOlive.opacity(0.55) : Color.providerScheduleCardStroke,
+                            emphasized ? emphasizedCardStroke : Color.providerScheduleCardStroke,
                             lineWidth: emphasized ? 1.2 : 0.6
                         )
                 }
         }
         .animation(.easeInOut(duration: 0.2), value: date?.timeIntervalSince1970)
+    }
+
+    private var emphasizedCardFill: Color {
+        colorScheme == .dark
+            ? Color.providerOlive.opacity(0.52)
+            : Color.providerOlive.opacity(0.92)
+    }
+
+    private var emphasizedCardStroke: Color {
+        Color.providerOlive.opacity(colorScheme == .dark ? 0.75 : 0.85)
+    }
+
+    private var onEmphasizedCardPrimary: Color {
+        colorScheme == .dark ? Color.lavaShellCream : Color.providerOnOliveFill
+    }
+
+    private var onEmphasizedCardSecondary: Color {
+        colorScheme == .dark ? Color.lavaShellCreamSecondary : Color.providerOnOliveFillSecondary
+    }
+
+    private var onEmphasizedCardTertiary: Color {
+        colorScheme == .dark ? Color.lavaShellCreamTertiary : Color.providerOnOliveFillTertiary
     }
 
     private func formattedDateLine(for date: Date) -> String {

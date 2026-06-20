@@ -176,7 +176,8 @@ router.get(
                 EXTRACT(MINUTE FROM "requestedAt" AT TIME ZONE 'America/Los_Angeles') <= $3
             AND EXTRACT(HOUR FROM "requestedAt" AT TIME ZONE 'America/Los_Angeles') * 60 + 
                 EXTRACT(MINUTE FROM "requestedAt" AT TIME ZONE 'America/Los_Angeles') + 60 > $3
-            AND status IN ('ACCEPTED', 'PENDING', 'COMPLETED')
+            AND status IN ('ACCEPTED', 'PENDING', 'IN_PROGRESS')
+            AND "paidAt" IS NULL
           UNION ALL
           SELECT 1 FROM barber_time_blocks
           WHERE barber_id = $1

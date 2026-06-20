@@ -3,7 +3,7 @@ import UIKit
 // MARK: - Composer (formerly "input accessory")
 
 protocol ProviderChatInputAccessoryViewDelegate: AnyObject {
-    func chatInputAccessoryViewDidTapSend(_ view: ProviderChatInputAccessoryView, text: String)
+    func chatInputAccessoryViewDidTapSend(_ view: ProviderChatInputAccessoryView, text: String, draftPhoto: UIImage?)
     func chatInputAccessoryViewDidTapAttachment(_ view: ProviderChatInputAccessoryView)
 }
 
@@ -46,10 +46,19 @@ final class ProviderChatInputAccessoryView: UIView {
     private let textView = UITextView()
     private let sendButton = UIButton(type: .system)
     private let separator = UIView()
-    private let stack = UIStackView()
+    private let inputRow = UIStackView()
+    private let contentColumn = UIStackView()
+    private let draftPhotoContainer = UIView()
+    private let draftPhotoImageView = UIImageView()
+    private let removeDraftPhotoButton = UIButton(type: .system)
 
     private var heightConstraint: NSLayoutConstraint?
+    private var draftPhotoContainerHeightConstraint: NSLayoutConstraint?
     private var composerContentHeight = ProviderChatDesignTokens.Metrics.inputBarMinContentHeight
+    private var draftPhoto: UIImage?
+
+    private static let draftPhotoPreviewSize: CGFloat = 64
+    private static let draftPhotoRowHeight: CGFloat = 80
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -93,6 +102,24 @@ final class ProviderChatInputAccessoryView: UIView {
     func clearDraft() {
         textView.text = ""
         recomputeContentHeight()
+        updateSendButtonState()
+    }
+
+    func setDraftPhoto(_ image: UIImage?) {
+        draftPhoto = image
+        draftPhotoImageView.image = image
+        draftPhotoContainer.isHidden = image == nil
+        draftPhotoContainerHeightConstraint?.constant = image == nil ? 0 : Self.draftPhotoRowHeight
+        recomputeContentHeight()
+        updateSendButtonState()
+    }
+
+    func clearDraftPhoto() {
+        setDraftPhoto(nil)
+    }
+
+    var pendingDraftPhoto: UIImage? {
+        draftPhoto
     }
 
     func restoreDraft(_ text: String) {
@@ -105,8 +132,9 @@ final class ProviderChatInputAccessoryView: UIView {
     func setSending(_ sending: Bool) {
         attachmentButton.isEnabled = !sending
         attachmentButton.alpha = sending ? 0.45 : 1
-        sendButton.isEnabled = !sending && !draftText.isEmpty
-        sendButton.alpha = sendButton.isEnabled ? 1 : 0.45
+        removeDraftPhotoButton.isEnabled = !sending
+        removeDraftPhotoButton.alpha = sending ? 0.45 : 1
+        updateSendButtonState(sending: sending)
         textView.isEditable = !sending
     }
 
@@ -166,16 +194,49 @@ final class ProviderChatInputAccessoryView: UIView {
         sendButton.setContentHuggingPriority(.required, for: .horizontal)
         sendButton.setContentCompressionResistancePriority(.required, for: .horizontal)
 
-        stack.axis = .horizontal
-        stack.spacing = 10
-        stack.alignment = .center
-        stack.addArrangedSubview(attachmentButton)
-        stack.addArrangedSubview(textView)
-        stack.addArrangedSubview(sendButton)
-        stack.translatesAutoresizingMaskIntoConstraints = false
+        draftPhotoContainer.translatesAutoresizingMaskIntoConstraints = false
+        draftPhotoContainer.isHidden = true
+        draftPhotoContainer.clipsToBounds = true
+
+        draftPhotoImageView.translatesAutoresizingMaskIntoConstraints = false
+        draftPhotoImageView.contentMode = .scaleAspectFill
+        draftPhotoImageView.clipsToBounds = true
+        draftPhotoImageView.layer.cornerRadius = 10
+        draftPhotoImageView.layer.borderWidth = 1
+        draftPhotoImageView.layer.borderColor = ProviderChatDesignTokens.Color.composerFieldBorder.cgColor
+        draftPhotoImageView.isAccessibilityElement = true
+        draftPhotoImageView.accessibilityLabel = "Selected photo"
+
+        removeDraftPhotoButton.translatesAutoresizingMaskIntoConstraints = false
+        let removeConfig = UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)
+        removeDraftPhotoButton.setImage(
+            UIImage(systemName: "xmark.circle.fill", withConfiguration: removeConfig),
+            for: .normal
+        )
+        removeDraftPhotoButton.tintColor = ProviderChatDesignTokens.Color.lavaShellCreamSecondary
+        removeDraftPhotoButton.addTarget(self, action: #selector(removeDraftPhotoTapped), for: .touchUpInside)
+        removeDraftPhotoButton.accessibilityLabel = "Remove photo"
+
+        draftPhotoContainer.addSubview(draftPhotoImageView)
+        draftPhotoContainer.addSubview(removeDraftPhotoButton)
+
+        inputRow.axis = .horizontal
+        inputRow.spacing = 10
+        inputRow.alignment = .center
+        inputRow.addArrangedSubview(attachmentButton)
+        inputRow.addArrangedSubview(textView)
+        inputRow.addArrangedSubview(sendButton)
+        inputRow.translatesAutoresizingMaskIntoConstraints = false
+
+        contentColumn.axis = .vertical
+        contentColumn.spacing = 8
+        contentColumn.alignment = .fill
+        contentColumn.addArrangedSubview(draftPhotoContainer)
+        contentColumn.addArrangedSubview(inputRow)
+        contentColumn.translatesAutoresizingMaskIntoConstraints = false
 
         addSubview(separator)
-        addSubview(stack)
+        addSubview(contentColumn)
     }
 
     // MARK: - Auto Layout Constraints
@@ -190,22 +251,42 @@ final class ProviderChatInputAccessoryView: UIView {
         h.isActive = true
         heightConstraint = h
 
+        let draftHeight = draftPhotoContainer.heightAnchor.constraint(equalToConstant: 0)
+        draftHeight.isActive = true
+        draftPhotoContainerHeightConstraint = draftHeight
+
         NSLayoutConstraint.activate([
             separator.topAnchor.constraint(equalTo: topAnchor),
             separator.leadingAnchor.constraint(equalTo: leadingAnchor),
             separator.trailingAnchor.constraint(equalTo: trailingAnchor),
             separator.heightAnchor.constraint(equalToConstant: 0.5),
 
-            stack.topAnchor.constraint(equalTo: separator.bottomAnchor, constant: 8),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: ProviderChatDesignTokens.Metrics.horizontalPadding),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -ProviderChatDesignTokens.Metrics.horizontalPadding),
+            contentColumn.topAnchor.constraint(equalTo: separator.bottomAnchor, constant: 8),
+            contentColumn.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            contentColumn.leadingAnchor.constraint(equalTo: leadingAnchor, constant: ProviderChatDesignTokens.Metrics.horizontalPadding),
+            contentColumn.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -ProviderChatDesignTokens.Metrics.horizontalPadding),
+
+            draftPhotoImageView.leadingAnchor.constraint(equalTo: draftPhotoContainer.leadingAnchor),
+            draftPhotoImageView.centerYAnchor.constraint(equalTo: draftPhotoContainer.centerYAnchor),
+            draftPhotoImageView.widthAnchor.constraint(equalToConstant: Self.draftPhotoPreviewSize),
+            draftPhotoImageView.heightAnchor.constraint(equalToConstant: Self.draftPhotoPreviewSize),
+
+            removeDraftPhotoButton.leadingAnchor.constraint(equalTo: draftPhotoImageView.trailingAnchor, constant: 8),
+            removeDraftPhotoButton.centerYAnchor.constraint(equalTo: draftPhotoImageView.topAnchor, constant: 4),
+            removeDraftPhotoButton.widthAnchor.constraint(equalToConstant: 24),
+            removeDraftPhotoButton.heightAnchor.constraint(equalToConstant: 24),
 
             attachmentButton.widthAnchor.constraint(equalToConstant: ProviderChatDesignTokens.Metrics.composerAttachmentSize),
             attachmentButton.heightAnchor.constraint(equalToConstant: ProviderChatDesignTokens.Metrics.composerAttachmentSize),
             textView.heightAnchor.constraint(greaterThanOrEqualToConstant: 36),
             sendButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 48),
         ])
+    }
+
+    private func updateSendButtonState(sending: Bool = false) {
+        let canSend = !draftText.isEmpty || draftPhoto != nil
+        sendButton.isEnabled = !sending && canSend
+        sendButton.alpha = sendButton.isEnabled ? 1 : 0.45
     }
 
     private func recomputeContentHeight() {
@@ -215,10 +296,13 @@ final class ProviderChatInputAccessoryView: UIView {
         let width = max(textView.bounds.width, 120)
         let size = textView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
         let metrics = ProviderChatDesignTokens.Metrics.self
-        let newHeight = min(
+        let inputRowHeight = min(
             max(metrics.inputBarMinContentHeight, size.height + 24),
             metrics.inputBarMaxContentHeight
         )
+        let draftHeight = draftPhoto == nil ? 0 : Self.draftPhotoRowHeight
+        let draftSpacing: CGFloat = draftPhoto == nil ? 0 : 8
+        let newHeight = inputRowHeight + draftHeight + draftSpacing
         guard abs(newHeight - composerContentHeight) > 0.5 else { return }
         composerContentHeight = newHeight
         heightConstraint?.constant = newHeight
@@ -229,12 +313,16 @@ final class ProviderChatInputAccessoryView: UIView {
 
     @objc private func sendTapped() {
         let text = draftText
-        guard !text.isEmpty else { return }
-        delegate?.chatInputAccessoryViewDidTapSend(self, text: text)
+        guard !text.isEmpty || draftPhoto != nil else { return }
+        delegate?.chatInputAccessoryViewDidTapSend(self, text: text, draftPhoto: draftPhoto)
     }
 
     @objc private func attachmentTapped() {
         delegate?.chatInputAccessoryViewDidTapAttachment(self)
+    }
+
+    @objc private func removeDraftPhotoTapped() {
+        clearDraftPhoto()
     }
 }
 
@@ -243,9 +331,7 @@ final class ProviderChatInputAccessoryView: UIView {
 extension ProviderChatInputAccessoryView: UITextViewDelegate {
     func textViewDidChange(_ textView: UITextView) {
         textView.typingAttributes = ProviderChatDesignTokens.composerTypingAttributes()
-        let hasText = !draftText.isEmpty
-        sendButton.isEnabled = hasText
-        sendButton.alpha = hasText ? 1 : 0.45
+        updateSendButtonState()
         recomputeContentHeight()
     }
 }
