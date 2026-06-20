@@ -6,13 +6,18 @@ struct ProviderPendingRequestScheduleEditor: View {
     let bookingId: String
     let customerName: String
     let serviceType: String
+    var bookingStatus: String? = "pending"
     @Binding var selectedDateTime: Date
     @Binding var hasConflict: Bool
+    var showsSelectedDayHeadline: Bool = true
 
     @State private var dayAvailability: BarberAvailabilityDayData?
     @State private var dayBookings: [SimpleBookingDTO] = []
     @State private var isLoading = false
     @State private var loadError: String?
+    @State private var allowedDayStarts: Set<Date> = []
+    @State private var isLoadingAllowedDays = false
+    @State private var visibleMonth = Date()
 
     private var calendar: Calendar {
         var cal = Calendar(identifier: .gregorian)
@@ -23,25 +28,24 @@ struct ProviderPendingRequestScheduleEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Date")
-                    .font(.provider(.caption, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-                DatePicker(
-                    "",
-                    selection: dayOnlyBinding,
-                    in: Date()...,
-                    displayedComponents: .date
+                ProviderRescheduleCalendarView(
+                    selectedDay: dayOnlyBinding,
+                    allowedDayStarts: allowedDayStarts,
+                    isLoadingAllowedDays: isLoadingAllowedDays,
+                    onVisibleMonthChange: { month in
+                        visibleMonth = month
+                    }
                 )
-                .datePickerStyle(.graphical)
-                .labelsHidden()
-                .tint(.providerOlive)
+                .frame(minHeight: 320)
             }
             .padding(10)
             .background(scheduleChromeBackground(cornerRadius: 12, style: .neutral))
 
-            Text(selectedDateTime, format: .dateTime.weekday(.wide).month(.wide).day())
-                .font(.provider(.title3, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream)
+            if showsSelectedDayHeadline {
+                Text(selectedDateTime, format: .dateTime.weekday(.wide).month(.wide).day())
+                    .font(.provider(.title3, weight: .semibold))
+                    .foregroundStyle(Color.lavaShellCream)
+            }
 
             Text("Tap an available hour for this appointment")
                 .font(.provider(.caption))
@@ -63,31 +67,44 @@ struct ProviderPendingRequestScheduleEditor: View {
             }
         }
         .task(id: dayTaskKey) { await reloadDay() }
+        .task(id: monthTaskKey) { await reloadAllowedDays(for: visibleMonth) }
+        .onAppear {
+            visibleMonth = selectedDateTime
+        }
         .onChange(of: selectedDateTime) { _, _ in
             refreshConflict()
         }
+        .onChange(of: visibleMonth) { _, month in
+            Task { await reloadAllowedDays(for: month) }
+        }
     }
 
-    private var dayTaskKey: String {
-        let day = calendar.startOfDay(for: selectedDateTime)
-        return "\(day.timeIntervalSince1970)"
+    private var monthTaskKey: String {
+        let month = calendar.dateComponents([.year, .month], from: visibleMonth)
+        return "\(month.year ?? 0)-\(month.month ?? 0)"
     }
 
-    /// Date-only picker; preserves time-of-day on the draft appointment.
+    /// Writable binding to the selected calendar day (start-of-day); preserves time-of-day.
     private var dayOnlyBinding: Binding<Date> {
         Binding(
             get: { calendar.startOfDay(for: selectedDateTime) },
             set: { newDay in
-                let time = calendar.dateComponents([.hour, .minute], from: selectedDateTime)
-                var merged = calendar.dateComponents([.year, .month, .day], from: newDay)
-                merged.hour = time.hour
-                merged.minute = time.minute
-                merged.second = 0
-                if let combined = calendar.date(from: merged) {
-                    selectedDateTime = combined
-                }
+                let dayStart = calendar.startOfDay(for: newDay)
+                guard allowedDayStarts.contains(dayStart) else { return }
+                mergeSelectedDay(dayStart)
             }
         )
+    }
+
+    private func mergeSelectedDay(_ dayStart: Date) {
+        let time = calendar.dateComponents([.hour, .minute], from: selectedDateTime)
+        var merged = calendar.dateComponents([.year, .month, .day], from: dayStart)
+        merged.hour = time.hour
+        merged.minute = time.minute
+        merged.second = 0
+        if let combined = calendar.date(from: merged) {
+            selectedDateTime = combined
+        }
     }
 
     @ViewBuilder
@@ -134,11 +151,7 @@ struct ProviderPendingRequestScheduleEditor: View {
                     .font(.provider(.subheadline, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
                 Spacer()
-                Text("PENDING")
-                    .font(.provider(.caption2, weight: .bold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.providerOlive.opacity(0.35), in: Capsule())
+                proposedSlotStatusPill
             }
             Text(customerName)
                 .font(.provider(.title3, weight: .semibold))
@@ -160,24 +173,22 @@ struct ProviderPendingRequestScheduleEditor: View {
             HStack {
                 Text(slot.displayRange)
                     .font(.provider(.subheadline, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCream)
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
                 Spacer()
-                Text(booking.statusUpper)
-                    .font(.provider(.caption2, weight: .bold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.providerElevatedSurface, in: Capsule())
+                bookingStatusPill(booking.status)
             }
             Text(booking.consumerDisplayName)
                 .font(.provider(.title3, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream)
+                .foregroundStyle(Color.lavaShellCreamSecondary)
             Text(booking.serviceDisplayName)
                 .font(.provider(.subheadline))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .foregroundStyle(Color.lavaShellCreamTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(scheduleChromeBackground(cornerRadius: 14, style: .booked))
+        .allowsHitTesting(false)
+        .accessibilityAddTraits(.isStaticText)
     }
 
     private func availableRow(slot: ProviderScheduleHourlySlot) -> some View {
@@ -206,16 +217,18 @@ struct ProviderPendingRequestScheduleEditor: View {
                 .foregroundStyle(Color.lavaShellCreamSecondary)
             Text(slot.displayRange)
                 .font(.provider(.subheadline, weight: .medium))
-                .foregroundStyle(Color.lavaShellCream)
+                .foregroundStyle(Color.lavaShellCreamSecondary)
             Spacer()
             Text("Blocked")
                 .font(.provider(.caption2, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .foregroundStyle(Color.lavaShellCreamTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
         .background(scheduleChromeBackground(cornerRadius: 12, style: .neutral))
+        .allowsHitTesting(false)
+        .accessibilityAddTraits(.isStaticText)
     }
 
     @ViewBuilder
@@ -249,6 +262,35 @@ struct ProviderPendingRequestScheduleEditor: View {
         case neutral, booked, selected
     }
 
+    private var isPendingBooking: Bool {
+        ProviderBookingStatusDisplay.normalized(bookingStatus) == "pending"
+    }
+
+    private var proposedSlotStatusPill: some View {
+        Group {
+            if isPendingBooking {
+                bookingStatusPill(bookingStatus)
+            } else {
+                Text("Selected")
+                    .font(.provider(.caption2, weight: .bold))
+                    .foregroundStyle(Color.lavaShellCream)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.providerOlive.opacity(0.35), in: Capsule())
+            }
+        }
+    }
+
+    private func bookingStatusPill(_ status: String?) -> some View {
+        let colors = ProviderBookingStatusDisplay.detailPillColors(for: status)
+        return Text(ProviderBookingStatusDisplay.title(for: status))
+            .font(.provider(.caption2, weight: .bold))
+            .foregroundStyle(colors.foreground)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(colors.background, in: Capsule())
+    }
+
     // MARK: - Data
 
     private func reloadDay() async {
@@ -268,12 +310,76 @@ struct ProviderPendingRequestScheduleEditor: View {
                 guard let st = booking.scheduledTime else { return false }
                 return calendar.isDate(st, inSameDayAs: dayStart)
             }
+            snapToSelectableHourIfNeeded()
             refreshConflict()
         } catch {
             loadError = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
             dayAvailability = nil
             dayBookings = []
         }
+    }
+
+    private func reloadAllowedDays(for month: Date) async {
+        isLoadingAllowedDays = true
+        defer { isLoadingAllowedDays = false }
+
+        let today = calendar.startOfDay(for: Date())
+        let days = daysInMonth(containing: month).filter { $0 >= today }
+        var openDays = Set<Date>()
+
+        for day in days {
+            if let availability = try? await ProviderAvailabilityService.getDayAvailability(
+                barberId: barberId,
+                date: day
+            ), !(availability.intervals ?? []).isEmpty {
+                openDays.insert(calendar.startOfDay(for: day))
+            }
+        }
+
+        allowedDayStarts = openDays
+
+        let selectedDay = calendar.startOfDay(for: selectedDateTime)
+        if !openDays.isEmpty, !openDays.contains(selectedDay) {
+            if let nearest = openDays.filter({ $0 >= today }).sorted().first {
+                mergeSelectedDay(nearest)
+            }
+        }
+    }
+
+    private func daysInMonth(containing month: Date) -> [Date] {
+        guard let monthInterval = calendar.dateInterval(of: .month, for: month),
+              let dayRange = calendar.range(of: .day, in: .month, for: monthInterval.start)
+        else { return [] }
+
+        return dayRange.compactMap { day -> Date? in
+            var components = calendar.dateComponents([.year, .month], from: monthInterval.start)
+            components.day = day
+            return calendar.date(from: components).map { calendar.startOfDay(for: $0) }
+        }
+    }
+
+    private func snapToSelectableHourIfNeeded() {
+        let intervals = dayAvailability?.intervals ?? []
+        let slots = ProviderScheduleHourlySlot.generate(from: intervals)
+        guard !slots.isEmpty else { return }
+
+        if let current = slots.first(where: isDraftHour),
+           booking(for: current)?.id == bookingId
+            || (booking(for: current) == nil && !isHourBookedByAvailability(current)) {
+            return
+        }
+
+        if let firstOpen = slots.first(where: { slot in
+            if let existing = booking(for: slot), existing.id != bookingId { return false }
+            return !isHourBookedByAvailability(slot)
+        }) {
+            selectHour(firstOpen)
+        }
+    }
+
+    private var dayTaskKey: String {
+        let day = calendar.startOfDay(for: selectedDateTime)
+        return "\(day.timeIntervalSince1970)"
     }
 
     private func refreshConflict() {

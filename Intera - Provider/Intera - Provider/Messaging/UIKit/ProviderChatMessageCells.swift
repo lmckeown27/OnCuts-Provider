@@ -31,6 +31,8 @@ final class ProviderChatMessageCell: UITableViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        contentView.alpha = 1
+        contentView.transform = .identity
         imageLoadTask?.cancel()
         imageLoadTask = nil
         messageImageView.image = nil
@@ -116,7 +118,7 @@ final class ProviderChatMessageCell: UITableViewCell {
 
     // MARK: - Configuration
 
-    func configure(message: ChatMessageDTO) {
+    func configure(message: ChatMessageDTO, pendingImage: UIImage? = nil) {
         let isOwn = message.isOwn == true
 
         if let date = message.createdAt {
@@ -141,7 +143,15 @@ final class ProviderChatMessageCell: UITableViewCell {
             stack.alignment = .leading
         }
 
-        if message.isImage, let mediaPath = message.mediaUrl, !mediaPath.isEmpty {
+        if let pendingImage {
+            imageLoadTask?.cancel()
+            imageLoadTask = nil
+            messageLabel.isHidden = true
+            messageLabel.text = nil
+            messageImageView.isHidden = false
+            messageImageView.image = pendingImage
+            imageHeightConstraint?.constant = ProviderChatDesignTokens.Metrics.messageImageHeight
+        } else if message.isImage, let mediaPath = message.mediaUrl, !mediaPath.isEmpty {
             messageLabel.isHidden = true
             messageLabel.text = nil
             messageImageView.isHidden = false
@@ -259,11 +269,17 @@ final class ProviderChatBookingRequestCell: UITableViewCell {
         ])
     }
 
-    func configure(message: ChatMessageDTO, consumerName: String) {
+    func configure(message: ChatMessageDTO, consumerName: String, scheduleSummary: String? = nil) {
         self.message = message
         let meta = message.metadata
         let service = meta?.serviceDisplayName ?? "Service"
-        let when = [meta?.appointmentDate, meta?.appointmentTime].compactMap { $0 }.joined(separator: " · ")
+        let when: String = {
+            if let scheduleSummary {
+                let trimmed = scheduleSummary.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { return trimmed }
+            }
+            return [meta?.appointmentDate, meta?.appointmentTime].compactMap { $0 }.joined(separator: " · ")
+        }()
         titleLabel.text = "Booking request from \(consumerName)\n\(service)\(when.isEmpty ? "" : "\n\(when)")"
     }
 

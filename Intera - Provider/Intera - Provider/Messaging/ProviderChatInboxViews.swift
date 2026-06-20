@@ -35,6 +35,12 @@ struct ProviderChatThreadCard: View {
         }
         .background(cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            if thread.hasUnread {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.providerMessageUnreadAccent.opacity(0.45), lineWidth: 1.5)
+            }
+        }
         .shadow(color: Color.black.opacity(0.14), radius: 10, x: 0, y: 4)
     }
 
@@ -57,10 +63,10 @@ struct ProviderChatThreadCard: View {
                     Spacer()
                     Text(thread.unreadBadgeLabel)
                         .font(.provider(.caption, weight: .bold))
-                        .foregroundStyle(Color.white)
+                        .foregroundStyle(Color(red: 26 / 255, green: 28 / 255, blue: 38 / 255))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(Capsule().fill(Color.providerBrandAccent))
+                        .background(Capsule().fill(Color.providerMessageUnreadAccent))
                 }
             }
         }
@@ -101,18 +107,37 @@ struct ProviderChatThreadCard: View {
             )
     }
 
+    @ViewBuilder
+    private var messagePreviewText: some View {
+        let label = Text(thread.lastMessage)
+            .font(.provider(.subheadline, weight: thread.hasUnread ? .semibold : .regular))
+            .lineLimit(1)
+            .truncationMode(.tail)
+
+        if thread.hasUnread {
+            label
+                .foregroundStyle(Color.providerMessageUnreadAccent)
+        } else {
+            label
+                .foregroundStyle(Color.oliveGreen)
+                .providerOliveGreenTextOutline()
+        }
+    }
+
     private var messageRibbon: some View {
-        HStack(alignment: .center, spacing: 4) {
-            Text(thread.lastMessage)
-                .font(.provider(.subheadline, weight: thread.hasUnread ? .medium : .regular))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .providerOliveOutlined()
+        HStack(alignment: .center, spacing: 8) {
+            if thread.hasUnread {
+                Circle()
+                    .fill(Color.providerMessageUnreadAccent)
+                    .frame(width: 9, height: 9)
+            }
+
+            messagePreviewText
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
             Image(systemName: "chevron.right")
                 .font(.provider(.caption, weight: .bold))
-                .providerOliveOutlined()
+                .foregroundStyleProviderShellIcon()
                 .fixedSize(horizontal: true, vertical: true)
         }
         .padding(.horizontal, 16)

@@ -99,7 +99,11 @@ struct ProviderBookingsDropdownListContent: View {
     }
 
     private var bookingsWithPendingReschedule: [SimpleBookingDTO] {
-        sortedRescheduleRequestBookings(items.filter(\.hasPendingRescheduleRequest))
+        sortedRescheduleRequestBookings(
+            items.filter { booking in
+                booking.hasPendingRescheduleRequest && booking.statusUpper != "PENDING"
+            }
+        )
     }
 
     private var hasVisibleSections: Bool {

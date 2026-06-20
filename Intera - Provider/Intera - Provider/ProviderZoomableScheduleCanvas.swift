@@ -118,7 +118,7 @@ struct ScheduleCanvasAppointment: Identifiable {
     let durationMinutes: Int
 
     static func from(booking: SimpleBookingDTO, calendar: Calendar, defaultDurationMinutes: Int = ProviderScheduleHourlySlot.bookableSlotMinutes) -> ScheduleCanvasAppointment? {
-        guard let scheduled = booking.scheduledTime else { return nil }
+        guard let scheduled = booking.providerEffectiveScheduledTime else { return nil }
         let comps = calendar.dateComponents([.hour, .minute], from: scheduled)
         let start = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
         return ScheduleCanvasAppointment(

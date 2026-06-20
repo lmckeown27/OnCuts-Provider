@@ -25,7 +25,7 @@ enum ProviderChatDesignTokens {
         static let separator = ProviderAppearance.separator
 
         static let chatSentDarkGreen = UIColor(red: 0x3D / 255, green: 0x85 / 255, blue: 0x59 / 255, alpha: 1)
-        static let chatReceivedLightGreen = UIColor(red: 0xA8 / 255, green: 0xE5 / 255, blue: 0xBC / 255, alpha: 1)
+        static let chatReceivedLightGreen = ProviderAppearance.messageUnreadAccent
 
         /// Composer text field fill — faint in dark mode, solid grouped fill in light mode.
         static let composerFieldBackground = UIColor { traits in

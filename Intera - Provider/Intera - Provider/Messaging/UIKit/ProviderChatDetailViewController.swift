@@ -21,6 +21,10 @@ final class ProviderChatDetailViewController: UIViewController {
     private var feedItems: [ProviderChatFeedItem] = []
     private var isLoading = false
     private var isSending = false
+    private var pendingOutgoingMessageIDs = Set<Int>()
+    private var pendingMessageIDSequence = 0
+    private var pendingImageThumbnails: [Int: UIImage] = [:]
+    private var animatedRevealIndexPaths = Set<IndexPath>()
     /// Tracks an in-flight booking-details fetch so menu actions don't stack.
     private var isLoadingBooking = false
     private var linkedBooking: SimpleBookingDTO?
@@ -265,6 +269,12 @@ final class ProviderChatDetailViewController: UIViewController {
         return joined.isEmpty ? "Chat" : joined
     }
 
+    private var linkedBookingScheduleSummary: String? {
+        guard let linkedBooking else { return nil }
+        let formatted = linkedBooking.formattedProviderEffectiveSchedule()
+        return formatted == "Time TBD" ? nil : formatted
+    }
+
     private func loadMessages() {
         guard !isLoading else { return }
         isLoading = true
@@ -297,10 +307,98 @@ final class ProviderChatDetailViewController: UIViewController {
     }
 
     private func applyMessages(_ messages: [ChatMessageDTO]) {
+        pendingOutgoingMessageIDs.removeAll()
+        pendingImageThumbnails.removeAll()
         feedItems = ProviderChatFeedItem.from(messages: messages)
         tableView.reloadData()
         scrollToBottom(animated: false)
         updateLoadingOverlay()
+    }
+
+    private func generatePendingMessageID() -> Int {
+        pendingMessageIDSequence -= 1
+        return pendingMessageIDSequence
+    }
+
+    private func insertOutgoingFeedItems(_ items: [ProviderChatFeedItem], animated: Bool) {
+        guard !items.isEmpty else { return }
+
+        let startIndex = feedItems.count
+        let indexPaths = items.indices.map { IndexPath(row: startIndex + $0, section: 0) }
+        if animated {
+            animatedRevealIndexPaths.formUnion(indexPaths)
+        }
+
+        tableView.performBatchUpdates {
+            feedItems.append(contentsOf: items)
+            tableView.insertRows(at: indexPaths, with: .none)
+        } completion: { [weak self] _ in
+            guard let self else { return }
+            self.scrollToBottom(animated: true)
+            if animated {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+                    self.animatedRevealIndexPaths.subtract(indexPaths)
+                }
+            }
+        }
+    }
+
+    private func removePendingMessage(id pendingID: Int) {
+        pendingOutgoingMessageIDs.remove(pendingID)
+        pendingImageThumbnails.removeValue(forKey: pendingID)
+        guard let index = feedItems.firstIndex(where: { $0.id == pendingID }) else { return }
+
+        tableView.performBatchUpdates {
+            feedItems.remove(at: index)
+            tableView.deleteRows(at: [IndexPath(row: index, section: 0)], with: .none)
+        }
+    }
+
+    private func finalizeSend(replacingPendingID pendingID: Int) async {
+        do {
+            let messages = try await ProviderMessagesService.listMessages(conversationId: conversation.id)
+            ProviderConversationMessagesPrefetch.store(conversationId: conversation.id, messages: messages)
+
+            let serverFeed = ProviderChatFeedItem.from(messages: messages)
+            let localRealIDs = Set(feedItems.map(\.id).filter { $0 > 0 })
+            let newFromServer = serverFeed.filter { !localRealIDs.contains($0.id) }
+
+            guard feedItems.contains(where: { $0.id == pendingID }) else {
+                applyMessages(messages)
+                return
+            }
+
+            pendingOutgoingMessageIDs.remove(pendingID)
+            pendingImageThumbnails.removeValue(forKey: pendingID)
+
+            guard !newFromServer.isEmpty else {
+                removePendingMessage(id: pendingID)
+                return
+            }
+
+            let pendingIndex = feedItems.firstIndex(where: { $0.id == pendingID }) ?? (feedItems.count - 1)
+            let insertPaths = newFromServer.indices.map { IndexPath(row: pendingIndex + $0, section: 0) }
+            animatedRevealIndexPaths.formUnion(insertPaths)
+
+            tableView.performBatchUpdates {
+                feedItems.remove(at: pendingIndex)
+                tableView.deleteRows(at: [IndexPath(row: pendingIndex, section: 0)], with: .none)
+
+                for (offset, item) in newFromServer.enumerated() {
+                    feedItems.insert(item, at: pendingIndex + offset)
+                }
+                tableView.insertRows(at: insertPaths, with: .none)
+            } completion: { [weak self] _ in
+                guard let self else { return }
+                self.scrollToBottom(animated: true)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+                    self.animatedRevealIndexPaths.subtract(insertPaths)
+                }
+            }
+        } catch {
+            removePendingMessage(id: pendingID)
+            presentError(error)
+        }
     }
 
     private func updateLoadingOverlay() {
@@ -324,6 +422,12 @@ final class ProviderChatDetailViewController: UIViewController {
         isSending = true
         inputBar.setSending(true)
 
+        let pendingID = generatePendingMessageID()
+        pendingOutgoingMessageIDs.insert(pendingID)
+        let pending = ChatMessageDTO.pendingOutbound(id: pendingID, text: text)
+        inputBar.clearDraft()
+        insertOutgoingFeedItems([.text(pending)], animated: true)
+
         Task { @MainActor in
             defer {
                 isSending = false
@@ -331,9 +435,10 @@ final class ProviderChatDetailViewController: UIViewController {
             }
             do {
                 try await ProviderMessagesService.sendText(conversationId: conversation.id, text: text)
-                inputBar.clearDraft()
-                loadMessages()
+                await finalizeSend(replacingPendingID: pendingID)
             } catch {
+                removePendingMessage(id: pendingID)
+                inputBar.restoreDraft(text)
                 presentError(error)
             }
         }
@@ -344,6 +449,12 @@ final class ProviderChatDetailViewController: UIViewController {
         isSending = true
         inputBar.setSending(true)
 
+        let pendingID = generatePendingMessageID()
+        pendingOutgoingMessageIDs.insert(pendingID)
+        pendingImageThumbnails[pendingID] = image
+        let pending = ChatMessageDTO.pendingOutboundImage(id: pendingID)
+        insertOutgoingFeedItems([.text(pending)], animated: true)
+
         Task { @MainActor in
             defer {
                 isSending = false
@@ -351,8 +462,9 @@ final class ProviderChatDetailViewController: UIViewController {
             }
             do {
                 try await ProviderMessagesService.sendPhoto(conversationId: conversation.id, image: image)
-                loadMessages()
+                await finalizeSend(replacingPendingID: pendingID)
             } catch {
+                removePendingMessage(id: pendingID)
                 presentError(error)
             }
         }
@@ -403,12 +515,26 @@ final class ProviderChatDetailViewController: UIViewController {
             return
         }
 
+        let previousSchedule = linkedBooking?.providerEffectiveScheduledTime
         linkedBooking = try? await ProviderBookingsService.fetchBooking(id: bookingId)
         updateRescheduleBannerVisibility()
+        if linkedBooking?.providerEffectiveScheduledTime != previousSchedule {
+            reloadBookingRequestCells()
+        }
+    }
+
+    private func reloadBookingRequestCells() {
+        let bookingRequestIndexPaths = feedItems.enumerated().compactMap { index, item -> IndexPath? in
+            if case .bookingRequest = item { return IndexPath(row: index, section: 0) }
+            return nil
+        }
+        guard !bookingRequestIndexPaths.isEmpty else { return }
+        tableView.reloadRows(at: bookingRequestIndexPaths, with: .none)
     }
 
     private func updateRescheduleBannerVisibility() {
         guard let booking = linkedBooking,
+              booking.statusUpper != "PENDING",
               booking.hasPendingRescheduleRequest,
               let request = booking.pendingRescheduleRequest
         else {
@@ -627,7 +753,7 @@ extension ProviderChatDetailViewController: UITableViewDataSource {
             ) as? ProviderChatMessageCell else {
                 return UITableViewCell()
             }
-            cell.configure(message: message)
+            cell.configure(message: message, pendingImage: pendingImageThumbnails[message.id])
             return cell
 
         case .bookingRequest(let message):
@@ -638,7 +764,11 @@ extension ProviderChatDetailViewController: UITableViewDataSource {
                 return UITableViewCell()
             }
             cell.delegate = self
-            cell.configure(message: message, consumerName: consumerDisplayName)
+            cell.configure(
+                message: message,
+                consumerName: consumerDisplayName,
+                scheduleSummary: linkedBookingScheduleSummary
+            )
             return cell
         }
     }
@@ -646,7 +776,24 @@ extension ProviderChatDetailViewController: UITableViewDataSource {
 
 // MARK: - UITableViewDelegate
 
-extension ProviderChatDetailViewController: UITableViewDelegate {}
+extension ProviderChatDetailViewController: UITableViewDelegate {
+    func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        guard animatedRevealIndexPaths.contains(indexPath) else { return }
+
+        cell.contentView.alpha = 0
+        cell.contentView.transform = CGAffineTransform(translationX: 0, y: 18).scaledBy(x: 0.96, y: 0.96)
+        UIView.animate(
+            withDuration: 0.4,
+            delay: 0,
+            usingSpringWithDamping: 0.82,
+            initialSpringVelocity: 0.25,
+            options: [.allowUserInteraction, .beginFromCurrentState]
+        ) {
+            cell.contentView.alpha = 1
+            cell.contentView.transform = .identity
+        }
+    }
+}
 
 // MARK: - ProviderChatInputAccessoryViewDelegate
 
@@ -764,7 +911,12 @@ extension ProviderChatDetailViewController: ProviderChatBookingRequestCellDelega
         Task { @MainActor in
             do {
                 if accepted {
-                    try await ProviderBookingRequestsService.accept(bookingId: bookingId, barberTableId: barberTableId, message: nil)
+                    try await ProviderBookingRequestsService.acceptApplyingConsumerSchedule(
+                        bookingId: bookingId,
+                        barberTableId: barberTableId,
+                        booking: self.linkedBooking,
+                        message: nil
+                    )
                 } else {
                     try await ProviderBookingRequestsService.reject(bookingId: bookingId, barberTableId: barberTableId, reason: "Declined in chat")
                 }

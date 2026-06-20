@@ -95,6 +95,11 @@ final class ProviderChatInputAccessoryView: UIView {
         recomputeContentHeight()
     }
 
+    func restoreDraft(_ text: String) {
+        textView.text = text
+        textViewDidChange(textView)
+    }
+
     /// Toggles the bar's "send in flight" state — disables inputs and dims the affordances
     /// while a network round-trip is happening so the user can't double-send.
     func setSending(_ sending: Bool) {

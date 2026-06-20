@@ -54,12 +54,10 @@ enum ProviderAppearance {
     }
 
     static let olive = UIColor(red: 90 / 255, green: 114 / 255, blue: 104 / 255, alpha: 1)
-    /// Inbox message ribbon — darker olive in dark mode, lighter olive in light mode.
-    static let inboxMessageOlive = UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 72 / 255, green: 94 / 255, blue: 86 / 255, alpha: 1)
-            : UIColor(red: 118 / 255, green: 142 / 255, blue: 132 / 255, alpha: 1)
-    }
+    /// Light green for unread / new-message affordances (`#A8E5BC`).
+    static let messageUnreadAccent = UIColor(red: 0xA8 / 255, green: 0xE5 / 255, blue: 0xBC / 255, alpha: 1)
+    /// Olive **text** fill — matches Intera `Color.oliveGreen` (`#849E92` / `#556860`).
+    static let inboxMessageOlive = ProviderOliveGreenTextStyle.fillUIColor
     static let oliveFill = UIColor { traits in
         traits.userInterfaceStyle == .dark
             ? UIColor(red: 90 / 255, green: 114 / 255, blue: 104 / 255, alpha: 0.92)
@@ -164,13 +162,19 @@ extension Color {
 
     static var providerNeutralPushedBackdrop: Color { Color(uiColor: ProviderAppearance.neutralPushedBackdrop) }
 
-    /// Messaging accent blue (`#3A86FF`) — inbox CTAs and today appointment badges.
+    /// Messaging accent blue (`#3A86FF`) — today's appointment highlights in inbox cards.
     static var providerBrandAccent: Color {
         Color(red: 58 / 255, green: 134 / 255, blue: 255 / 255)
     }
 
-    /// Olive inbox preview text — appearance-adaptive for ribbon legibility.
-    static var providerInboxMessageOlive: Color { Color(uiColor: ProviderAppearance.inboxMessageOlive) }
+    /// Light green for unread / new-message badges and ribbons (`#A8E5BC`).
+    static var providerMessageUnreadAccent: Color { Color(uiColor: ProviderAppearance.messageUnreadAccent) }
+
+    /// Olive **text** fill (`#849E92` light / `#556860` dark). Prefer ``View/foregroundStyleProviderOliveGreen(opacity:)`` for glyphs.
+    static var oliveGreen: Color { Color(uiColor: ProviderOliveGreenTextStyle.fillUIColor) }
+
+    /// Olive inbox preview text — alias of ``oliveGreen`` for legacy call sites.
+    static var providerInboxMessageOlive: Color { oliveGreen }
 
     static var providerFormGroupedBackground: Color {
         Color(uiColor: ProviderAppearance.groupedShellBase)
@@ -183,26 +187,4 @@ extension Color {
     static var providerScheduleCardStroke: Color { Color(uiColor: ProviderAppearance.scheduleCardStroke) }
     static var providerScheduleControlFill: Color { Color(uiColor: ProviderAppearance.scheduleControlFill) }
     static var providerScheduleControlStroke: Color { Color(uiColor: ProviderAppearance.scheduleControlStroke) }
-}
-
-// MARK: - Olive outlined label (Messages inbox ribbon + Account)
-
-struct ProviderOliveOutlinedModifier: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-
-    func body(content: Content) -> some View {
-        let outline = colorScheme == .dark ? Color.white : Color.black
-        content
-            .foregroundStyle(Color.providerInboxMessageOlive)
-            .shadow(color: outline, radius: 0, x: 0, y: 0.5)
-            .shadow(color: outline, radius: 0, x: 0, y: -0.5)
-            .shadow(color: outline, radius: 0, x: 0.5, y: 0)
-            .shadow(color: outline, radius: 0, x: -0.5, y: 0)
-    }
-}
-
-extension View {
-    func providerOliveOutlined() -> some View {
-        modifier(ProviderOliveOutlinedModifier())
-    }
 }

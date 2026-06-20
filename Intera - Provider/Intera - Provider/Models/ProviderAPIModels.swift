@@ -1189,6 +1189,54 @@ struct ChatMessageDTO: Decodable, Identifiable, Hashable {
     let mediaUrl: String?
     let metadata: ChatMessageMetadataDTO?
 
+    init(
+        id: Int,
+        content: String?,
+        senderId: String?,
+        createdAt: Date?,
+        isOwn: Bool?,
+        messageType: String?,
+        mediaUrl: String?,
+        metadata: ChatMessageMetadataDTO?
+    ) {
+        self.id = id
+        self.content = content
+        self.senderId = senderId
+        self.createdAt = createdAt
+        self.isOwn = isOwn
+        self.messageType = messageType
+        self.mediaUrl = mediaUrl
+        self.metadata = metadata
+    }
+
+    /// Optimistic outbound row shown while a send request is in flight.
+    static func pendingOutbound(id: Int, text: String) -> ChatMessageDTO {
+        ChatMessageDTO(
+            id: id,
+            content: text,
+            senderId: nil,
+            createdAt: Date(),
+            isOwn: true,
+            messageType: "text",
+            mediaUrl: nil,
+            metadata: nil
+        )
+    }
+
+    /// Optimistic outbound image row shown while upload + send are in flight.
+    static func pendingOutboundImage(id: Int) -> ChatMessageDTO {
+        ChatMessageDTO(
+            id: id,
+            content: nil,
+            senderId: nil,
+            createdAt: Date(),
+            isOwn: true,
+            messageType: "image",
+            mediaUrl: nil,
+            metadata: nil
+        )
+    }
+
     var isBookingRequest: Bool {
         messageType == "booking_request" || messageType == "booking-request"
     }

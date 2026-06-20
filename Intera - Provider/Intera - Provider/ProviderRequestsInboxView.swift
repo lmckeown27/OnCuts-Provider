@@ -52,11 +52,7 @@ struct ProviderRequestsInboxContent: View {
     @State private var triageItems: [RequestTriageItem] = []
     @State private var isRequestsLoading = false
     @State private var requestsErrorText: String?
-    @State private var editingRequestId: String?
-    @State private var draftScheduleDate = Date()
-    @State private var draftHasConflict = false
-    @State private var scheduleEditError: String?
-    @State private var isSavingSchedule = false
+    @State private var rescheduleBooking: SimpleBookingDTO?
     @State private var expandedRequestId: String?
     @State private var isBookingRequestsExpanded = true
 
@@ -112,7 +108,10 @@ struct ProviderRequestsInboxContent: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .providerBookingsChanged)) { _ in
             guard detailPath.isEmpty else { return }
-            Task { await loadBookings(isUserPullToRefresh: false) }
+            Task {
+                await loadBookings(isUserPullToRefresh: false)
+                await loadRequests(settlesPresentation: false)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .providerRequestsListShouldRefresh)) { _ in
             Task {
@@ -152,6 +151,9 @@ struct ProviderRequestsInboxContent: View {
                     }
                 }
             )
+        }
+        .sheet(item: $rescheduleBooking, onDismiss: { rescheduleBooking = nil }) { booking in
+            rescheduleSheet(for: booking)
         }
         .alert("Couldn’t open chat", isPresented: $showMessageOpenError) {
             Button("OK", role: .cancel) {}
@@ -218,7 +220,6 @@ struct ProviderRequestsInboxContent: View {
                 .providerLavaIntegratedListSurface()
                 .refreshable { await loadAll(isUserPullToRefresh: true) }
                 .animation(ProviderRequestSheetMetrics.triageCardSpring, value: expandedRequestId)
-                .animation(ProviderRequestSheetMetrics.triageCardSpring, value: editingRequestId)
                 .animation(ProviderRequestSheetMetrics.triageCardSpring, value: isBookingRequestsExpanded)
                 .animation(ProviderRequestSheetMetrics.triageCardSpring, value: expandedFilters)
                 .animation(ProviderRequestSheetMetrics.triageCardSpring, value: isRequestedChangesExpanded)
@@ -250,7 +251,6 @@ struct ProviderRequestsInboxContent: View {
             }
             .scrollIndicators(.hidden)
             .animation(ProviderRequestSheetMetrics.triageCardSpring, value: expandedRequestId)
-            .animation(ProviderRequestSheetMetrics.triageCardSpring, value: editingRequestId)
             .refreshable { await loadRequests(settlesPresentation: false) }
             .overlay {
                 if isRequestsLoading && triageItems.isEmpty {
@@ -321,20 +321,45 @@ struct ProviderRequestsInboxContent: View {
     }
 
     @ViewBuilder
+    private func rescheduleSheet(for booking: SimpleBookingDTO) -> some View {
+        if let barberId = session.barberProfile?.id {
+            ProviderBookingRescheduleSheetView(
+                booking: booking,
+                barberId: barberId,
+                onSave: { date in
+                    rescheduleBooking = nil
+                    Task { await performReschedule(booking: booking, to: date) }
+                },
+                onCancel: { rescheduleBooking = nil }
+            )
+            .providerLavaScreenChrome()
+            .presentationDragIndicator(.visible)
+        } else {
+            NavigationStack {
+                ContentUnavailableView(
+                    "Can’t reschedule",
+                    systemImage: "person.crop.circle.badge.exclamationmark",
+                    description: Text("Complete barber onboarding to reschedule bookings.")
+                )
+                .navigationTitle("Reschedule")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { rescheduleBooking = nil }
+                    }
+                }
+            }
+            .providerLavaScreenChrome()
+        }
+    }
+
+    @ViewBuilder
     private func requestTriageCard(_ item: RequestTriageItem) -> some View {
         ProviderExpandableRequestTriageCard(
             item: item,
             isExpanded: expandedRequestId == item.id,
-            isEditingSchedule: editingRequestId == item.id,
-            draftScheduleDate: $draftScheduleDate,
-            draftHasConflict: $draftHasConflict,
-            barberId: session.barberProfile?.id,
-            scheduleEditError: editingRequestId == item.id ? scheduleEditError : nil,
-            isSavingSchedule: isSavingSchedule && editingRequestId == item.id,
             onHeaderTap: { toggleExpansion(item.id) },
-            onBeginEditSchedule: { beginEditingSchedule(item) },
-            onCancelEditSchedule: { cancelEditingSchedule() },
-            onSaveSchedule: { Task { await saveScheduleEdit(item) } },
+            onReschedule: { Task { await beginReschedule(for: item) } },
             onAccept: { acceptConfirmItem = item },
             onDecline: {
                 selectedDeclineReason = nil
@@ -413,36 +438,42 @@ struct ProviderRequestsInboxContent: View {
 
     private func toggleExpansion(_ id: String) {
         withAnimation(ProviderRequestSheetMetrics.triageCardSpring) {
-            if expandedRequestId == id {
-                expandedRequestId = nil
-                if editingRequestId == id {
-                    editingRequestId = nil
-                    scheduleEditError = nil
-                }
-            } else {
-                expandedRequestId = id
-                if editingRequestId != nil, editingRequestId != id {
-                    editingRequestId = nil
-                    scheduleEditError = nil
-                }
+            expandedRequestId = expandedRequestId == id ? nil : id
+        }
+    }
+
+    @MainActor
+    private func beginReschedule(for item: RequestTriageItem) async {
+        if let booking = bookingItems.first(where: { $0.id == item.row.bookingId }) {
+            rescheduleBooking = booking
+            return
+        }
+        do {
+            let booking = try await ProviderBookingsService.fetchBooking(id: item.row.bookingId)
+            rescheduleBooking = booking
+        } catch {
+            requestsErrorText = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+        }
+    }
+
+    private func performReschedule(booking: SimpleBookingDTO, to date: Date) async {
+        let keepExpanded = triageItems.first(where: { $0.row.bookingId == booking.id })?.id
+        do {
+            try await ProviderBookingsService.reschedule(
+                id: booking.id,
+                scheduledTimeISO: date.campusCutsISO8601String(),
+                location: booking.location,
+                notes: booking.notes
+            )
+            NotificationCenter.default.post(name: .providerRequestsListShouldRefresh, object: nil)
+            NotificationCenter.default.post(name: .providerBookingsListShouldRefresh, object: nil)
+            await loadRequests(settlesPresentation: false)
+            await loadBookings(isUserPullToRefresh: false)
+            if let keepExpanded {
+                expandedRequestId = keepExpanded
             }
-        }
-    }
-
-    private func beginEditingSchedule(_ item: RequestTriageItem) {
-        withAnimation(ProviderRequestSheetMetrics.triageCardSpring) {
-            expandedRequestId = item.id
-            editingRequestId = item.id
-            draftScheduleDate = item.requestedStart
-            draftHasConflict = false
-            scheduleEditError = nil
-        }
-    }
-
-    private func cancelEditingSchedule() {
-        withAnimation(ProviderRequestSheetMetrics.triageCardSpring) {
-            editingRequestId = nil
-            scheduleEditError = nil
+        } catch {
+            requestsErrorText = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
         }
     }
 
@@ -485,7 +516,6 @@ struct ProviderRequestsInboxContent: View {
             triageItems = try await ProviderBookingRequestsService.loadTriageQueue(barberTableId: bid)
             if let id = expandedRequestId, !triageItems.contains(where: { $0.id == id }) {
                 expandedRequestId = nil
-                editingRequestId = nil
             }
         } catch {
             requestsErrorText = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
@@ -520,9 +550,10 @@ struct ProviderRequestsInboxContent: View {
         isRequestsLoading = true
         defer { isRequestsLoading = false }
         do {
-            try await ProviderBookingRequestsService.accept(
+            try await ProviderBookingRequestsService.acceptApplyingConsumerSchedule(
                 bookingId: item.row.bookingId,
                 barberTableId: bid,
+                booking: bookingItems.first(where: { $0.id == item.row.bookingId }),
                 message: "Looking forward to seeing you!"
             )
             NotificationCenter.default.post(name: .providerRequestsListShouldRefresh, object: nil)
@@ -530,29 +561,6 @@ struct ProviderRequestsInboxContent: View {
             await loadAll(isUserPullToRefresh: false)
         } catch {
             requestsErrorText = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
-        }
-    }
-
-    private func saveScheduleEdit(_ item: RequestTriageItem) async {
-        guard editingRequestId == item.id else { return }
-        isSavingSchedule = true
-        scheduleEditError = nil
-        defer { isSavingSchedule = false }
-        let keepExpanded = item.id
-        do {
-            try await ProviderBookingsService.reschedule(
-                id: item.row.bookingId,
-                scheduledTimeISO: draftScheduleDate.campusCutsISO8601String(),
-                location: item.row.location,
-                notes: nil
-            )
-            NotificationCenter.default.post(name: .providerRequestsListShouldRefresh, object: nil)
-            NotificationCenter.default.post(name: .providerBookingsListShouldRefresh, object: nil)
-            editingRequestId = nil
-            await loadRequests(settlesPresentation: false)
-            expandedRequestId = keepExpanded
-        } catch {
-            scheduleEditError = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
         }
     }
 

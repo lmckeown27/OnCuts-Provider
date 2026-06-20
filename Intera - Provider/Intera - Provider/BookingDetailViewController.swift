@@ -26,8 +26,8 @@ import UIKit
 ///
 /// | Status     | Visible actions                                                  |
 /// |------------|------------------------------------------------------------------|
-/// | PENDING    | Accept · Decline · Reschedule · Cancel · Mark complete           |
-/// | ACCEPTED   | Request Payment · Reschedule · Cancel · Mark complete            |
+/// | PENDING    | Accept · Decline · Reschedule                                    |
+/// | ACCEPTED   | Request Payment · Reschedule · Cancel                            |
 /// | COMPLETED  | Undo completion                                                  |
 /// | other      | (read-only — no action buttons)                                  |
 ///
@@ -219,7 +219,7 @@ final class BookingDetailViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Token.background
-        title = "Booking"
+        title = "Booking Details"
         navigationItem.largeTitleDisplayMode = .never
 
         setupHierarchy()
@@ -357,7 +357,7 @@ final class BookingDetailViewController: UIViewController {
             makeClientBanner(),
             makeOpenConversationSection(),
             makePendingRescheduleSection(),
-            makeServicePricingCard(),
+            makeServicePricingGrid(),
             makeWhenGrid(),
             makeNotesSection(),
             makePaymentSection(),
@@ -374,33 +374,21 @@ final class BookingDetailViewController: UIViewController {
         buildSections()
     }
 
-    // MARK: - Sections — Header (title + status capsule)
+    // MARK: - Sections — Header (status capsule)
 
     private func makeHeader() -> UIView {
-        let titleLabel = UILabel()
-        titleLabel.text = "Booking Details"
-        titleLabel.font = .provider(size: 24, weight: .bold)
-        titleLabel.textColor = Token.primaryText
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-
         let capsule = makeStatusCapsule(forStatus: current.statusUpper)
         capsule.translatesAutoresizingMaskIntoConstraints = false
-        capsule.setContentHuggingPriority(.required, for: .horizontal)
-        capsule.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         let row = UIView()
-        row.addSubview(titleLabel)
         row.addSubview(capsule)
 
         NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: row.topAnchor),
-            titleLabel.leadingAnchor.constraint(equalTo: row.leadingAnchor),
-            titleLabel.bottomAnchor.constraint(equalTo: row.bottomAnchor),
-
-            capsule.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            capsule.trailingAnchor.constraint(equalTo: row.trailingAnchor),
-            capsule.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 12),
+            capsule.topAnchor.constraint(equalTo: row.topAnchor),
+            capsule.bottomAnchor.constraint(equalTo: row.bottomAnchor),
+            capsule.centerXAnchor.constraint(equalTo: row.centerXAnchor),
+            capsule.leadingAnchor.constraint(greaterThanOrEqualTo: row.leadingAnchor),
+            capsule.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor),
         ])
         return row
     }
@@ -411,7 +399,7 @@ final class BookingDetailViewController: UIViewController {
     private func makeStatusCapsule(forStatus status: String) -> UIView {
         let (background, foreground) = statusPalette(for: status)
         let label = UILabel()
-        label.text = status.isEmpty ? "—" : status
+        label.text = status.isEmpty ? "—" : ProviderBookingStatusDisplay.title(for: status)
         label.font = .provider(size: 11, weight: .heavy)
         label.textColor = foreground
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -462,13 +450,14 @@ final class BookingDetailViewController: UIViewController {
         nameLabel.text = current.consumerDisplayName
         nameLabel.font = .provider(size: 22, weight: .semibold)
         nameLabel.textColor = Token.primaryText
+        nameLabel.textAlignment = .center
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
 
         card.addSubview(nameLabel)
 
         NSLayoutConstraint.activate([
             nameLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
-            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: card.trailingAnchor, constant: -14),
+            nameLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
             nameLabel.topAnchor.constraint(equalTo: card.topAnchor, constant: 14),
             nameLabel.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
         ])
@@ -536,11 +525,12 @@ final class BookingDetailViewController: UIViewController {
     // MARK: - Sections — Pending schedule change
 
     private func makePendingRescheduleSection() -> UIView? {
-        guard current.hasPendingRescheduleRequest,
+        guard current.statusUpper != "PENDING",
+              current.hasPendingRescheduleRequest,
               let request = current.pendingRescheduleRequest
         else { return nil }
 
-        let header = makeSectionHeader(text: "SCHEDULE CHANGE")
+        let header = makeSectionHeader(text: "Schedule Change")
         let banner = ProviderPendingRescheduleBannerView()
         banner.configure(booking: current, request: request)
         banner.setActionsEnabled(!isWorking)
@@ -555,47 +545,26 @@ final class BookingDetailViewController: UIViewController {
 
     // MARK: - Sections — Service & pricing
 
-    private func makeServicePricingCard() -> UIView {
-        let card = UIView()
-        card.backgroundColor = Token.accent.withAlphaComponent(0.16)
-        card.layer.cornerRadius = Token.cardCornerRadius
-        card.layer.masksToBounds = true
-        card.layer.borderColor = Token.accent.withAlphaComponent(0.40).cgColor
-        card.layer.borderWidth = 1
-        card.translatesAutoresizingMaskIntoConstraints = false
+    private func makeServicePricingGrid() -> UIView {
+        let header = makeSectionHeader(text: "Service")
+        let serviceCard = makeVerticalMetaCard(title: "Type", value: current.serviceDisplayName)
+        let priceCard = makeVerticalMetaCard(title: "Price", value: formattedPrice() ?? "—")
 
-        let service = UILabel()
-        service.text = current.serviceDisplayName
-        service.font = .provider(size: 16, weight: .semibold)
-        service.textColor = Token.primaryText
-        service.translatesAutoresizingMaskIntoConstraints = false
+        let grid = UIStackView(arrangedSubviews: [serviceCard, priceCard])
+        grid.axis = .horizontal
+        grid.distribution = .fillEqually
+        grid.spacing = 12
 
-        let price = UILabel()
-        price.text = formattedPrice() ?? "—"
-        price.font = .provider(size: 16, weight: .bold)
-        price.textColor = Token.primaryText
-        price.translatesAutoresizingMaskIntoConstraints = false
-        price.setContentHuggingPriority(.required, for: .horizontal)
-
-        card.addSubview(service)
-        card.addSubview(price)
-
-        NSLayoutConstraint.activate([
-            service.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
-            service.topAnchor.constraint(equalTo: card.topAnchor, constant: 14),
-            service.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
-
-            price.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
-            price.centerYAnchor.constraint(equalTo: service.centerYAnchor),
-            price.leadingAnchor.constraint(greaterThanOrEqualTo: service.trailingAnchor, constant: 8),
-        ])
-        return card
+        let wrap = UIStackView(arrangedSubviews: [header, grid])
+        wrap.axis = .vertical
+        wrap.spacing = 8
+        return wrap
     }
 
     // MARK: - Sections — When grid
 
     private func makeWhenGrid() -> UIView {
-        let header = makeSectionHeader(text: "WHEN")
+        let header = makeSectionHeader(text: "When")
         let dateCard = makeVerticalMetaCard(title: "Date", value: formattedDate())
         let timeCard = makeVerticalMetaCard(title: "Time", value: formattedTime())
 
@@ -615,7 +584,7 @@ final class BookingDetailViewController: UIViewController {
     private func makeNotesSection() -> UIView? {
         let notes = (current.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !notes.isEmpty else { return nil }
-        let header = makeSectionHeader(text: "NOTES")
+        let header = makeSectionHeader(text: "Notes")
         let card = makeCard()
         let label = UILabel()
         label.text = notes
@@ -641,7 +610,7 @@ final class BookingDetailViewController: UIViewController {
     private func makePaymentSection() -> UIView? {
         guard current.statusUpper == "PAID" else { return nil }
 
-        let header = makeSectionHeader(text: "PAYMENT")
+        let header = makeSectionHeader(text: "Payment")
         let card = makeCard()
         card.backgroundColor = Token.accent.withAlphaComponent(0.12)
         card.layer.borderColor = Token.accent.withAlphaComponent(0.35).cgColor
@@ -728,14 +697,13 @@ final class BookingDetailViewController: UIViewController {
 
     // MARK: - Section helpers
 
-    /// Stacked uppercased title → value card. Used in the WHEN grid where two columns
-    /// share a row and need to be narrow. Renders with no leading icon — design choice
-    /// to keep the WHEN cards visually quiet alongside the heavier service/pricing card.
+    /// Stacked title → value card. Used in the Service and When grids where two columns
+    /// share a row and need to be narrow.
     private func makeVerticalMetaCard(title: String, value: String) -> UIView {
         let card = makeCard()
 
         let titleLabel = UILabel()
-        titleLabel.text = title.uppercased()
+        titleLabel.text = title
         titleLabel.font = .provider(size: 11, weight: .semibold)
         titleLabel.textColor = Token.secondaryText
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -804,7 +772,7 @@ final class BookingDetailViewController: UIViewController {
     ///     top. This is how the "Awaiting Payment" status pill + "Undo Completion"
     ///     follow-up render — two full-width affordances stacked.
     ///   - Then any secondary + destructive buttons paired into two-per-row split rows
-    ///     (`Reschedule | Mark Complete`, then `Cancel`).
+    ///     (`Reschedule`, then `Cancel` for accepted bookings).
     private func makeActionStack() -> UIView? {
         let status = current.statusUpper
 
@@ -854,24 +822,7 @@ final class BookingDetailViewController: UIViewController {
             // Complete / Cancel either make no sense or would race the payment flow.
             // The barber undoes first if they need any of those.
         } else if status == "PENDING" {
-            fullWidthButtons.append(
-                makePrimaryActionButton(
-                    title: "Accept",
-                    icon: "checkmark.circle.fill",
-                    background: Token.statusGreen,
-                    foreground: .white,
-                    action: #selector(acceptTapped)
-                )
-            )
-            destructiveButtons.append(
-                makeSecondaryActionButton(
-                    title: "Decline",
-                    icon: "xmark",
-                    background: Token.destructiveFill,
-                    foreground: Token.destructiveText,
-                    action: #selector(declineTapped)
-                )
-            )
+            return makePendingActionStack()
         } else if status == "ACCEPTED" {
             fullWidthButtons.append(
                 makePrimaryActionButton(
@@ -893,34 +844,27 @@ final class BookingDetailViewController: UIViewController {
             )
         }
 
-        // Secondary block: only the pre-completion statuses get Reschedule / Mark
-        // Complete / Cancel. The awaiting-payment branch above intentionally short-
-        // circuits this — see comment there.
-        if !isAwaitingPayment, status == "PENDING" || status == "ACCEPTED" {
+        // Secondary block: accepted bookings get Reschedule and Cancel.
+        if !isAwaitingPayment, status == "ACCEPTED" {
             secondaryButtons.append(
                 makeSecondaryActionButton(
                     title: "Reschedule",
-                    background: Token.accent.withAlphaComponent(0.20),
-                    foreground: Token.primaryText,
+                    icon: "calendar.badge.clock",
+                    background: Token.statusYellow,
+                    foreground: UIColor(white: 0.1, alpha: 1),
                     action: #selector(rescheduleTapped)
                 )
             )
-            secondaryButtons.append(
-                makeSecondaryActionButton(
-                    title: "Mark Complete",
-                    background: Token.accent.withAlphaComponent(0.20),
-                    foreground: Token.primaryText,
-                    action: #selector(markCompleteTapped)
+            if status == "ACCEPTED" {
+                destructiveButtons.append(
+                    makeSecondaryActionButton(
+                        title: "Cancel",
+                        background: Token.cancelButtonFill,
+                        foreground: Token.cancelButtonText,
+                        action: #selector(cancelTapped)
+                    )
                 )
-            )
-            destructiveButtons.append(
-                makeSecondaryActionButton(
-                    title: "Cancel",
-                    background: Token.cancelButtonFill,
-                    foreground: Token.cancelButtonText,
-                    action: #selector(cancelTapped)
-                )
-            )
+            }
         }
 
         guard !fullWidthButtons.isEmpty || !secondaryButtons.isEmpty || !destructiveButtons.isEmpty else {
@@ -957,35 +901,94 @@ final class BookingDetailViewController: UIViewController {
         return stack
     }
 
+    /// Compact, centered pill actions for pending booking requests.
+    private func makePendingActionStack() -> UIView {
+        let accept = makePrimaryActionButton(
+            title: "Accept",
+            icon: "checkmark.circle.fill",
+            background: Token.statusGreen,
+            foreground: .white,
+            action: #selector(acceptTapped),
+            compact: true
+        )
+        let reschedule = makeSecondaryActionButton(
+            title: "Reschedule",
+            icon: "calendar.badge.clock",
+            background: Token.statusYellow,
+            foreground: UIColor(white: 0.1, alpha: 1),
+            action: #selector(rescheduleTapped),
+            compact: true
+        )
+        let decline = makeSecondaryActionButton(
+            title: "Decline",
+            icon: "xmark",
+            background: Token.destructiveFill,
+            foreground: Token.destructiveText,
+            action: #selector(declineTapped),
+            compact: true
+        )
+
+        let secondaryRow = UIStackView(arrangedSubviews: [reschedule, decline])
+        secondaryRow.axis = .horizontal
+        secondaryRow.spacing = 12
+        secondaryRow.alignment = .center
+        secondaryRow.distribution = .equalSpacing
+
+        let stack = UIStackView(arrangedSubviews: [accept, secondaryRow])
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.alignment = .center
+
+        actionsContainer = stack
+        return stack
+    }
+
+    private static func applyPlatformButtonTitleFont(
+        to config: inout UIButton.Configuration,
+        textStyle: UIFont.TextStyle = .body
+    ) {
+        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var out = incoming
+            out.font = UIFont.providerPreferred(forTextStyle: textStyle, weight: .semibold)
+            return out
+        }
+    }
+
     private func makePrimaryActionButton(
         title: String,
         icon: String? = nil,
         background: UIColor,
         foreground: UIColor,
-        action: Selector
+        action: Selector,
+        compact: Bool = false
     ) -> UIButton {
         var config = UIButton.Configuration.filled()
+        config.title = title
         if let icon {
             config.image = UIImage(
                 systemName: icon,
-                withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: compact ? 15 : 16, weight: .semibold)
             )
             config.imagePadding = 8
         }
-        config.cornerStyle = .large
+        config.cornerStyle = .capsule
         config.baseBackgroundColor = background
         config.baseForegroundColor = foreground
-        config.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16)
-
-        var titleAttr = AttributedString(title)
-        titleAttr.font = .provider(size: 16, weight: .semibold)
-        titleAttr.foregroundColor = foreground
-        config.attributedTitle = titleAttr
+        if compact {
+            config.contentInsets = NSDirectionalEdgeInsets(top: 18, leading: 26, bottom: 18, trailing: 26)
+        } else {
+            config.contentInsets = NSDirectionalEdgeInsets(top: 16, leading: 20, bottom: 16, trailing: 20)
+        }
+        Self.applyPlatformButtonTitleFont(to: &config, textStyle: compact ? .subheadline : .body)
 
         let button = UIButton(configuration: config)
         button.addTarget(self, action: action, for: .touchUpInside)
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: compact ? 58 : 56).isActive = true
+        if compact {
+            button.setContentHuggingPriority(.required, for: .horizontal)
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        }
         actionButtons.append(button)
         return button
     }
@@ -995,9 +998,11 @@ final class BookingDetailViewController: UIViewController {
         icon: String? = nil,
         background: UIColor,
         foreground: UIColor,
-        action: Selector
+        action: Selector,
+        compact: Bool = false
     ) -> UIButton {
         var config = UIButton.Configuration.filled()
+        config.title = title
         if let icon {
             config.image = UIImage(
                 systemName: icon,
@@ -1005,26 +1010,30 @@ final class BookingDetailViewController: UIViewController {
             )
             config.imagePadding = 6
         }
-        config.cornerStyle = .large
+        config.cornerStyle = .capsule
         config.baseBackgroundColor = background
         config.baseForegroundColor = foreground
-        config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14)
-
-        var titleAttr = AttributedString(title)
-        titleAttr.font = .provider(size: 15, weight: .semibold)
-        titleAttr.foregroundColor = foreground
-        config.attributedTitle = titleAttr
+        if compact {
+            config.contentInsets = NSDirectionalEdgeInsets(top: 18, leading: 26, bottom: 18, trailing: 26)
+        } else {
+            config.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 18, bottom: 14, trailing: 18)
+        }
+        Self.applyPlatformButtonTitleFont(to: &config, textStyle: compact ? .subheadline : .body)
 
         let button = UIButton(configuration: config)
         button.addTarget(self, action: action, for: .touchUpInside)
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 46).isActive = true
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: compact ? 58 : 50).isActive = true
+        if compact {
+            button.setContentHuggingPriority(.required, for: .horizontal)
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        }
         actionButtons.append(button)
         return button
     }
 
     /// Renders a primary-shaped, *non-interactive* "status pill" — same footprint as a
-    /// primary action button (full-width, 52pt min height, large corner radius) but
+    /// primary action button (full-width, 52pt min height, capsule shape) but
     /// dimmed and disabled so the user reads it as a state indicator rather than a CTA.
     ///
     /// Deliberately **not** added to `actionButtons`, so the `isWorking` `didSet`
@@ -1033,25 +1042,22 @@ final class BookingDetailViewController: UIViewController {
     /// `requestPayment` call.
     private func makeInertStatusButton(title: String, icon: String) -> UIButton {
         var config = UIButton.Configuration.filled()
+        config.title = title
         config.image = UIImage(
             systemName: icon,
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
         )
         config.imagePadding = 8
-        config.cornerStyle = .large
+        config.cornerStyle = .capsule
         config.baseBackgroundColor = UIColor.white.withAlphaComponent(0.10)
         config.baseForegroundColor = Token.secondaryText
-        config.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16)
-
-        var titleAttr = AttributedString(title)
-        titleAttr.font = .provider(size: 16, weight: .semibold)
-        titleAttr.foregroundColor = Token.secondaryText
-        config.attributedTitle = titleAttr
+        config.contentInsets = NSDirectionalEdgeInsets(top: 16, leading: 20, bottom: 16, trailing: 20)
+        Self.applyPlatformButtonTitleFont(to: &config)
 
         let button = UIButton(configuration: config)
         button.isUserInteractionEnabled = false
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 56).isActive = true
         // NOTE: intentionally *not* appended to `actionButtons` — see method doc.
         return button
     }
@@ -1091,12 +1097,12 @@ final class BookingDetailViewController: UIViewController {
     }
 
     private func formattedDate() -> String {
-        guard let time = current.scheduledTime else { return "TBD" }
+        guard let time = current.providerEffectiveScheduledTime else { return "TBD" }
         return time.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
     }
 
     private func formattedTime() -> String {
-        guard let time = current.scheduledTime else { return "TBD" }
+        guard let time = current.providerEffectiveScheduledTime else { return "TBD" }
         return time.formatted(date: .omitted, time: .shortened)
     }
 
@@ -1120,9 +1126,10 @@ final class BookingDetailViewController: UIViewController {
                 return
             }
             run(optimisticStatus: "ACCEPTED") {
-                try await ProviderBookingRequestsService.accept(
+                try await ProviderBookingRequestsService.acceptApplyingConsumerSchedule(
                     bookingId: self.current.id,
                     barberTableId: barberTableId,
+                    booking: self.current,
                     message: nil
                 )
             } onSuccess: {
@@ -1236,46 +1243,33 @@ final class BookingDetailViewController: UIViewController {
     // MARK: - Reschedule sheet (native UIKit)
 
     private func presentReschedulePicker() {
-        let picker = UIDatePicker()
-        picker.datePickerMode = .dateAndTime
-        picker.preferredDatePickerStyle = .inline
-        picker.minimumDate = Date()
-        picker.date = current.scheduledTime ?? Date()
-        picker.tintColor = Token.accent
-
-        let host = UIViewController()
-        host.title = "Reschedule"
-        host.view.backgroundColor = Token.background
-        picker.translatesAutoresizingMaskIntoConstraints = false
-        host.view.addSubview(picker)
-        NSLayoutConstraint.activate([
-            picker.topAnchor.constraint(equalTo: host.view.safeAreaLayoutGuide.topAnchor, constant: 12),
-            picker.leadingAnchor.constraint(equalTo: host.view.leadingAnchor, constant: 12),
-            picker.trailingAnchor.constraint(equalTo: host.view.trailingAnchor, constant: -12),
-        ])
-
-        host.navigationItem.leftBarButtonItem = UIBarButtonItem(
-            title: "Cancel", style: .plain, target: self, action: #selector(dismissPresentedSheet)
-        )
-        // iOS 26 renamed `.done` → `.prominent`; everything older falls through `.plain`,
-        // which still renders correctly with `primaryAction` attached below.
-        let save = UIBarButtonItem(
-            title: "Save", style: .prominent, target: nil, action: nil
-        )
-        save.primaryAction = UIAction { [weak self, weak picker] _ in
-            guard let self, let picker else { return }
-            self.dismiss(animated: true) {
-                self.performReschedule(to: picker.date)
-            }
+        guard let barberId = barberTableId ?? current.barberId,
+              !barberId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            presentError(NSError(
+                domain: "BookingDetail",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Barber profile is required to reschedule this booking."]
+            ))
+            return
         }
-        host.navigationItem.rightBarButtonItem = save
 
-        let nav = UINavigationController(rootViewController: host)
-        nav.modalPresentationStyle = .formSheet
-        nav.navigationBar.tintColor = Token.accent
-        nav.navigationBar.titleTextAttributes = [.foregroundColor: Token.primaryText]
-        nav.view.backgroundColor = Token.background
-        present(nav, animated: true)
+        let sheet = ProviderBookingRescheduleSheetView(
+            booking: current,
+            barberId: barberId,
+            onSave: { [weak self] date in
+                self?.dismiss(animated: true) {
+                    self?.performReschedule(to: date)
+                }
+            },
+            onCancel: { [weak self] in
+                self?.dismiss(animated: true)
+            }
+        )
+
+        let host = UIHostingController(rootView: sheet)
+        host.modalPresentationStyle = .formSheet
+        present(host, animated: true)
     }
 
     private func performReschedule(to date: Date) {

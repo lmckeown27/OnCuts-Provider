@@ -456,10 +456,6 @@ extension RequestTriageItem {
   }
 
   var approveScheduleSummary: String {
-    if let wallClock = ProviderBookingScheduleParsing.displayWallClockTime(from: row) {
-      let datePart = requestedStart.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
-      return "\(datePart) · \(wallClock)"
-    }
-    return requestedStart.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+    requestedStart.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
   }
 }

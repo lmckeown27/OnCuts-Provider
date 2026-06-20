@@ -100,6 +100,7 @@ enum ProviderChatNavigationBarStyle {
         appearance.backgroundColor = ProviderAppearance.neutralPushedBackdrop
         appearance.shadowColor = ProviderChatDesignTokens.Color.separator
         appearance.titleTextAttributes = [
+            .font: UIFont.providerPreferred(forTextStyle: .headline, weight: .semibold),
             .foregroundColor: ProviderChatDesignTokens.Color.lavaShellCream,
         ]
 

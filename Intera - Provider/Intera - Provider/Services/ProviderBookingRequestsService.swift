@@ -31,6 +31,21 @@ enum ProviderBookingRequestsService {
         )
     }
 
+    /// Accept a pending inquiry after applying any consumer reschedule request so the accepted time matches what the barber reviewed.
+    static func acceptApplyingConsumerSchedule(
+        bookingId: String,
+        barberTableId: String,
+        booking: SimpleBookingDTO?,
+        message: String?
+    ) async throws {
+        if let booking,
+           booking.statusUpper == "PENDING",
+           booking.hasPendingRescheduleRequest {
+            try await ProviderBookingsService.approveRescheduleRequest(bookingId: bookingId)
+        }
+        try await accept(bookingId: bookingId, barberTableId: barberTableId, message: message)
+    }
+
     static func reject(bookingId: String, barberTableId: String, reason: String) async throws {
         _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
             path: "booking-requests/\(bookingId)/reject",

@@ -238,7 +238,7 @@ struct BarberAccountControlView: View {
                     Spacer()
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 22))
-                        .providerOliveOutlined()
+                        .foregroundStyleProviderShellIcon()
                 }
             }
             .buttonStyle(.plain)

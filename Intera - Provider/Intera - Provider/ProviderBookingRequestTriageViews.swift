@@ -5,69 +5,60 @@ import SwiftUI
 struct ProviderExpandableRequestTriageCard: View {
     let item: RequestTriageItem
     let isExpanded: Bool
-    let isEditingSchedule: Bool
-    @Binding var draftScheduleDate: Date
-    @Binding var draftHasConflict: Bool
-    let barberId: String?
-    let scheduleEditError: String?
-    let isSavingSchedule: Bool
     let onHeaderTap: () -> Void
-    let onBeginEditSchedule: () -> Void
-    let onCancelEditSchedule: () -> Void
-    let onSaveSchedule: () -> Void
+    let onReschedule: () -> Void
     let onAccept: () -> Void
     let onDecline: () -> Void
     let isOpeningMessage: Bool
     let onMessage: () -> Void
 
-    private var displayStart: Date {
-        isEditingSchedule ? draftScheduleDate : item.requestedStart
-    }
-
     /// Cached expanded height so reopening animates smoothly and siblings slide instead of jumping.
     @State private var expandedContentHeight: CGFloat = 0
 
     private var expandedRevealHeight: CGFloat {
-        guard isExpanded else { return 0 }
-        if isEditingSchedule {
-            return max(expandedContentHeight, 520)
-        }
-        return expandedContentHeight > 0 ? expandedContentHeight : 360
+        guard isExpanded, expandedContentHeight > 0 else { return 0 }
+        return expandedContentHeight
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onHeaderTap)
 
-            expandedBody
+            expandableContent
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(maxHeight: expandedRevealHeight, alignment: .top)
+                .mask(alignment: .top) {
+                    Rectangle()
+                        .frame(height: expandedRevealHeight)
+                }
+                .frame(height: expandedRevealHeight, alignment: .top)
                 .clipped()
                 .allowsHitTesting(isExpanded)
                 .accessibilityHidden(!isExpanded)
-                .overlay(alignment: .topLeading) {
-                    if !isEditingSchedule {
-                        expandedBody
-                            .fixedSize(horizontal: false, vertical: true)
-                            .hidden()
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                            .onGeometryChange(for: CGFloat.self) { proxy in
-                                proxy.size.height
-                            } action: { height in
-                                guard height > 0 else { return }
-                                expandedContentHeight = height
-                            }
-                    }
-                }
+        }
+        .background(alignment: .topLeading) {
+            expandableContent
+                .fixedSize(horizontal: false, vertical: true)
+                .hidden()
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
                 .onGeometryChange(for: CGFloat.self) { proxy in
                     proxy.size.height
                 } action: { height in
-                    guard isExpanded, isEditingSchedule, height > 0 else { return }
-                    expandedContentHeight = max(expandedContentHeight, height)
+                    guard height > 0, abs(height - expandedContentHeight) > 0.5 else { return }
+                    var transaction = Transaction()
+                    transaction.animation = nil
+                    withTransaction(transaction) {
+                        expandedContentHeight = height
+                    }
                 }
+        }
+        .onChange(of: item.id) { _, _ in
+            expandedContentHeight = 0
         }
         .background(Color.providerElevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
@@ -75,11 +66,6 @@ struct ProviderExpandableRequestTriageCard: View {
                 .strokeBorder(Color.providerElevatedSurfaceStroke, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .onChange(of: isEditingSchedule) { _, editing in
-            if editing, isExpanded {
-                expandedContentHeight = max(expandedContentHeight, 520)
-            }
-        }
     }
 
     private var header: some View {
@@ -112,41 +98,58 @@ struct ProviderExpandableRequestTriageCard: View {
                     .padding(.leading, 4)
             }
 
-            scheduledForStrip(editing: isEditingSchedule)
+            scheduledForStrip
         }
         .padding(14)
+        .animation(nil, value: isExpanded)
+    }
+
+    @ViewBuilder
+    private var miniScheduleSection: some View {
+        if item.surroundingSchedule.isEmpty {
+            Text("Schedule context unavailable for this time.")
+                .font(.provider(.footnote))
+                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            VStack(spacing: 8) {
+                ForEach(item.surroundingSchedule) { slot in
+                    ProviderRequestScheduleContextRow(item: slot)
+                }
+            }
+            .compositingGroup()
+        }
     }
 
     /// Front-of-card schedule summary — date and time must be obvious before expanding.
-    private func scheduledForStrip(editing: Bool) -> some View {
+    private var scheduledForStrip: some View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Scheduled for")
                     .font(.provider(.caption2, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
-                    .textCase(.uppercase)
-                Text(scheduledDateHeadline(for: displayStart))
+                Text(scheduledDateHeadline(for: item.requestedStart))
                     .font(.provider(.subheadline, weight: .bold))
                     .foregroundStyle(Color.lavaShellCream)
-                Text(scheduledTimeHeadline(for: displayStart))
+                Text(scheduledTimeHeadline(for: item.requestedStart))
                     .font(.provider(.footnote, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream.opacity(0.9))
             }
 
             Spacer(minLength: 8)
 
-            conflictBadge(editing: editing)
+            conflictBadge
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.providerOlive.opacity(editing ? 0.28 : 0.2), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Color.providerOlive.opacity(0.2), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.providerOlive.opacity(editing ? 0.85 : 0.35), lineWidth: editing ? 1.5 : 1)
+                .strokeBorder(Color.providerOlive.opacity(0.35), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Scheduled for \(scheduledDateHeadline(for: displayStart)) at \(scheduledTimeHeadline(for: displayStart))")
+        .accessibilityLabel("Scheduled for \(scheduledDateHeadline(for: item.requestedStart)) at \(scheduledTimeHeadline(for: item.requestedStart))")
     }
 
     private func scheduledDateHeadline(for date: Date) -> String {
@@ -162,21 +165,12 @@ struct ProviderExpandableRequestTriageCard: View {
     }
 
     private func scheduledTimeHeadline(for date: Date) -> String {
-        if !isEditingSchedule,
-           let campusTime = ProviderBookingScheduleParsing.displayWallClockTime(from: item.row) {
-            return campusTime
-        }
-        if !isEditingSchedule, item.row.requestedScheduleInstant == nil {
-            let fallback = item.row.formattedRequestedSchedule()
-            if fallback != "Time TBD" { return fallback }
-        }
-        return date.formatted(date: .omitted, time: .shortened)
+        date.formatted(date: .omitted, time: .shortened)
     }
 
     @ViewBuilder
-    private func conflictBadge(editing: Bool) -> some View {
-        let conflict = editing ? draftHasConflict : item.hasConflict
-        if conflict {
+    private var conflictBadge: some View {
+        if item.hasConflict {
             HStack(spacing: 4) {
                 Image(systemName: "exclamationmark.triangle.fill")
                 Text("Conflict")
@@ -196,97 +190,83 @@ struct ProviderExpandableRequestTriageCard: View {
         }
     }
 
-    private var expandedBody: some View {
+    private var expandableContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             Divider()
                 .overlay(Color(uiColor: ProviderAppearance.separator))
 
-            if isEditingSchedule, let barberId {
-                ProviderPendingRequestScheduleEditor(
-                    barberId: barberId,
-                    bookingId: item.row.bookingId,
-                    customerName: item.row.customerName ?? "Customer",
-                    serviceType: item.row.serviceDisplayName,
-                    selectedDateTime: $draftScheduleDate,
-                    hasConflict: $draftHasConflict
-                )
+            miniScheduleSection
 
-                if let scheduleEditError {
-                    Text(scheduleEditError)
-                        .font(.provider(.caption))
-                        .foregroundStyle(.red.opacity(0.9))
+            HStack(spacing: 12) {
+                Button("Reschedule", action: onReschedule)
+                    .buttonStyle(.bordered)
+                    .tint(Color(uiColor: ProviderChatDesignTokens.Color.statusYellow))
+                    .frame(maxWidth: .infinity)
+
+                Button(action: onMessage) {
+                    ProviderBlackOutlinedButtonLabel(
+                        isOpeningMessage ? "Opening…" : "Message"
+                    )
                 }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.providerOliveLight)
+                    .frame(maxWidth: .infinity)
+                    .disabled(isOpeningMessage)
+            }
 
-                HStack(spacing: 12) {
-                    Button("Cancel", action: onCancelEditSchedule)
-                        .buttonStyle(.bordered)
-                        .frame(maxWidth: .infinity)
-                        .disabled(isSavingSchedule)
+            Divider()
+                .overlay(Color(uiColor: ProviderAppearance.separator))
 
-                    Button(isSavingSchedule ? "Saving…" : "Save time") {
-                        onSaveSchedule()
-                    }
+            HStack(spacing: 12) {
+                Button("Decline", role: .destructive, action: onDecline)
+                    .buttonStyle(.bordered)
+                    .tint(ProviderRequestSheetColors.lavaRed)
+                    .frame(maxWidth: .infinity)
+
+                Button("Approve", action: onAccept)
                     .buttonStyle(.borderedProminent)
                     .tint(.providerOlive)
                     .frame(maxWidth: .infinity)
-                    .disabled(isSavingSchedule || draftHasConflict)
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(scheduledDateHeadline(for: item.requestedStart))
-                        .font(.provider(.title3, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCream)
-                    Text(scheduledTimeHeadline(for: displayStart))
-                        .font(.provider(.subheadline, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                if item.surroundingSchedule.isEmpty {
-                    Text("Schedule context unavailable for this time.")
-                        .font(.provider(.footnote))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
-                } else {
-                    VStack(spacing: 8) {
-                        ForEach(item.surroundingSchedule) { slot in
-                            ProviderRequestScheduleContextRow(item: slot)
-                        }
-                    }
-                }
-
-                HStack(spacing: 12) {
-                    Button("Edit time", action: onBeginEditSchedule)
-                        .buttonStyle(.bordered)
-                        .tint(.providerOlive)
-                        .frame(maxWidth: .infinity)
-
-                    Button(isOpeningMessage ? "Opening…" : "Message", action: onMessage)
-                        .buttonStyle(.bordered)
-                        .tint(.providerOlive)
-                        .frame(maxWidth: .infinity)
-                        .disabled(isOpeningMessage)
-                }
-
-                Divider()
-                    .overlay(Color(uiColor: ProviderAppearance.separator))
-
-                HStack(spacing: 12) {
-                    Button("Decline", role: .destructive, action: onDecline)
-                        .buttonStyle(.bordered)
-                        .frame(maxWidth: .infinity)
-
-                    Button("Approve", action: onAccept)
-                        .buttonStyle(.borderedProminent)
-                        .tint(.providerOlive)
-                        .frame(maxWidth: .infinity)
-                        .disabled(item.hasConflict)
-                }
+                    .disabled(item.hasConflict)
             }
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 14)
+        .animation(nil, value: isExpanded)
+        .transaction { transaction in
+            transaction.animation = nil
+        }
     }
 
+}
+
+// MARK: - Outlined button label
+
+private struct ProviderBlackOutlinedButtonLabel: View {
+    let text: String
+
+    private static let outlineOffsets: [CGSize] = [
+        CGSize(width: -1, height: 0), CGSize(width: 1, height: 0),
+        CGSize(width: 0, height: -1), CGSize(width: 0, height: 1),
+        CGSize(width: -1, height: -1), CGSize(width: 1, height: -1),
+        CGSize(width: -1, height: 1), CGSize(width: 1, height: 1),
+    ]
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        ZStack {
+            ForEach(Array(Self.outlineOffsets.enumerated()), id: \.offset) { _, offset in
+                Text(text)
+                    .offset(x: offset.width, y: offset.height)
+                    .foregroundStyle(.black)
+            }
+            Text(text)
+                .foregroundStyle(Color.lavaShellCream)
+        }
+    }
 }
 
 // MARK: - Timeline row

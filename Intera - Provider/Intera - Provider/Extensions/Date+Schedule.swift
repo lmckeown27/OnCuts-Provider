@@ -10,6 +10,23 @@ extension Date {
 }
 
 extension SimpleBookingDTO {
+    /// For **PENDING** bookings, a consumer reschedule request replaces the original submitted ask.
+    /// **ACCEPTED** bookings keep `scheduledTime` as confirmed until the barber approves the change.
+    var providerEffectiveScheduledTime: Date? {
+        if statusUpper == "PENDING",
+           hasPendingRescheduleRequest,
+           let proposed = pendingRescheduleRequest?.proposedScheduledTime {
+            return proposed
+        }
+        return scheduledTime
+    }
+
+    func formattedProviderEffectiveSchedule(reference: Date = .now) -> String {
+        guard let time = providerEffectiveScheduledTime else { return "Time TBD" }
+        let style = Date.FormatStyle(date: .abbreviated, time: .shortened)
+        return time.formatted(style)
+    }
+
     func formattedSchedule(reference: Date = .now) -> String {
         guard let scheduledTime else { return "Time TBD" }
         let style = Date.FormatStyle(date: .abbreviated, time: .shortened)

@@ -57,6 +57,22 @@ enum ProviderBookingStatusDisplay {
         }
     }
 
+    /// Status pill colors on booking detail (matches `BookingDetailViewController.statusPalette`).
+    static func detailPillColors(for raw: String?) -> (background: Color, foreground: Color) {
+        switch normalized(raw) {
+        case "paid", "completed":
+            return (Color(uiColor: ProviderChatDesignTokens.Color.statusGreen), .white)
+        case "accepted", "booked", "in_progress":
+            return (Color(uiColor: ProviderAppearance.olive), .white)
+        case "pending":
+            return (Color(uiColor: ProviderChatDesignTokens.Color.statusYellow), Color(white: 0.1))
+        case "cancelled", "canceled", "rejected":
+            return (Color.providerElevatedSurface, Color.lavaShellCreamSecondary)
+        default:
+            return (Color.providerElevatedSurface, Color.lavaShellCreamSecondary)
+        }
+    }
+
     /// Capsule backgrounds for booking status chips — olive + frosted glass (same family as schedule / header pills).
     static func swiftUITint(for raw: String?) -> Color {
         switch normalized(raw) {

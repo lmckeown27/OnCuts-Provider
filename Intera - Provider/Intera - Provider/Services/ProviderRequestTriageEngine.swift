@@ -49,7 +49,7 @@ enum ProviderRequestTriageEngine {
         var result: [RequestTriageItem] = []
 
         for request in pending {
-            guard let start = parseRequestedInstant(request) else {
+            guard let start = authoritativeRequestedStart(for: request, bookings: bookings) else {
                 result.append(
                     RequestTriageItem(
                         row: request,
@@ -102,24 +102,22 @@ enum ProviderRequestTriageEngine {
                 guard yyyyMMdd(scheduled, timeZone: timeZone) == dayKey else { continue }
                 let status = booking.statusUpper
                 let interval = DateInterval(start: scheduled, duration: durationSeconds)
-                let name = booking.consumerDisplayName
                 let svc = booking.serviceDisplayName
 
                 if committedStatuses.contains(status) {
                     committedIntervals.append(interval)
-                    timelineEntries.append((interval, "\(name) (\(svc))", .booked))
+                    timelineEntries.append((interval, svc, .booked))
                 } else if pendingStatuses.contains(status), !pendingBookingIds.contains(booking.id) {
-                    timelineEntries.append((interval, "Pending: \(name) (\(svc))", .proposed))
+                    timelineEntries.append((interval, svc, .proposed))
                 }
             }
 
             for other in pending where other.bookingId != request.bookingId {
-                guard let otherStart = parseRequestedInstant(other) else { continue }
+                guard let otherStart = authoritativeRequestedStart(for: other, bookings: bookings) else { continue }
                 guard yyyyMMdd(otherStart, timeZone: timeZone) == dayKey else { continue }
                 let interval = DateInterval(start: otherStart, duration: durationSeconds)
-                let name = other.customerName ?? "Customer"
                 let svc = other.serviceDisplayName
-                timelineEntries.append((interval, "Pending: \(name) (\(svc))", .proposed))
+                timelineEntries.append((interval, svc, .proposed))
             }
 
             for slot in dayAvailability.bookedSlots ?? [] {
@@ -217,15 +215,11 @@ enum ProviderRequestTriageEngine {
         timeZone: TimeZone
     ) -> RequestScheduleContextItem {
         RequestScheduleContextItem(
-            timeLabel: displayWallClockTime(from: request) ?? timeLabel(start, timeZone: timeZone),
-            title: "\(request.customerName ?? "Customer"): \(request.serviceDisplayName)",
+            timeLabel: timeLabel(start, timeZone: timeZone),
+            title: request.serviceDisplayName,
             type: .proposed,
             sortKey: start
         )
-    }
-
-    private static func displayWallClockTime(from row: BookingRequestRow) -> String? {
-        ProviderBookingScheduleParsing.displayWallClockTime(from: row)
     }
 
     private static func resolveHourWindow(
@@ -446,14 +440,17 @@ enum ProviderRequestTriageEngine {
         durationSeconds: TimeInterval
     ) -> [DateInterval] {
         var intervals: [DateInterval] = []
+        var seenBookingIds = Set<String>()
         for row in pending {
-            guard let start = parseRequestedInstant(row) else { continue }
+            guard let start = authoritativeRequestedStart(for: row, bookings: bookings) else { continue }
             guard yyyyMMdd(start, timeZone: timeZone) == dayKey else { continue }
+            seenBookingIds.insert(row.bookingId)
             intervals.append(DateInterval(start: start, duration: durationSeconds))
         }
         for booking in bookings {
             guard pendingStatuses.contains(booking.statusUpper) else { continue }
-            guard let scheduled = booking.scheduledTime else { continue }
+            guard !seenBookingIds.contains(booking.id) else { continue }
+            guard let scheduled = booking.providerEffectiveScheduledTime else { continue }
             guard yyyyMMdd(scheduled, timeZone: timeZone) == dayKey else { continue }
             intervals.append(DateInterval(start: scheduled, duration: durationSeconds))
         }
@@ -475,6 +472,19 @@ enum ProviderRequestTriageEngine {
 
     static func parseRequestedInstant(_ row: BookingRequestRow) -> Date? {
         ProviderBookingScheduleParsing.requestedInstant(from: row)
+    }
+
+    /// Prefer the live `bookings-simple` schedule when the consumer edits a pending request.
+    static func authoritativeRequestedStart(
+        for row: BookingRequestRow,
+        bookings: [SimpleBookingDTO]
+    ) -> Date? {
+        if let booking = bookings.first(where: { $0.id == row.bookingId }),
+           pendingStatuses.contains(booking.statusUpper),
+           let scheduled = booking.providerEffectiveScheduledTime {
+            return scheduled
+        }
+        return parseRequestedInstant(row)
     }
 
     // MARK: - Time helpers
