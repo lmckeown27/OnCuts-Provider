@@ -18,6 +18,8 @@ struct ProviderBusinessAnalyticsView: View {
     @State private var loadError: String?
     @State private var selectedClient: BarberClient?
 
+    @Environment(\.colorScheme) private var colorScheme
+
     private var snapshot: BarberBusinessAnalyticsSnapshot {
         let scopedBookings = ProviderBarberBusinessAnalyticsEngine.bookings(
             in: metricsTimeline,
@@ -103,10 +105,10 @@ struct ProviderBusinessAnalyticsView: View {
         .padding(4)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.06))
+                .fill(ProviderOliveChromeStyle.adminTabTrackFill(colorScheme))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+                        .strokeBorder(ProviderOliveChromeStyle.adminTabTrackStroke(colorScheme), lineWidth: 0.6)
                 )
         )
         .accessibilityElement(children: .contain)
@@ -116,18 +118,26 @@ struct ProviderBusinessAnalyticsView: View {
     private func sectionTabButton(_ item: Tab) -> some View {
         let isSelected = tab == item
         return Button {
-            tab = item
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                tab = item
+            }
         } label: {
             Text(item.rawValue)
-                .font(.provider(.subheadline, weight: isSelected ? .semibold : .regular))
-                .foregroundStyle(isSelected ? Color.lavaShellCream : Color.lavaShellCreamSecondary)
+                .font(.provider(.subheadline, weight: isSelected ? .semibold : .medium))
+                .foregroundStyle(
+                    isSelected
+                        ? ProviderOliveChromeStyle.adminTabActiveForeground(colorScheme)
+                        : ProviderOliveChromeStyle.adminTabInactiveForeground(colorScheme)
+                )
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isSelected ? Color.providerOlive.opacity(0.55) : Color.clear)
-                )
-                .contentShape(Rectangle())
+                .background {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(ProviderOliveChromeStyle.adminTabActiveFill(colorScheme))
+                    }
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])

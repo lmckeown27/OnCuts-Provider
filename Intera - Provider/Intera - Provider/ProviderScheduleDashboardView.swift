@@ -36,6 +36,8 @@ struct ProviderScheduleDashboardView: View {
     @State private var awaitingPaymentRefreshTick: Int = 0
 
     @State private var zoomScale: CGFloat = ProviderScheduleZoom.defaultScale
+    /// False while a day/minute pinch is adjusting scale — blocks accidental week/month drift.
+    @State private var scheduleZoomChangedViaPreset = true
     @State private var dayOffset = 0
     @State private var weekOffset = 0
     @State private var monthOffset = 0
@@ -248,6 +250,9 @@ struct ProviderScheduleDashboardView: View {
                 timeChangeProposal = nil
                 blockedTimeChangeConfirmationPending = false
             }
+        }
+        .onChange(of: zoomScale) { _, newScale in
+            enforcePinchOnlyScheduleZoom(newScale)
         }
         .task(id: weekTimeBlocksPrefetchToken) {
             await prefetchVisibleWeekTimeBlocksIfNeeded()
@@ -820,6 +825,7 @@ struct ProviderScheduleDashboardView: View {
         HStack(spacing: 4) {
             ForEach(ProviderScheduleZoom.Preset.allCases) { preset in
                 Button {
+                    scheduleZoomChangedViaPreset = true
                     withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
                         zoomScale = preset.targetScale
                     }
@@ -903,6 +909,9 @@ struct ProviderScheduleDashboardView: View {
                             originalTime: booking.scheduledTime ?? proposedTime,
                             proposedTime: proposedTime
                         )
+                    },
+                    onPinchZoomSessionBegan: {
+                        scheduleZoomChangedViaPreset = false
                     }
                 )
             }
@@ -1078,6 +1087,7 @@ struct ProviderScheduleDashboardView: View {
         }
 
         withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+            scheduleZoomChangedViaPreset = true
             zoomScale = ProviderScheduleZoom.defaultScale
         }
     }
@@ -1085,8 +1095,17 @@ struct ProviderScheduleDashboardView: View {
     private func openMonthViewForSelectedDay() {
         syncMonthOffset(to: selectedDay)
         withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+            scheduleZoomChangedViaPreset = true
             zoomScale = ProviderScheduleZoom.Preset.month.targetScale
         }
+    }
+
+    /// Pinch only moves between day and minute; snap back if spring/rounding lands in week/month.
+    private func enforcePinchOnlyScheduleZoom(_ newScale: CGFloat) {
+        guard !scheduleZoomChangedViaPreset else { return }
+        let corrected = ProviderScheduleZoom.clampedForPinch(newScale)
+        guard abs(corrected - newScale) > 0.0001 else { return }
+        zoomScale = corrected
     }
 
     private func syncMonthOffset(to day: Date) {

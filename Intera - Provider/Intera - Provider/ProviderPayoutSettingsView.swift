@@ -4,6 +4,7 @@ import SwiftUI
 struct ProviderPayoutSettingsView: View {
     @Environment(ProviderSession.self) private var session
     @Environment(\.openURL) private var openURL
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var connectStatus: BarberConnectStatusDTO?
     @State private var connectStatusUnknown = false
@@ -135,7 +136,11 @@ struct ProviderPayoutSettingsView: View {
                 }
             }
             .padding(14)
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16))
+            .background(Color.providerScheduleCardFill, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(Color.providerScheduleCardStroke, lineWidth: 0.6)
+            )
         }
     }
 
@@ -143,13 +148,32 @@ struct ProviderPayoutSettingsView: View {
         Button(action: action) {
             Text(title)
                 .font(.provider(.body, weight: .semibold))
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .foregroundStyle(
+                    prominent
+                        ? ProviderOliveChromeStyle.adminTabActiveForeground(colorScheme)
+                        : ProviderOliveChromeStyle.adminTabInactiveForeground(colorScheme)
+                )
+                .frame(maxWidth: .infinity)
+                .multilineTextAlignment(.center)
                 .padding(.vertical, 12)
                 .padding(.horizontal, 14)
-                .background(
-                    prominent ? Color.providerOlive.opacity(0.45) : Color.white.opacity(0.1),
-                    in: RoundedRectangle(cornerRadius: 12)
-                )
+                .background {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(
+                            prominent
+                                ? ProviderOliveChromeStyle.adminTabActiveFill(colorScheme)
+                                : ProviderOliveChromeStyle.adminTabTrackFill(colorScheme)
+                        )
+                        .overlay {
+                            if !prominent {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(
+                                        ProviderOliveChromeStyle.adminTabTrackStroke(colorScheme),
+                                        lineWidth: 0.6
+                                    )
+                            }
+                        }
+                }
         }
         .buttonStyle(.plain)
         .disabled(connectBusy != nil)

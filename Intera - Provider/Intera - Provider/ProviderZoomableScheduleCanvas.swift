@@ -36,6 +36,11 @@ enum ProviderScheduleZoom {
         Swift.max(scaleMin, Swift.min(scaleMax, scale))
     }
 
+    /// Pinch may only move between day and minute — never into week or month.
+    static func clampedForPinch(_ scale: CGFloat) -> CGFloat {
+        clamped(min(scaleMax, max(dayLower, scale)))
+    }
+
     enum Preset: CaseIterable, Identifiable {
         case month
         case week
@@ -81,9 +86,11 @@ enum ProviderScheduleZoomTier: Equatable {
 
     init(effectiveScale: CGFloat) {
         let scale = ProviderScheduleZoom.clamped(effectiveScale)
+        // Small epsilon so spring / pinch rounding at 1.5 stays in day, not week.
+        let dayThreshold = ProviderScheduleZoom.dayLower - 0.001
         if scale >= ProviderScheduleZoom.minuteLower {
             self = .minute
-        } else if scale >= ProviderScheduleZoom.dayLower {
+        } else if scale >= dayThreshold {
             self = .day
         } else if scale >= ProviderScheduleZoom.weekLower {
             self = .week
@@ -165,18 +172,25 @@ struct ProviderZoomableScheduleCanvas: View {
     @Binding var timeChangeProposal: ScheduleAppointmentTimeChangeProposal?
     var onMoveBookingRequested: (SimpleBookingDTO) -> Void = { _ in }
     var onBookingTimeChangeProposed: (SimpleBookingDTO, Date) -> Void = { _, _ in }
+    /// Called when a day/minute pinch session starts (used to block week/month scale drift).
+    var onPinchZoomSessionBegan: () -> Void = {}
 
     @State private var pinchZoomMultiplier: CGFloat = 1.0
     @State private var isPinchZoomActive = false
     @State private var pinchSessionScrollY: CGFloat = 0
     @State private var pinchSessionAnchorY: CGFloat = 0
     @State private var pinchSessionLastEffectiveScale: CGFloat = 1
+    @State private var pinchSessionKeepDayMinuteTier = false
     @State private var timelineScrollPosition = ScrollPosition()
     @State private var timelineScrollOffsetY: CGFloat = 0
     @State private var isPerformingDayScroll = false
 
     private var effectiveScale: CGFloat {
-        ProviderScheduleZoom.clamped(zoomScale * pinchZoomMultiplier)
+        let raw = ProviderScheduleZoom.clamped(zoomScale * pinchZoomMultiplier)
+        if isPinchZoomActive || pinchSessionKeepDayMinuteTier {
+            return ProviderScheduleZoom.clampedForPinch(raw)
+        }
+        return raw
     }
 
     private var tier: ProviderScheduleZoomTier {
@@ -185,7 +199,8 @@ struct ProviderZoomableScheduleCanvas: View {
 
     /// Pinch zoom is only available in day and minute tiers (preset buttons switch month/week).
     private var pinchZoomEnabled: Bool {
-        ProviderScheduleZoomTier(effectiveScale: zoomScale).supportsPinchZoom
+        if isPinchZoomActive { return pinchSessionKeepDayMinuteTier }
+        return ProviderScheduleZoomTier(effectiveScale: zoomScale).supportsPinchZoom
     }
 
     private var appointments: [ScheduleCanvasAppointment] {
@@ -253,6 +268,8 @@ struct ProviderZoomableScheduleCanvas: View {
 
     private func handlePinchZoomBegan(anchorYInViewport: CGFloat) {
         isPinchZoomActive = true
+        pinchSessionKeepDayMinuteTier = ProviderScheduleZoomTier(effectiveScale: zoomScale).supportsPinchZoom
+        onPinchZoomSessionBegan()
         pinchSessionAnchorY = anchorYInViewport
         pinchSessionScrollY = timelineScrollOffsetY
         pinchSessionLastEffectiveScale = effectiveScale
@@ -274,11 +291,14 @@ struct ProviderZoomableScheduleCanvas: View {
     private func handlePinchZoomEnded(proposedEffectiveScale: CGFloat) {
         handlePinchZoomChanged(proposedEffectiveScale: proposedEffectiveScale)
 
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
-            zoomScale = proposedEffectiveScale
-            pinchZoomMultiplier = 1.0
-            isPinchZoomActive = false
-        }
+        let resolved = pinchSessionKeepDayMinuteTier
+            ? ProviderScheduleZoom.clampedForPinch(proposedEffectiveScale)
+            : ProviderScheduleZoom.clamped(proposedEffectiveScale)
+
+        pinchZoomMultiplier = 1.0
+        isPinchZoomActive = false
+        zoomScale = resolved
+        pinchSessionKeepDayMinuteTier = false
     }
 
     private func applyPinchZoomScroll(to offsetY: CGFloat) {
@@ -562,9 +582,7 @@ struct ProviderZoomableScheduleCanvas: View {
 
     /// Keeps pinch zoom within day and minute tiers only.
     private static func clampToPinchZoomRange(_ scale: CGFloat) -> CGFloat {
-        ProviderScheduleZoom.clamped(
-            min(ProviderScheduleZoom.scaleMax, max(ProviderScheduleZoom.dayLower, scale))
-        )
+        ProviderScheduleZoom.clampedForPinch(scale)
     }
 
     private func clampedScrollMinute(_ minute: Int) -> Int {
