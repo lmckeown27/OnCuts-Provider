@@ -3,14 +3,9 @@ import SwiftUI
 struct RootView: View {
     @Environment(ProviderSession.self) private var session
 
-    private var showsHubRootBackground: Bool {
-        session.isSignedIn && !session.needsConsumerProviderEnrollment
-    }
-
     var body: some View {
         ZStack {
             InteraHubTabShellBackground()
-                .opacity(showsHubRootBackground ? 1 : 0)
             Group {
                 if session.isBootstrapping {
                     ProgressView("Loading…")

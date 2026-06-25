@@ -109,6 +109,25 @@ enum ProviderAvailabilityManagementService {
             jsonBody: ["syncEnabled": enabled]
         )
     }
+
+    static func googleCalendarBusyTimes(startDate: Date, endDate: Date) async throws -> [ProviderWeeklyScheduleBusyInterval] {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let start = formatter.string(from: startDate)
+        let end = formatter.string(from: endDate)
+        let path = "auth/google-calendar/busy-times?startDate=\(start)&endDate=\(end)"
+        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
+        struct Payload: Decodable {
+            let busyTimes: [Interval]?
+            struct Interval: Decodable {
+                let start: Date
+                let end: Date
+            }
+        }
+        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let payload = try dec.decode(Payload.self, from: data)
+        return (payload.busyTimes ?? []).map { ProviderWeeklyScheduleBusyInterval(start: $0.start, end: $0.end) }
+    }
 }
 
 // MARK: - Manage Availability prefetch

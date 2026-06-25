@@ -17,5 +17,9 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<key>UIAppFonts</key>
+	<array>
+		<string>InterVariable.ttf</string>
+	</array>
 </dict>
 </plist>

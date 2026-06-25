@@ -32,6 +32,7 @@ struct ProviderDashboardShellView: View {
                     dashboardHeaderBar
                     ProviderScheduleDashboardView()
                         .providerHubScheduleChrome()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
                 .background {
                     Color(uiColor: ProviderAppearance.shellBase)
@@ -39,18 +40,19 @@ struct ProviderDashboardShellView: View {
                 }
                 .allowsHitTesting(navigator.hubAcceptsTouches)
 
-                if let topScreen = navigator.stack.last {
+                if let overlayScreen = navigator.overlayScreen {
                     NavigationStack {
-                        pushedScreenView(topScreen)
+                        pushedScreenView(overlayScreen)
                             .providerShellNavigationDepthTracking()
                     }
-                    .id(topScreen)
+                    .id(overlayScreen.overlayIdentity)
                     .optionalProviderShellNavigatorEnvironment(navigator)
                     .providerShellNavigationContainerChrome(
                         backdrop: shellNavigationAppearance.navigationContainerBackdropStyle
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .offset(x: navigator.slideOffsetX(containerWidth: geometry.size.width))
+                    .allowsHitTesting(!navigator.isDismissingOverlay || navigator.slideProgress > 0.05)
                     .providerShellInteractiveSlide(containerWidth: geometry.size.width)
                 }
             }
@@ -420,12 +422,13 @@ struct ProviderDashboardShellView: View {
         case .route(let route):
             shellRouteDestination(route)
         case .booking(let booking):
-            BookingDetailScreen(booking: booking) {
+            BookingDetailScreen(booking: booking, showsShellBackButton: true) {
                 await MainActor.run {
                     NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
                 }
             }
             .providerPushedDestinationChrome()
+            .providerShellBackToolbar()
         }
     }
 

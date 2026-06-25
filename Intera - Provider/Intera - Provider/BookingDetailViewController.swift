@@ -228,7 +228,7 @@ final class BookingDetailViewController: UIViewController {
         setupHierarchy()
         setupConstraints()
         buildSections()
-        Task { await refreshBookingDetailsIfNeeded() }
+        scheduleDeferredRefresh()
 
         NotificationCenter.default.addObserver(
             self,
@@ -242,9 +242,12 @@ final class BookingDetailViewController: UIViewController {
         NotificationCenter.default.removeObserver(self)
     }
 
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        Task { await refreshBookingDetailsIfNeeded() }
+    /// Defers network refresh until after the shell slide-in so the page appears immediately.
+    private func scheduleDeferredRefresh() {
+        Task { @MainActor in
+            await Task.yield()
+            await refreshBookingDetailsIfNeeded()
+        }
     }
 
     @objc private func handleBookingsChangedNotification() {
@@ -293,16 +296,12 @@ final class BookingDetailViewController: UIViewController {
     }
 
     private static func mayHavePendingRescheduleRequest(_ booking: SimpleBookingDTO) -> Bool {
+        if booking.hasPendingRescheduleRequest { return true }
         guard ProviderBookingStatusDisplay.isEligibleForPendingRescheduleRequest(status: booking.status) else {
             return false
         }
-        if booking.hasPendingRescheduleRequest { return true }
-        switch booking.statusUpper {
-        case "PENDING", "ACCEPTED", "BOOKED", "IN_PROGRESS":
-            return true
-        default:
-            return false
-        }
+        // List payloads omit reschedule requests; only refetch for pending bookings.
+        return booking.statusUpper == "PENDING"
     }
 
     // MARK: - Setup
@@ -1499,15 +1498,16 @@ struct BookingDetailHost: UIViewControllerRepresentable {
     }
 }
 
-/// Booking detail screen — title is rendered in-page; navigation uses swipe-back.
+/// Booking detail screen — title is rendered in-page; shell pushes show a leading exit chevron.
 struct BookingDetailScreen: View {
     let booking: SimpleBookingDTO
+    var showsShellBackButton: Bool = false
     let onChanged: () async -> Void
 
     var body: some View {
         BookingDetailHost(booking: booking, onChanged: onChanged)
             .navigationBarBackButtonHidden(true)
-            .toolbar(.hidden, for: .navigationBar)
+            .toolbar(showsShellBackButton ? .visible : .hidden, for: .navigationBar)
     }
 }
 

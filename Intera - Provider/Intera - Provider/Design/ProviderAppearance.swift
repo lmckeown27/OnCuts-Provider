@@ -187,4 +187,18 @@ extension Color {
     static var providerScheduleCardStroke: Color { Color(uiColor: ProviderAppearance.scheduleCardStroke) }
     static var providerScheduleControlFill: Color { Color(uiColor: ProviderAppearance.scheduleControlFill) }
     static var providerScheduleControlStroke: Color { Color(uiColor: ProviderAppearance.scheduleControlStroke) }
+
+    /// Web parity: `bg-white` schedule action pills (`Edit Schedule`, `Block Time`).
+    static var providerScheduleActionBackground: Color { .white }
+    /// Web parity: `text-gray-700`.
+    static var providerScheduleActionForeground: Color { Color(red: 55 / 255, green: 65 / 255, blue: 81 / 255) }
+    /// Web parity: `border-gray-300`.
+    static var providerScheduleActionBorder: Color { Color(red: 209 / 255, green: 213 / 255, blue: 219 / 255) }
+
+    /// Web parity: schedule day header `bg-gray-100`.
+    static var providerScheduleDayHeaderFill: Color { Color(red: 243 / 255, green: 244 / 255, blue: 246 / 255) }
+    /// Web parity: schedule day header `text-gray-700`.
+    static var providerScheduleDayHeaderForeground: Color { Color(red: 55 / 255, green: 65 / 255, blue: 81 / 255) }
+    /// Web parity: today column `bg-gray-900`.
+    static var providerScheduleDayHeaderTodayFill: Color { Color(red: 17 / 255, green: 24 / 255, blue: 39 / 255) }
 }

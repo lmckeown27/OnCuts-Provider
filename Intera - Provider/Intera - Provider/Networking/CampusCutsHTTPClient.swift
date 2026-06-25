@@ -122,14 +122,8 @@ enum CampusCutsHTTPClient {
                     DecodingError.Context(codingPath: dec.codingPath, debugDescription: "Unexpected null date")
                 )
             }
-            if let s = try? c.decode(String.self) {
-                if let parsed = ProviderBookingScheduleParsing.parseAPIDateString(s) {
-                    return parsed
-                }
-                throw DecodingError.dataCorruptedError(in: c, debugDescription: "Bad date \(s)")
-            }
-            if let ms = try? c.decode(Double.self) {
-                return Date(timeIntervalSince1970: ms / (ms > 1_000_000_000_000 ? 1000 : 1))
+            if let parsed = ProviderBookingScheduleParsing.decodeFlexibleOptionalDate(from: c) {
+                return parsed
             }
             throw DecodingError.dataCorruptedError(in: c, debugDescription: "Unsupported date encoding")
         }

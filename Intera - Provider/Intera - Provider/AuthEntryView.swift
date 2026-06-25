@@ -5,6 +5,7 @@ import SwiftUI
 /// Landing: **Sign in manually** (pushed email/password), Apple & Google as side-by-side pills, **Create account** for barber registration.
 struct AuthEntryView: View {
     @Environment(ProviderSession.self) private var session
+    @Environment(\.colorScheme) private var colorScheme
     @State private var authPath = NavigationPath()
 
     @State private var email = ""
@@ -71,6 +72,9 @@ struct AuthEntryView: View {
         case confirmPassword
         case verificationCode
     }
+
+    /// Keeps sign-in controls compact and centered on all screen sizes.
+    private let authControlMaxWidth: CGFloat = 300
 
     var body: some View {
         NavigationStack(path: $authPath) {
@@ -139,13 +143,13 @@ struct AuthEntryView: View {
                         .padding(.horizontal, 18)
                         .padding(.vertical, 16)
                         .frame(maxWidth: .infinity)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .background { authSecondaryButtonBackground(cornerRadius: 16) }
                     }
                     .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: authControlMaxWidth)
 
                     oauthPillRow
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: authControlMaxWidth)
 
                     Button {
                         errorText = nil
@@ -156,10 +160,10 @@ struct AuthEntryView: View {
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .background { authSecondaryButtonBackground(cornerRadius: 16) }
                     }
                     .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: authControlMaxWidth)
 
                     if authPath.isEmpty, let errorText {
                         Text(errorText)
@@ -737,5 +741,20 @@ struct AuthEntryView: View {
             for: nil
         )
         #endif
+    }
+
+    @ViewBuilder
+    private func authSecondaryButtonBackground(cornerRadius: CGFloat) -> some View {
+        if colorScheme == .dark {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.ultraThinMaterial)
+        } else {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.providerScheduleCardFill)
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Color.providerScheduleCardStroke, lineWidth: 0.6)
+                )
+        }
     }
 }

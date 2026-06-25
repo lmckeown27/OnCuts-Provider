@@ -7,6 +7,15 @@ import UIKit
 enum ProviderShellScreen: Hashable {
     case route(ProviderShellRoute)
     case booking(SimpleBookingDTO)
+
+    var overlayIdentity: String {
+        switch self {
+        case .route(let route):
+            return "route-\(route)"
+        case .booking(let booking):
+            return "booking-\(booking.id)"
+        }
+    }
 }
 
 enum ProviderShellNavigationDirection {
@@ -17,13 +26,15 @@ enum ProviderShellNavigationDirection {
 @MainActor
 @Observable
 final class ProviderShellNavigator {
-    static let transitionDuration: TimeInterval = 0.25
+    static let transitionDuration: TimeInterval = 0.2
 
     static var transitionAnimation: Animation {
-        .easeInOut(duration: transitionDuration)
+        .easeOut(duration: transitionDuration)
     }
 
     private(set) var stack: [ProviderShellScreen] = []
+    /// Screen animating off-screen after the stack has already popped (keeps the hub responsive).
+    private(set) var dismissingScreen: ProviderShellScreen?
     private(set) var direction: ProviderShellNavigationDirection = .forward
     /// `0` = pushed layer off-screen trailing; `1` = fully covering the hub.
     private(set) var slideProgress: CGFloat = 0
@@ -34,8 +45,26 @@ final class ProviderShellNavigator {
     /// Messages inbox → conversation trail (stored here so shell re-renders do not reset navigation).
     var messagesDetailPath: [Int] = []
 
-    var isHub: Bool { stack.isEmpty && slideProgress < 0.01 && !isInteractiveDragging }
-    var hubAcceptsTouches: Bool { stack.isEmpty && slideProgress < 0.01 && !isInteractiveDragging }
+    var isHub: Bool {
+        stack.isEmpty && dismissingScreen == nil && slideProgress < 0.01 && !isInteractiveDragging
+    }
+
+    var hubAcceptsTouches: Bool {
+        guard !isInteractiveDragging, stack.isEmpty else { return false }
+        if dismissingScreen != nil {
+            return slideProgress < 0.05
+        }
+        return slideProgress < 0.01
+    }
+
+    /// Active pushed layer — includes a screen that is mid-dismiss animation.
+    var overlayScreen: ProviderShellScreen? {
+        stack.last ?? dismissingScreen
+    }
+
+    var isDismissingOverlay: Bool {
+        dismissingScreen != nil && stack.isEmpty
+    }
 
     private let appearance = ProviderShellNavigationAppearance.shared
 
@@ -98,17 +127,7 @@ final class ProviderShellNavigator {
 
         if shouldDismiss {
             direction = .backward
-            withAnimation(Self.interactiveSnapAnimation) {
-                slideProgress = 0
-            }
-            slideAnimationTask = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(Self.transitionDuration))
-                guard !Task.isCancelled else { return }
-                if !stack.isEmpty {
-                    stack.removeLast()
-                }
-                syncAppearanceAfterStackChange()
-            }
+            commitSlideOut()
         } else {
             direction = .forward
             withAnimation(Self.interactiveSnapAnimation) {
@@ -181,10 +200,9 @@ final class ProviderShellNavigator {
     private func beginSlideIn() {
         slideAnimationTask?.cancel()
         isInteractiveDragging = false
+        dismissingScreen = nil
         slideProgress = 0
-        slideAnimationTask = Task { @MainActor in
-            await Task.yield()
-            guard !Task.isCancelled, !isInteractiveDragging else { return }
+        DispatchQueue.main.async { [self] in
             withAnimation(Self.transitionAnimation) {
                 slideProgress = 1
             }
@@ -192,17 +210,28 @@ final class ProviderShellNavigator {
     }
 
     private func beginSlideOut() {
+        guard !stack.isEmpty else { return }
+        direction = .backward
+        animateSlideOut(exiting: stack.removeLast(), animation: Self.transitionAnimation)
+    }
+
+    private func commitSlideOut() {
+        guard !stack.isEmpty else { return }
+        direction = .backward
+        animateSlideOut(exiting: stack.removeLast(), animation: Self.interactiveSnapAnimation)
+    }
+
+    private func animateSlideOut(exiting: ProviderShellScreen, animation: Animation) {
         slideAnimationTask?.cancel()
         isInteractiveDragging = false
-        withAnimation(Self.transitionAnimation) {
+        dismissingScreen = exiting
+        withAnimation(animation) {
             slideProgress = 0
         }
         slideAnimationTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(Self.transitionDuration))
             guard !Task.isCancelled else { return }
-            if !stack.isEmpty {
-                stack.removeLast()
-            }
+            dismissingScreen = nil
             syncAppearanceAfterStackChange()
         }
     }

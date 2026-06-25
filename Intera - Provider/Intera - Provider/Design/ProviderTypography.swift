@@ -1,34 +1,40 @@
+import CoreText
 import SwiftUI
 import UIKit
 
-/// App-wide Clarendon typography (Super Clarendon on iOS).
+/// App-wide Inter Variable typography.
 enum ProviderTypography {
-    enum Clarendon {
-        static let regular = "Superclarendon-Regular"
-        static let light = "Superclarendon-Light"
-        static let bold = "Superclarendon-Bold"
-        static let black = "Superclarendon-Black"
-        static let italic = "Superclarendon-Italic"
+    enum InterVariable {
+        /// PostScript name from bundled `InterVariable.ttf`.
+        static let postScriptName = "InterVariable"
     }
+
+    private static let variationAttribute = UIFontDescriptor.AttributeName(
+        rawValue: kCTFontVariationAttribute as String
+    )
 
     // MARK: - SwiftUI
 
     static func font(_ style: Font.TextStyle, weight: Font.Weight = .regular) -> Font {
-        .custom(swiftFaceName(for: weight), size: swiftSize(for: style), relativeTo: style)
+        font(size: swiftSize(for: style), weight: weight, relativeTo: style)
     }
 
     static func font(size: CGFloat, weight: Font.Weight = .regular, relativeTo style: Font.TextStyle = .body) -> Font {
-        .custom(swiftFaceName(for: weight), size: size, relativeTo: style)
+        Font.custom(InterVariable.postScriptName, size: size, relativeTo: style)
+            .weight(weight)
     }
 
     // MARK: - UIKit
 
     static func uiFont(size: CGFloat, weight: UIFont.Weight = .regular, textStyle: UIFont.TextStyle = .body) -> UIFont {
-        let face = uiFaceName(for: weight)
-        guard let base = UIFont(name: face, size: size) else {
+        guard let base = UIFont(name: InterVariable.postScriptName, size: size) else {
             return UIFont.systemFont(ofSize: size, weight: weight)
         }
-        return UIFontMetrics(forTextStyle: textStyle).scaledFont(for: base)
+        let descriptor = base.fontDescriptor.addingAttributes([
+            variationAttribute: ["wght": wghtAxis(for: weight)],
+        ])
+        let font = UIFont(descriptor: descriptor, size: size)
+        return UIFontMetrics(forTextStyle: textStyle).scaledFont(for: font)
     }
 
     static func preferredUIFont(forTextStyle style: UIFont.TextStyle, weight: UIFont.Weight = .regular) -> UIFont {
@@ -78,29 +84,31 @@ enum ProviderTypography {
 
     // MARK: - Private
 
-    private static func swiftFaceName(for weight: Font.Weight) -> String {
+    private static func wghtAxis(for weight: Font.Weight) -> CGFloat {
         switch weight {
-        case .ultraLight, .thin, .light:
-            return Clarendon.light
-        case .semibold, .bold, .heavy:
-            return Clarendon.bold
-        case .black:
-            return Clarendon.black
-        default:
-            return Clarendon.regular
+        case .ultraLight, .thin: return 200
+        case .light: return 300
+        case .regular: return 400
+        case .medium: return 500
+        case .semibold: return 600
+        case .bold: return 700
+        case .heavy: return 800
+        case .black: return 900
+        default: return 400
         }
     }
 
-    private static func uiFaceName(for weight: UIFont.Weight) -> String {
+    private static func wghtAxis(for weight: UIFont.Weight) -> CGFloat {
         switch weight {
-        case .ultraLight, .thin, .light:
-            return Clarendon.light
-        case .semibold, .bold, .heavy:
-            return Clarendon.bold
-        case .black:
-            return Clarendon.black
-        default:
-            return Clarendon.regular
+        case .ultraLight, .thin: return 200
+        case .light: return 300
+        case .regular: return 400
+        case .medium: return 500
+        case .semibold: return 600
+        case .bold: return 700
+        case .heavy: return 800
+        case .black: return 900
+        default: return 400
         }
     }
 

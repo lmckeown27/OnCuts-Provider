@@ -173,10 +173,37 @@ struct BarberPricingEntryDTO: Decodable, Hashable {
 struct BookingsSimpleListEnvelope: Decodable {
     let success: Bool?
     let data: BookingsSimpleListData?
+    let bookings: [SimpleBookingDTO]?
+
+    var resolvedBookings: [SimpleBookingDTO] {
+        data?.bookings ?? bookings ?? []
+    }
 }
 
 struct BookingsSimpleListData: Decodable {
     let bookings: [SimpleBookingDTO]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        var decoded: [SimpleBookingDTO] = []
+        if var array = try? container.nestedUnkeyedContainer(forKey: .bookings) {
+            while !array.isAtEnd {
+                let itemDecoder = try array.superDecoder()
+                do {
+                    decoded.append(try SimpleBookingDTO(from: itemDecoder))
+                } catch {
+                    #if DEBUG
+                    print("[BookingsSimpleListData] Skipped booking decode: \(error)")
+                    #endif
+                }
+            }
+        }
+        bookings = decoded
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case bookings
+    }
 }
 
 struct BookingSimpleDetailEnvelope: Decodable {
@@ -258,6 +285,52 @@ struct SimpleBookingReview: Decodable, Hashable {
     let rating: Double?
     let comment: String?
     let reviewedAt: Date?
+
+    init(rating: Double?, comment: String?, reviewedAt: Date?) {
+        self.rating = rating
+        self.comment = comment
+        self.reviewedAt = reviewedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        rating = Self.decodeFlexibleRating(from: container)
+        comment = try container.decodeIfPresent(String.self, forKey: .comment)
+        reviewedAt = Self.decodeFlexibleReviewedAt(from: container)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case rating
+        case comment
+        case reviewedAt
+    }
+
+    private static func decodeFlexibleRating(
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) -> Double? {
+        if let value = try? container.decodeIfPresent(Double.self, forKey: .rating) {
+            return value
+        }
+        if let string = try? container.decodeIfPresent(String.self, forKey: .rating),
+           let parsed = Double(string.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            return parsed
+        }
+        if let intValue = try? container.decodeIfPresent(Int.self, forKey: .rating) {
+            return Double(intValue)
+        }
+        return nil
+    }
+
+    /// `reviewedAt` occasionally arrives in legacy/non-ISO shapes; never fail the whole booking for it.
+    private static func decodeFlexibleReviewedAt(
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) -> Date? {
+        guard container.contains(.reviewedAt) else { return nil }
+        guard let nested = try? container.superDecoder(forKey: .reviewedAt) else { return nil }
+        let single = try? nested.singleValueContainer()
+        guard let single else { return nil }
+        return ProviderBookingScheduleParsing.decodeFlexibleOptionalDate(from: single)
+    }
 }
 
 /// Consumer-proposed schedule change awaiting barber approval (`booking_reschedule_requests`).
@@ -289,8 +362,8 @@ struct BookingPendingRescheduleRequestDTO: Decodable, Hashable {
         status = try container.decodeIfPresent(String.self, forKey: .status)
         proposedLocation = try container.decodeIfPresent(String.self, forKey: .proposedLocation)
         proposedNotes = try container.decodeIfPresent(String.self, forKey: .proposedNotes)
-        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
-        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        createdAt = ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .createdAt)
+        updatedAt = ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .updatedAt)
 
         let raw =
             Self.decodeFlexibleString(from: container, forKey: .proposedScheduledTime)
@@ -379,6 +452,108 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
     let barberName: String?
     /// Thread tied to this booking (`conversations.booking_id`), when one exists.
     let conversationId: Int?
+
+    init(
+        id: String,
+        consumerId: String?,
+        barberId: String?,
+        serviceType: String?,
+        priceUsdCents: Int?,
+        scheduledTime: Date?,
+        status: String?,
+        location: String?,
+        notes: String?,
+        serviceName: String?,
+        review: SimpleBookingReview?,
+        paidAt: Date?,
+        paymentRequestedAt: Date?,
+        tipAmountCents: Int?,
+        totalPaidCents: Int?,
+        paymentMethod: String?,
+        pendingRescheduleRequest: BookingPendingRescheduleRequestDTO?,
+        consumer: SimpleBookingConsumer?,
+        consumerName: String?,
+        barber: SimpleBookingConsumer?,
+        barberName: String?,
+        conversationId: Int?
+    ) {
+        self.id = id
+        self.consumerId = consumerId
+        self.barberId = barberId
+        self.serviceType = serviceType
+        self.priceUsdCents = priceUsdCents
+        self.scheduledTime = scheduledTime
+        self.status = status
+        self.location = location
+        self.notes = notes
+        self.serviceName = serviceName
+        self.review = review
+        self.paidAt = paidAt
+        self.paymentRequestedAt = paymentRequestedAt
+        self.tipAmountCents = tipAmountCents
+        self.totalPaidCents = totalPaidCents
+        self.paymentMethod = paymentMethod
+        self.pendingRescheduleRequest = pendingRescheduleRequest
+        self.consumer = consumer
+        self.consumerName = consumerName
+        self.barber = barber
+        self.barberName = barberName
+        self.conversationId = conversationId
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try ProviderAPIFlexibleDecoding.requiredString(from: container, forKey: .id)
+        consumerId = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .consumerId)
+        barberId = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .barberId)
+        serviceType = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .serviceType)
+        priceUsdCents = ProviderAPIFlexibleDecoding.optionalInt(from: container, forKey: .priceUsdCents)
+        scheduledTime = ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .scheduledTime)
+        status = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .status)
+        location = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .location)
+        notes = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .notes)
+        serviceName = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .serviceName)
+        review = try? container.decodeIfPresent(SimpleBookingReview.self, forKey: .review)
+        paidAt = ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .paidAt)
+        paymentRequestedAt = ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .paymentRequestedAt)
+        tipAmountCents = ProviderAPIFlexibleDecoding.optionalInt(from: container, forKey: .tipAmountCents)
+        totalPaidCents = ProviderAPIFlexibleDecoding.optionalInt(from: container, forKey: .totalPaidCents)
+        paymentMethod = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .paymentMethod)
+        pendingRescheduleRequest = try? container.decodeIfPresent(
+            BookingPendingRescheduleRequestDTO.self,
+            forKey: .pendingRescheduleRequest
+        )
+        consumer = try? container.decodeIfPresent(SimpleBookingConsumer.self, forKey: .consumer)
+        consumerName = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .consumerName)
+        barber = try? container.decodeIfPresent(SimpleBookingConsumer.self, forKey: .barber)
+        barberName = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .barberName)
+        conversationId = ProviderAPIFlexibleDecoding.optionalInt(from: container, forKey: .conversationId)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case consumerId
+        case barberId
+        case serviceType
+        case priceUsdCents
+        case scheduledTime
+        case status
+        case location
+        case notes
+        case serviceName
+        case review
+        case paidAt
+        case paymentRequestedAt
+        case tipAmountCents
+        case totalPaidCents
+        case paymentMethod
+        case pendingRescheduleRequest
+        case consumer
+        case consumerName
+        case barber
+        case barberName
+        case conversationId
+    }
 
     var consumerDisplayName: String {
         if let flat = consumerName?.trimmingCharacters(in: .whitespacesAndNewlines), !flat.isEmpty {

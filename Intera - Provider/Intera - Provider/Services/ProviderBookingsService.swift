@@ -10,7 +10,17 @@ enum ProviderBookingsService {
         let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
         let dec = CampusCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(BookingsSimpleListEnvelope.self, from: data)
-        return env.data?.bookings ?? []
+        let bookings = env.resolvedBookings
+        #if DEBUG
+        if bookings.isEmpty,
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let dataObj = json["data"] as? [String: Any],
+           let raw = dataObj["bookings"] as? [Any],
+           !raw.isEmpty {
+            print("[ProviderBookingsService] Decoded 0 bookings but API returned \(raw.count).")
+        }
+        #endif
+        return bookings
     }
 
     static func fetchBooking(id: String) async throws -> SimpleBookingDTO {

@@ -67,11 +67,54 @@ enum ProviderBookingScheduleParsing {
             return d
         }
 
+        // Node/Postgres sometimes emits naive ISO-8601 without a timezone suffix.
+        let naiveISO = DateFormatter()
+        naiveISO.locale = Locale(identifier: "en_US_POSIX")
+        naiveISO.timeZone = TimeZone(secondsFromGMT: 0)
+        for format in ["yyyy-MM-dd'T'HH:mm:ss.SSS", "yyyy-MM-dd'T'HH:mm:ss"] {
+            naiveISO.dateFormat = format
+            if let d = naiveISO.date(from: trimmed) { return d }
+        }
+
         if let ms = Double(trimmed), ms > 1_000_000_000_000 {
             return Date(timeIntervalSince1970: ms / 1000)
         }
 
         return nil
+    }
+
+    /// Best-effort decode for optional API date fields that may arrive as strings, epoch numbers, or legacy object wrappers.
+    static func decodeFlexibleOptionalDate(from container: SingleValueDecodingContainer) -> Date? {
+        if (try? container.decodeNil()) == true { return nil }
+
+        if let string = try? container.decode(String.self) {
+            return parseAPIDateString(string)
+        }
+        if let seconds = try? container.decode(Double.self) {
+            return dateFromEpochNumber(seconds)
+        }
+        if let seconds = try? container.decode(Int.self) {
+            return dateFromEpochNumber(TimeInterval(seconds))
+        }
+        if let seconds = try? container.decode(Int64.self) {
+            return dateFromEpochNumber(TimeInterval(seconds))
+        }
+        if let wrapped = try? container.decode([String: String].self) {
+            for key in ["value", "date", "$date", "iso", "timestamp"] {
+                if let raw = wrapped[key], let parsed = parseAPIDateString(raw) {
+                    return parsed
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private static func dateFromEpochNumber(_ raw: TimeInterval) -> Date {
+        if raw > 1_000_000_000_000 {
+            return Date(timeIntervalSince1970: raw / 1000)
+        }
+        return Date(timeIntervalSince1970: raw)
     }
 
     /// Resolves the consumer's requested appointment instant from a pending request row.
