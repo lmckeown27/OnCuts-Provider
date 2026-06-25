@@ -171,7 +171,7 @@ struct ProviderZoomableScheduleCanvas: View {
     @Binding var activeMoveDragBookingID: String?
     @Binding var timeChangeProposal: ScheduleAppointmentTimeChangeProposal?
     var onMoveBookingRequested: (SimpleBookingDTO) -> Void = { _ in }
-    var onBookingTimeChangeProposed: (SimpleBookingDTO, Date) -> Void = { _, _ in }
+    var onBookingTimeChangeProposed: (SimpleBookingDTO, Date, Bool) -> Void = { _, _, _ in }
     /// Called when a day/minute pinch session starts (used to block week/month scale drift).
     var onPinchZoomSessionBegan: () -> Void = {}
 
@@ -421,13 +421,6 @@ struct ProviderZoomableScheduleCanvas: View {
         .onChange(of: selectedDay) { _, _ in
             guard pendingScrollToBookingID != nil else { return }
             Task { await performPendingDayScroll() }
-        }
-        .onChange(of: editingMoveBookingID) { oldID, newID in
-            guard oldID == nil, let newID, let app = appointments.first(where: { $0.id == newID }) else { return }
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(80))
-                scrollToFocusedBooking(for: app)
-            }
         }
     }
 
@@ -732,6 +725,8 @@ struct ScheduleAppointmentTimeChangeProposal: Identifiable {
     let booking: SimpleBookingDTO
     let originalTime: Date
     let proposedTime: Date
+    /// True when the user's finger is over a slot before the current date/time (card may snap forward visually).
+    var targetsPastTime: Bool = false
 }
 
 private enum ScheduleTimelineDragLayout {
@@ -765,6 +760,18 @@ enum ScheduleAppointmentDrag {
     static func snapMinute(_ minute: Int, step: Int) -> Int {
         guard step > 1 else { return minute }
         return ((minute + step / 2) / step) * step
+    }
+
+    /// Whether a dragged appointment may be saved at the proposed time.
+    static func isSaveEligibleMove(
+        proposed: Date,
+        original: Date,
+        targetsPast: Bool = false,
+        now: Date = .now
+    ) -> Bool {
+        guard !targetsPast else { return false }
+        guard proposed.timeIntervalSince(now) > -30 else { return false }
+        return abs(proposed.timeIntervalSince(original)) > 30
     }
 }
 
@@ -831,7 +838,7 @@ private struct SchedulePreciseTimelineCanvas: View {
     let onMoveBookingRequested: (SimpleBookingDTO) -> Void
     let onBookingTap: (SimpleBookingDTO) -> Void
     let onAvailableMinuteTap: (Int) -> Void
-    let onBookingTimeChangeProposed: (SimpleBookingDTO, Date) -> Void
+    let onBookingTimeChangeProposed: (SimpleBookingDTO, Date, Bool) -> Void
     let onBookingDropScroll: (ScheduleCanvasAppointment, CGFloat) -> Void
     let viewportHeight: CGFloat
     let canScrollTimelineUp: () -> Bool
@@ -910,7 +917,7 @@ private struct SchedulePreciseTimelineCanvas: View {
             let end = minutesFromHHMM(interval.end)
             if end > start, let y = timelineLayout.contentY(forMinute: start) {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color.providerOlive.opacity(0.08))
+                    .fill(Color.providerScheduleTodayColumnHighlight)
                     .frame(height: CGFloat(end - start) * verticalScale)
                     .offset(x: 52, y: y)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1368,7 +1375,7 @@ private struct SchedulePreciseTimelineCanvas: View {
 
         activeMoveDragBookingID = nil
         onBookingDropScroll(app, clampedOffsetY)
-        onBookingTimeChangeProposed(app.booking, proposedDate)
+        onBookingTimeChangeProposed(app.booking, proposedDate, false)
         return true
     }
 
@@ -1656,13 +1663,13 @@ private struct SchedulePreciseTimelineCanvas: View {
         }
 
         if ProviderBookingStatusDisplay.isScheduleCompleted(status: booking.status) {
-            return Color.green.opacity(isParkedForMove ? 0.38 : 0.32)
+            return Color.providerScheduleCompletedAppointmentFill
         }
         if ProviderBookingStatusDisplay.isScheduleBooked(status: booking.status) {
-            return Color.providerOlive.opacity(isParkedForMove ? 0.52 : 0.44)
+            return Color.providerScheduleUpcomingAppointmentFill
         }
         if isParkedForMove {
-            return Color.providerOlive.opacity(0.38)
+            return Color.providerScheduleUpcomingAppointmentFill.opacity(0.75)
         }
         return Color.providerScheduleCardFill
     }

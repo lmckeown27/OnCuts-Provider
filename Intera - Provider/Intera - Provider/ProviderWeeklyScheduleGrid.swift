@@ -9,11 +9,11 @@ struct ProviderWeeklyScheduleGrid: View {
     let viewportHeight: CGFloat?
     var appointmentDragEnabled: Bool = false
     @Binding var editingMoveBookingID: String?
-    @Binding var activeMoveDragBookingID: String?
     let onUnblockTime: (_ blockId: String) -> Void
     let onViewBooking: (SimpleBookingDTO) -> Void
     let onMoveBookingRequested: (SimpleBookingDTO) -> Void
-    let onBookingTimeChangeProposed: (SimpleBookingDTO, Date) -> Void
+    let onBookingTimeChangeProposed: (SimpleBookingDTO, Date, Bool) -> Void
+    let onBookingMoveProposalCleared: () -> Void
 
     @State private var didInitialScroll = false
     @State private var horizontalScrollOffset: CGFloat = 0
@@ -34,7 +34,8 @@ struct ProviderWeeklyScheduleGrid: View {
             model: model,
             calendar: calendar,
             dayColumnWidth: dayColumnWidth,
-            positionedBookings: positionedBookings
+            positionedBookings: positionedBookings,
+            earliestBookableDate: .now
         )
     }
 
@@ -69,7 +70,7 @@ struct ProviderWeeklyScheduleGrid: View {
 
     private var pinnedDayHeaderRow: some View {
         HStack(spacing: 0) {
-            Color.white
+            Color.providerScheduleGridBackground
                 .frame(width: ProviderWeeklyScheduleGridMetrics.timeGutterWidth)
             ZStack(alignment: .leading) {
                 dayHeaderRow
@@ -79,7 +80,7 @@ struct ProviderWeeklyScheduleGrid: View {
             .clipped()
         }
         .padding(.bottom, 4)
-        .background(Color.white)
+        .background(Color.providerScheduleGridBackground)
     }
 
     private var dayHeaderRow: some View {
@@ -109,7 +110,9 @@ struct ProviderWeeklyScheduleGrid: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
         .foregroundStyle(
-            day.isToday ? Color.white : Color.providerScheduleDayHeaderForeground
+            day.isToday
+                ? Color.providerScheduleDayHeaderTodayForeground
+                : Color.providerScheduleDayHeaderForeground
         )
         .background {
             UnevenRoundedRectangle(
@@ -173,17 +176,6 @@ struct ProviderWeeklyScheduleGrid: View {
                                     scrollToInitialPosition(proxy: verticalProxy)
                                 }
                             }
-                            .onChange(of: editingMoveBookingID) { _, newID in
-                                guard let newID,
-                                      let positioned = positionedBookings.first(where: { $0.booking.id == newID })
-                                else { return }
-                                scrollToBookingForMove(
-                                    positioned: positioned,
-                                    verticalProxy: verticalProxy,
-                                    horizontalProxy: horizontalProxy,
-                                    daysViewportWidth: daysViewportWidth
-                                )
-                            }
                     }
                 }
             }
@@ -231,10 +223,10 @@ struct ProviderWeeklyScheduleGrid: View {
                         viewportHeight: resolvedGridHeight,
                         appointmentDragEnabled: appointmentDragEnabled,
                         editingMoveBookingID: $editingMoveBookingID,
-                        activeMoveDragBookingID: $activeMoveDragBookingID,
                         onMoveBookingRequested: onMoveBookingRequested,
                         onViewBooking: onViewBooking,
-                        onBookingTimeChangeProposed: onBookingTimeChangeProposed
+                        onBookingTimeChangeProposed: onBookingTimeChangeProposed,
+                        onBookingMoveProposalCleared: onBookingMoveProposalCleared
                     )
                 }
             }
@@ -279,30 +271,13 @@ struct ProviderWeeklyScheduleGrid: View {
             }
         }
         .frame(width: ProviderWeeklyScheduleGridMetrics.timeGutterWidth)
-        .background(Color.white)
-    }
-
-    private func scrollToBookingForMove(
-        positioned: ProviderWeeklyScheduleGridPositionedBooking,
-        verticalProxy: ScrollViewProxy,
-        horizontalProxy: ScrollViewProxy,
-        daysViewportWidth: CGFloat
-    ) {
-        guard model.timeRows.indices.contains(positioned.startRowIndex) else { return }
-        let rowMin = model.timeRows[positioned.startRowIndex]
-        let dayScrollID = model.weekDays[positioned.dayIndex].id
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-            withAnimation(.easeInOut(duration: 0.25)) {
-                verticalProxy.scrollTo("row-\(rowMin)", anchor: .center)
-                horizontalProxy.scrollTo(dayScrollID, anchor: .center)
-            }
-        }
+        .background(Color.providerScheduleGridBackground)
     }
 
     private func dayColumn(dayIndex: Int, day: ProviderWeeklyScheduleDayColumn) -> some View {
         ZStack(alignment: .topLeading) {
             if day.isToday {
-                Color.providerOlive.opacity(0.08)
+                Color.providerScheduleTodayColumnHighlight
             }
             VStack(spacing: 0) {
                 ForEach(Array(model.timeRows.enumerated()), id: \.offset) { rowIndex, slotStartMin in
@@ -337,23 +312,7 @@ struct ProviderWeeklyScheduleGrid: View {
         let startHHMM = ProviderWeeklyScheduleGridEngine.hhmm(from: slotStartMin)
         let endHHMM = ProviderWeeklyScheduleGridEngine.hhmm(from: slotEndMin)
 
-        let background = Rectangle()
-            .fill(fillColor(for: cell.status))
-            .overlay {
-                if showsSlotCrossOut(for: cell.status) {
-                    ProviderScheduleDiagonalCrossOut(
-                        lineColor: slotCrossOutLineColor(for: cell.status)
-                    )
-                }
-            }
-            .overlay(alignment: .top) {
-                if isHourLine {
-                    Rectangle()
-                        .fill(Color.providerScheduleTrackStroke.opacity(0.55))
-                        .frame(height: 0.5)
-                }
-            }
-            .frame(height: ProviderWeeklyScheduleGridMetrics.rowHeight)
+        let background = slotBackground(for: cell, isHourLine: isHourLine)
 
         if cell.status == .blocked {
             Button {
@@ -433,40 +392,56 @@ struct ProviderWeeklyScheduleGrid: View {
 
     // MARK: - Styling
 
-    private var openColor: Color { Color.providerOlive.opacity(0.55) }
-    private var bookedColor: Color { Color.providerBrandAccent.opacity(0.75) }
-    private var blockedColor: Color { Color.red.opacity(0.55) }
-    private var googleColor: Color { Color.cyan.opacity(0.45) }
+    private var openColor: Color { Color.providerScheduleOpenSlotFill }
+    private var blockedColor: Color { Color.providerScheduleBlockedSlotFill }
     private var unavailableColor: Color { Color.providerScheduleCardFill.opacity(0.35) }
 
-    private func showsSlotCrossOut(for status: ProviderWeeklyScheduleSlotStatus) -> Bool {
-        switch status {
-        case .blocked, .google:
-            true
-        case .unavailable, .open, .booked:
-            false
-        }
-    }
-
-    private func slotCrossOutLineColor(for status: ProviderWeeklyScheduleSlotStatus) -> Color {
-        switch status {
+    private func fillColor(for cell: ProviderWeeklyScheduleGridCell) -> Color {
+        switch cell.status {
+        case .unavailable:
+            return unavailableColor
+        case .open:
+            return openColor
+        case .booked:
+            if let booking = cell.booking {
+                return booking.scheduleAppointmentFillColor
+            }
+            return Color.providerScheduleUpcomingAppointmentFill
         case .blocked:
-            Color.lavaShellCreamSecondary.opacity(0.38)
+            return blockedColor
         case .google:
-            Color.lavaShellCreamSecondary.opacity(0.32)
-        case .unavailable, .open, .booked:
-            Color.clear
+            return Color.clear
         }
     }
 
-    private func fillColor(for status: ProviderWeeklyScheduleSlotStatus) -> Color {
-        switch status {
-        case .unavailable: unavailableColor
-        case .open: openColor
-        case .booked: bookedColor
-        case .blocked: blockedColor
-        case .google: googleColor
+    @ViewBuilder
+    private func slotBackground(
+        for cell: ProviderWeeklyScheduleGridCell,
+        isHourLine: Bool
+    ) -> some View {
+        Group {
+            if cell.status == .google {
+                ProviderScheduleCrossOutOverlay(cornerRadius: 0, showsBorder: false)
+            } else {
+                Rectangle()
+                    .fill(fillColor(for: cell))
+                    .overlay {
+                        if cell.status == .blocked {
+                            ProviderScheduleDiagonalCrossOut(
+                                lineColor: Color.providerScheduleDiagonalCrossOutLineBlocked
+                            )
+                        }
+                    }
+            }
         }
+        .overlay(alignment: .top) {
+            if isHourLine {
+                Rectangle()
+                    .fill(Color.providerScheduleTrackStroke.opacity(0.55))
+                    .frame(height: 0.5)
+            }
+        }
+        .frame(height: ProviderWeeklyScheduleGridMetrics.rowHeight)
     }
 
     private func dayNumber(for date: Date) -> String {

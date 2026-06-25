@@ -170,6 +170,7 @@ struct ProviderAvailabilityEditorView: View {
             availabilityActionButton(title: "Edit Schedule", action: beginWeeklyScheduleEditing)
             availabilityActionButton(title: "Block Time", action: { showingAddBlock = true })
         }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private func availabilityActionButton(title: String, action: @escaping () -> Void) -> some View {
@@ -181,7 +182,6 @@ struct ProviderAvailabilityEditorView: View {
                 .providerOliveOutlined()
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
-                .frame(maxWidth: .infinity)
                 .background(
                     Capsule(style: .continuous)
                         .fill(Color.providerScheduleCardFill)

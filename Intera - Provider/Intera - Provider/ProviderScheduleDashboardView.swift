@@ -38,7 +38,6 @@ struct ProviderScheduleDashboardView: View {
     @State private var deletingBlockIds: Set<String> = []
     @State private var scheduleChromeHeight: CGFloat = 0
     @State private var editingMoveBookingID: String?
-    @State private var activeMoveDragBookingID: String?
     @State private var timeChangeProposal: ScheduleAppointmentTimeChangeProposal?
     @State private var isSavingBookingMove = false
 
@@ -116,24 +115,6 @@ struct ProviderScheduleDashboardView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .overlay(alignment: .bottom) {
-            if let proposal = timeChangeProposal {
-                ProviderScheduleBookingMoveConfirmBanner(
-                    consumerName: proposal.booking.consumerDisplayName,
-                    originalTime: proposal.originalTime,
-                    proposedTime: proposal.proposedTime,
-                    isSaving: isSavingBookingMove,
-                    onConfirm: {
-                        Task { await confirmBookingMove(proposal) }
-                    },
-                    onCancel: cancelBookingMove
-                )
-                .padding(.horizontal, 16)
-                .padding(.bottom, 16)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.easeInOut(duration: 0.2), value: timeChangeProposal?.id)
         .task(id: session.barberProfile?.id) {
             await reloadAll()
         }
@@ -191,10 +172,21 @@ struct ProviderScheduleDashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 12) {
                 awaitingPaymentBanner
-                summaryLine
-                weekNavigationRow
-                if session.hasProviderProfile {
-                    scheduleAvailabilityActionsRow
+                ZStack(alignment: .topLeading) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        summaryLine
+                        weekNavigationRow
+                        if session.hasProviderProfile {
+                            scheduleAvailabilityActionsRow
+                        }
+                    }
+                    .opacity(editingMoveBookingID == nil ? 1 : 0)
+                    .allowsHitTesting(editingMoveBookingID == nil)
+                    .accessibilityHidden(editingMoveBookingID != nil)
+
+                    if editingMoveBookingID != nil {
+                        bookingMoveChromeRow
+                    }
                 }
                 if let errorText {
                     Text(errorText)
@@ -218,7 +210,6 @@ struct ProviderScheduleDashboardView: View {
                 viewportHeight: gridViewportHeight,
                 appointmentDragEnabled: session.hasProviderProfile,
                 editingMoveBookingID: $editingMoveBookingID,
-                activeMoveDragBookingID: $activeMoveDragBookingID,
                 onUnblockTime: { blockId in
                     Task { await deleteTimeBlock(blockId: blockId) }
                 },
@@ -228,15 +219,18 @@ struct ProviderScheduleDashboardView: View {
                 },
                 onMoveBookingRequested: { booking in
                     editingMoveBookingID = booking.id
-                    activeMoveDragBookingID = nil
                     timeChangeProposal = nil
                 },
-                onBookingTimeChangeProposed: { booking, proposedDate in
+                onBookingTimeChangeProposed: { booking, proposedDate, targetsPast in
                     timeChangeProposal = ScheduleAppointmentTimeChangeProposal(
                         booking: booking,
                         originalTime: booking.providerEffectiveScheduledTime ?? proposedDate,
-                        proposedTime: proposedDate
+                        proposedTime: proposedDate,
+                        targetsPastTime: targetsPast
                     )
+                },
+                onBookingMoveProposalCleared: {
+                    timeChangeProposal = nil
                 }
             )
             .frame(maxHeight: .infinity, alignment: .top)
@@ -245,6 +239,84 @@ struct ProviderScheduleDashboardView: View {
     }
 
     // MARK: - Chrome
+
+    private var canSaveBookingMove: Bool {
+        guard let proposal = timeChangeProposal else { return false }
+        return ScheduleAppointmentDrag.isSaveEligibleMove(
+            proposed: proposal.proposedTime,
+            original: proposal.originalTime,
+            targetsPast: proposal.targetsPastTime
+        )
+    }
+
+    private var bookingMoveChromeRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let proposal = timeChangeProposal {
+                Text("Move to \(proposal.proposedTime.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.provider(.subheadline, weight: .semibold))
+                    .foregroundStyle(Color.lavaShellCream)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            } else if let bookingID = editingMoveBookingID,
+                      let booking = scheduleBookings.first(where: { $0.id == bookingID }) {
+                Text("Moving \(booking.consumerDisplayName)")
+                    .font(.provider(.subheadline, weight: .semibold))
+                    .foregroundStyle(Color.lavaShellCream)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+
+            HStack(spacing: 10) {
+                Button(action: cancelBookingMove) {
+                    Text("Cancel")
+                        .font(.provider(size: 14, weight: .medium))
+                        .foregroundStyle(Color.providerScheduleActionForeground)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.providerScheduleActionBackground)
+                                .shadow(color: Color.providerScheduleActionShadow, radius: 1, x: 0, y: 1)
+                        }
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(Color.providerScheduleActionBorder, lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.plain)
+                .disabled(isSavingBookingMove)
+
+                Button {
+                    guard let proposal = timeChangeProposal else { return }
+                    Task { await confirmBookingMove(proposal) }
+                } label: {
+                    Group {
+                        if isSavingBookingMove {
+                            ProgressView()
+                                .tint(Color.lavaShellCream)
+                        } else {
+                            Text("Save Change")
+                                .font(.provider(size: 14, weight: .semibold))
+                        }
+                    }
+                    .foregroundStyle(Color.lavaShellCream)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(canSaveBookingMove ? Color.providerOlive : Color.providerOlive.opacity(0.45))
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSaveBookingMove || isSavingBookingMove)
+            }
+            .frame(maxWidth: 448)
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
+        .background { scheduleChromeTrackBackground }
+    }
 
     private var summaryLine: some View {
         Text(summaryText)
@@ -315,7 +387,6 @@ struct ProviderScheduleDashboardView: View {
                 showingBlockTimeSheet = true
             }
         }
-        .frame(maxWidth: 448)
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
@@ -324,13 +395,13 @@ struct ProviderScheduleDashboardView: View {
             Text(title)
                 .font(.provider(size: 14, weight: .medium))
                 .foregroundStyle(Color.providerScheduleActionForeground)
-                .frame(minWidth: 128, maxWidth: .infinity)
-                .padding(.horizontal, 16)
+                .lineLimit(1)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(Color.providerScheduleActionBackground)
-                        .shadow(color: Color.black.opacity(0.08), radius: 1, x: 0, y: 1)
+                        .shadow(color: Color.providerScheduleActionShadow, radius: 1, x: 0, y: 1)
                 }
                 .overlay {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -580,7 +651,6 @@ struct ProviderScheduleDashboardView: View {
 
     private func cancelBookingMove() {
         editingMoveBookingID = nil
-        activeMoveDragBookingID = nil
         timeChangeProposal = nil
     }
 

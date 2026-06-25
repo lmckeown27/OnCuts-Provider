@@ -20,21 +20,37 @@ struct ProviderScheduleDiagonalCrossOut: View {
     }
 }
 
-struct ProviderScheduleEntireDayCrossOutOverlay: View {
-    var cornerRadius: CGFloat = 10
-    var lineColor: Color = Color.providerOlive.opacity(0.44)
+struct ProviderScheduleCrossOutOverlay: View {
+    var cornerRadius: CGFloat = 0
+    var showsBorder: Bool = false
+    var lineColor: Color = Color.providerScheduleEntireDayCrossOutLine
 
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(Color.providerOlive.opacity(0.06))
+            .fill(Color.providerScheduleEntireDayCrossOutFill)
             .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color.providerOlive.opacity(0.24), lineWidth: 0.5)
+                if showsBorder {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Color.providerScheduleEntireDayCrossOutStroke, lineWidth: 0.5)
+                }
             }
             .overlay {
                 ProviderScheduleDiagonalCrossOut(lineColor: lineColor)
             }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .accessibilityLabel("Day blocked off")
+    }
+}
+
+struct ProviderScheduleEntireDayCrossOutOverlay: View {
+    var cornerRadius: CGFloat = 10
+    var lineColor: Color = Color.providerScheduleEntireDayCrossOutLine
+
+    var body: some View {
+        ProviderScheduleCrossOutOverlay(
+            cornerRadius: cornerRadius,
+            showsBorder: true,
+            lineColor: lineColor
+        )
+        .accessibilityLabel("Day blocked off")
     }
 }

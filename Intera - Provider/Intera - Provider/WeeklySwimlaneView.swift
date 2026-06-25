@@ -101,7 +101,7 @@ struct WeeklySwimlaneView: View {
     @Binding var activeMoveDragBookingID: String?
     @Binding var timeChangeProposal: ScheduleAppointmentTimeChangeProposal?
     var onMoveBookingRequested: (SimpleBookingDTO) -> Void = { _ in }
-    var onBookingTimeChangeProposed: (SimpleBookingDTO, Date) -> Void = { _, _ in }
+    var onBookingTimeChangeProposed: (SimpleBookingDTO, Date, Bool) -> Void = { _, _, _ in }
 
     private var minuteSpan: Int {
         max(1, endMinute - startMinute)
@@ -439,7 +439,7 @@ private struct WeeklySwimlaneMoveResolver {
         for positioned: WeeklyPositionedAppointment,
         gridX: CGFloat,
         gridY: CGFloat,
-        onProposed: (SimpleBookingDTO, Date) -> Void
+        onProposed: (SimpleBookingDTO, Date, Bool) -> Void
     ) -> Bool {
         let offset = clampedDragOffsetFromGridPoint(for: positioned, gridX: gridX, gridY: gridY)
         return handleDragEnded(
@@ -455,7 +455,7 @@ private struct WeeklySwimlaneMoveResolver {
         for positioned: WeeklyPositionedAppointment,
         totalOffsetX: CGFloat,
         totalOffsetY: CGFloat,
-        onProposed: (SimpleBookingDTO, Date) -> Void
+        onProposed: (SimpleBookingDTO, Date, Bool) -> Void
     ) -> Bool {
         let proposed = proposedPosition(
             for: positioned,
@@ -468,7 +468,7 @@ private struct WeeklySwimlaneMoveResolver {
         guard let proposedDate = scheduledDate(dayIndex: proposed.dayIndex, totalMinutes: proposed.startMinute) else {
             return false
         }
-        onProposed(positioned.appointment.booking, proposedDate)
+        onProposed(positioned.appointment.booking, proposedDate, false)
         return true
     }
 
@@ -630,7 +630,7 @@ private struct WeeklySwimlaneAppointmentsLayer: View {
     @Binding var timeChangeProposal: ScheduleAppointmentTimeChangeProposal?
     let onMoveBookingRequested: (SimpleBookingDTO) -> Void
     let onBookingTap: (SimpleBookingDTO) -> Void
-    let onBookingTimeChangeProposed: (SimpleBookingDTO, Date) -> Void
+    let onBookingTimeChangeProposed: (SimpleBookingDTO, Date, Bool) -> Void
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -866,13 +866,13 @@ private struct WeeklySwimlaneAppointmentCardContent: View {
     var isMoveSession: Bool = false
     var isDragActive: Bool = false
 
-    private var usesCompactInitialsLabel: Bool {
+    private var usesCompactStatusLabel: Bool {
         cardHeight <= 44
     }
 
     private var bookingPrimaryLabel: String {
-        usesCompactInitialsLabel
-            ? appointment.booking.consumerInitials
+        usesCompactStatusLabel
+            ? appointment.booking.statusDisplayTitle
             : appointment.booking.consumerDisplayName
     }
 
@@ -899,18 +899,18 @@ private struct WeeklySwimlaneAppointmentCardContent: View {
                         .padding(.horizontal, 5)
                         .padding(.vertical, 4)
                 } else {
-                    VStack(alignment: usesCompactInitialsLabel ? .center : .leading, spacing: 2) {
+                    VStack(alignment: usesCompactStatusLabel ? .center : .leading, spacing: 2) {
                         Text(bookingPrimaryLabel)
                             .font(.provider(
-                                size: usesCompactInitialsLabel
-                                    ? initialsFontSize(for: cardHeight)
+                                size: usesCompactStatusLabel
+                                    ? statusFontSize(for: cardHeight)
                                     : consumerFontSize(for: cardHeight),
                                 weight: .semibold
                             ))
                             .foregroundStyle(Color.lavaShellCream)
-                            .lineLimit(usesCompactInitialsLabel ? 1 : (cardHeight > 44 ? 2 : 1))
-                            .minimumScaleFactor(usesCompactInitialsLabel ? 1 : 0.85)
-                            .frame(maxWidth: .infinity, alignment: usesCompactInitialsLabel ? .center : .leading)
+                            .lineLimit(usesCompactStatusLabel ? 2 : (cardHeight > 44 ? 2 : 1))
+                            .minimumScaleFactor(usesCompactStatusLabel ? 0.55 : 0.85)
+                            .frame(maxWidth: .infinity, alignment: usesCompactStatusLabel ? .center : .leading)
 
                         if cardHeight > 40 {
                             Text(appointment.booking.serviceDisplayName)
@@ -960,8 +960,8 @@ private struct WeeklySwimlaneAppointmentCardContent: View {
         min(14, max(11, cardHeight * 0.22))
     }
 
-    private func initialsFontSize(for cardHeight: CGFloat) -> CGFloat {
-        min(13, max(11, cardHeight * 0.42))
+    private func statusFontSize(for cardHeight: CGFloat) -> CGFloat {
+        min(11, max(9, cardHeight * 0.28))
     }
 
     private func serviceFontSize(for cardHeight: CGFloat) -> CGFloat {

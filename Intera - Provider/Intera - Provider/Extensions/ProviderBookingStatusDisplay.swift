@@ -81,7 +81,7 @@ enum ProviderBookingStatusDisplay {
         case "accepted", "booked", "in_progress":
             return Color.providerOlive.opacity(0.28)
         case "completed", "paid":
-            return Color.green.opacity(0.35)
+            return Color.providerScheduleCompletedAppointmentFill
         case "cancelled", "canceled", "rejected", "refunded", "disputed":
             return Color.providerElevatedSurface
         default:
@@ -137,6 +137,14 @@ enum ProviderBookingStatusDisplay {
         if isScheduleCompleted(status: raw) { return "Completed" }
         if isScheduleBooked(status: raw) { return "Booked" }
         return nil
+    }
+
+    /// Weekly grid appointment block fill — completed vs upcoming.
+    static func scheduleAppointmentFill(for booking: SimpleBookingDTO) -> Color {
+        if isScheduleCompleted(status: booking.status) {
+            return Color.providerScheduleCompletedAppointmentFill
+        }
+        return Color.providerScheduleUpcomingAppointmentFill
     }
 
     /// Cancelled bookings are omitted from the main schedule entirely.
@@ -201,5 +209,9 @@ extension SimpleBookingDTO {
 
     var isVisibleOnMainSchedule: Bool {
         ProviderBookingStatusDisplay.isVisibleOnMainSchedule(status: status)
+    }
+
+    var scheduleAppointmentFillColor: Color {
+        ProviderBookingStatusDisplay.scheduleAppointmentFill(for: self)
     }
 }

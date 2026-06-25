@@ -128,6 +128,113 @@ enum ProviderAppearance {
             : UIColor.black.withAlphaComponent(0.08)
     }
 
+    /// Weekly grid canvas, time gutter, and day header row backdrop.
+    static let scheduleGridBackground = shellBase
+
+    /// Web parity action pills (`Edit Schedule`, `Block Time`) — white in light, elevated in dark.
+    static let scheduleActionBackground = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor.white.withAlphaComponent(0.10)
+            : UIColor.white
+    }
+
+    static let scheduleActionForeground = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? cream
+            : UIColor(red: 55 / 255, green: 65 / 255, blue: 81 / 255, alpha: 1)
+    }
+
+    static let scheduleActionBorder = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor.white.withAlphaComponent(0.22)
+            : UIColor(red: 209 / 255, green: 213 / 255, blue: 219 / 255, alpha: 1)
+    }
+
+    static let scheduleActionShadow = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor.black.withAlphaComponent(0.45)
+            : UIColor.black.withAlphaComponent(0.08)
+    }
+
+    /// Day column headers — gray-100 / elevated dark.
+    static let scheduleDayHeaderFill = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor.white.withAlphaComponent(0.08)
+            : UIColor(red: 243 / 255, green: 244 / 255, blue: 246 / 255, alpha: 1)
+    }
+
+    static let scheduleDayHeaderForeground = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? creamSecondary
+            : UIColor(red: 55 / 255, green: 65 / 255, blue: 81 / 255, alpha: 1)
+    }
+
+    /// Today column header — gray-900 in light, inverted cream pill in dark.
+    static let scheduleDayHeaderTodayFill = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? cream.withAlphaComponent(0.92)
+            : UIColor(red: 17 / 255, green: 24 / 255, blue: 39 / 255, alpha: 1)
+    }
+
+    static let scheduleDayHeaderTodayForeground = UIColor { traits in
+        traits.userInterfaceStyle == .dark ? ink : UIColor.white
+    }
+
+    /// Open availability slots and upcoming appointment fills.
+    static let scheduleOpenSlotFill = UIColor { traits in
+        let alpha: CGFloat = traits.userInterfaceStyle == .dark ? 0.48 : 0.55
+        return olive.withAlphaComponent(alpha)
+    }
+
+    static let scheduleUpcomingAppointmentFill = scheduleOpenSlotFill
+
+    static let scheduleCompletedAppointmentFill = UIColor { traits in
+        let alpha: CGFloat = traits.userInterfaceStyle == .dark ? 0.42 : 0.35
+        return UIColor.systemGreen.withAlphaComponent(alpha)
+    }
+
+    static let scheduleBlockedSlotFill = UIColor { traits in
+        let alpha: CGFloat = traits.userInterfaceStyle == .dark ? 0.50 : 0.55
+        return UIColor.systemRed.withAlphaComponent(alpha)
+    }
+
+    static let scheduleTodayColumnHighlight = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? olive.withAlphaComponent(0.16)
+            : olive.withAlphaComponent(0.08)
+    }
+
+    /// Entire-day cross-out overlay on unselected availability days.
+    static let scheduleEntireDayCrossOutFill = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor.white.withAlphaComponent(0.04)
+            : olive.withAlphaComponent(0.06)
+    }
+
+    static let scheduleEntireDayCrossOutStroke = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor.white.withAlphaComponent(0.12)
+            : olive.withAlphaComponent(0.24)
+    }
+
+    static let scheduleEntireDayCrossOutLine = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? creamSecondary.withAlphaComponent(0.28)
+            : olive.withAlphaComponent(0.44)
+    }
+
+    static let scheduleDiagonalCrossOutLineBlocked = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? creamSecondary.withAlphaComponent(0.34)
+            : inkSecondary.withAlphaComponent(0.38)
+    }
+
+    static let scheduleDiagonalCrossOutLineGoogle = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? creamSecondary.withAlphaComponent(0.26)
+            : inkSecondary.withAlphaComponent(0.32)
+    }
+
     // MARK: SwiftUI
 
     static var isDarkMode: Bool {
@@ -188,17 +295,29 @@ extension Color {
     static var providerScheduleControlFill: Color { Color(uiColor: ProviderAppearance.scheduleControlFill) }
     static var providerScheduleControlStroke: Color { Color(uiColor: ProviderAppearance.scheduleControlStroke) }
 
-    /// Web parity: `bg-white` schedule action pills (`Edit Schedule`, `Block Time`).
-    static var providerScheduleActionBackground: Color { .white }
-    /// Web parity: `text-gray-700`.
-    static var providerScheduleActionForeground: Color { Color(red: 55 / 255, green: 65 / 255, blue: 81 / 255) }
-    /// Web parity: `border-gray-300`.
-    static var providerScheduleActionBorder: Color { Color(red: 209 / 255, green: 213 / 255, blue: 219 / 255) }
+    static var providerScheduleGridBackground: Color { Color(uiColor: ProviderAppearance.scheduleGridBackground) }
 
-    /// Web parity: schedule day header `bg-gray-100`.
-    static var providerScheduleDayHeaderFill: Color { Color(red: 243 / 255, green: 244 / 255, blue: 246 / 255) }
-    /// Web parity: schedule day header `text-gray-700`.
-    static var providerScheduleDayHeaderForeground: Color { Color(red: 55 / 255, green: 65 / 255, blue: 81 / 255) }
-    /// Web parity: today column `bg-gray-900`.
-    static var providerScheduleDayHeaderTodayFill: Color { Color(red: 17 / 255, green: 24 / 255, blue: 39 / 255) }
+    /// Schedule action pills (`Edit Schedule`, `Block Time`).
+    static var providerScheduleActionBackground: Color { Color(uiColor: ProviderAppearance.scheduleActionBackground) }
+    static var providerScheduleActionForeground: Color { Color(uiColor: ProviderAppearance.scheduleActionForeground) }
+    static var providerScheduleActionBorder: Color { Color(uiColor: ProviderAppearance.scheduleActionBorder) }
+    static var providerScheduleActionShadow: Color { Color(uiColor: ProviderAppearance.scheduleActionShadow) }
+
+    /// Schedule day column headers.
+    static var providerScheduleDayHeaderFill: Color { Color(uiColor: ProviderAppearance.scheduleDayHeaderFill) }
+    static var providerScheduleDayHeaderForeground: Color { Color(uiColor: ProviderAppearance.scheduleDayHeaderForeground) }
+    static var providerScheduleDayHeaderTodayFill: Color { Color(uiColor: ProviderAppearance.scheduleDayHeaderTodayFill) }
+    static var providerScheduleDayHeaderTodayForeground: Color { Color(uiColor: ProviderAppearance.scheduleDayHeaderTodayForeground) }
+
+    static var providerScheduleOpenSlotFill: Color { Color(uiColor: ProviderAppearance.scheduleOpenSlotFill) }
+    static var providerScheduleUpcomingAppointmentFill: Color { Color(uiColor: ProviderAppearance.scheduleUpcomingAppointmentFill) }
+    static var providerScheduleCompletedAppointmentFill: Color { Color(uiColor: ProviderAppearance.scheduleCompletedAppointmentFill) }
+    static var providerScheduleBlockedSlotFill: Color { Color(uiColor: ProviderAppearance.scheduleBlockedSlotFill) }
+    static var providerScheduleTodayColumnHighlight: Color { Color(uiColor: ProviderAppearance.scheduleTodayColumnHighlight) }
+
+    static var providerScheduleEntireDayCrossOutFill: Color { Color(uiColor: ProviderAppearance.scheduleEntireDayCrossOutFill) }
+    static var providerScheduleEntireDayCrossOutStroke: Color { Color(uiColor: ProviderAppearance.scheduleEntireDayCrossOutStroke) }
+    static var providerScheduleEntireDayCrossOutLine: Color { Color(uiColor: ProviderAppearance.scheduleEntireDayCrossOutLine) }
+    static var providerScheduleDiagonalCrossOutLineBlocked: Color { Color(uiColor: ProviderAppearance.scheduleDiagonalCrossOutLineBlocked) }
+    static var providerScheduleDiagonalCrossOutLineGoogle: Color { Color(uiColor: ProviderAppearance.scheduleDiagonalCrossOutLineGoogle) }
 }
