@@ -9,20 +9,50 @@ enum ProviderWeeklyScheduleGridMetrics {
     static let visibleGridHeight: CGFloat = 600
     static let minimumGridHeight: CGFloat = 240
     static let timeGutterWidth: CGFloat = 48
+    static let dayHeaderRowHeight: CGFloat = 52
+    /// Minimum width for all seven day columns before horizontal scrolling kicks in.
+    static let minimumDaysScrollWidth: CGFloat = 592
+    /// Shifts the whole schedule card outward into the hub's horizontal padding.
+    static let scheduleOuterHorizontalInset: CGFloat = 12
+    /// Friday column index in a Monday-start week.
+    static let fridayDayIndex = 4
     static let defaultBookingDurationMinutes = 60
-    /// Space between the weekday header row and the scrollable time grid.
-    static let dayHeaderGridSpacing: CGFloat = 10
     /// Inset above the first time label and grid rows.
     static let timeGutterTopPadding: CGFloat = 8
-    /// Default horizontal scroll target — Friday column (Mon = 0).
-    static let fridayDayIndex = 4
-    static let fridayDayScrollID = "schedule-friday-peek"
-    /// Width of Friday visible on first load (~uppercase "F" in the header).
-    static let fridayPeekVisibleWidth: CGFloat = 12
     /// Extra space below the last row so the final time label can scroll into view.
     static let bottomScrollPadding: CGFloat = 80
     /// Snap dragged bookings to this minute increment.
     static let moveSnapStepMinutes = 15
+
+    static func bookingCardCornerRadius(height: CGFloat) -> CGFloat {
+        min(8, max(5, height * 0.18))
+    }
+}
+
+/// Grid line weights tuned for column density and display scale.
+struct ProviderWeeklyScheduleGridLineStyle: Equatable {
+    let hourLineWidth: CGFloat
+    let halfHourLineWidth: CGFloat
+    let columnDividerWidth: CGFloat
+    let hourLineOpacity: Double
+    let halfHourLineOpacity: Double
+    let columnDividerOpacity: Double
+
+    static func resolve(dayColumnWidth: CGFloat, displayScale: CGFloat) -> Self {
+        let pixel = 1 / max(displayScale, 1)
+        let densityBoost = min(1.5, max(1, 82 / max(dayColumnWidth, 40)))
+        let scaleBoost = min(1.25, max(1, displayScale / 2))
+        let prominence = densityBoost * scaleBoost
+
+        return Self(
+            hourLineWidth: pixel * max(1.1, 1.35 * prominence),
+            halfHourLineWidth: pixel * max(1, 1.05 * prominence),
+            columnDividerWidth: pixel * max(1, 1.1 * prominence),
+            hourLineOpacity: min(0.95, 0.68 * prominence),
+            halfHourLineOpacity: min(0.78, 0.44 * prominence),
+            columnDividerOpacity: min(0.88, 0.5 * prominence)
+        )
+    }
 }
 
 // MARK: - Types
@@ -102,6 +132,62 @@ struct ProviderWeeklyScheduleBusyInterval: Equatable {
 // MARK: - Engine
 
 enum ProviderWeeklyScheduleGridEngine {
+    static let weekdayColumnCount = 7
+
+    static func daysContentWidth(
+        viewportWidth: CGFloat,
+        minimumDaysWidth: CGFloat = ProviderWeeklyScheduleGridMetrics.minimumDaysScrollWidth
+    ) -> CGFloat {
+        max(viewportWidth, minimumDaysWidth)
+    }
+
+    static func dayColumnWidth(
+        viewportWidth: CGFloat,
+        minimumDaysWidth: CGFloat = ProviderWeeklyScheduleGridMetrics.minimumDaysScrollWidth
+    ) -> CGFloat {
+        daysContentWidth(viewportWidth: viewportWidth, minimumDaysWidth: minimumDaysWidth)
+            / CGFloat(weekdayColumnCount)
+    }
+
+    static func maxHorizontalScrollOffset(
+        daysContentWidth: CGFloat,
+        viewportWidth: CGFloat
+    ) -> CGFloat {
+        max(0, daysContentWidth - viewportWidth)
+    }
+
+    static func fridayPeekVisibleWidth(dayColumnWidth: CGFloat) -> CGFloat {
+        // Day headers are centered in each column — need ≥ half the column width for "Fri" to show.
+        min(dayColumnWidth, max(48, dayColumnWidth * 0.58))
+    }
+
+    static func fridayPeekContentOffset(
+        dayColumnWidth: CGFloat,
+        daysContentWidth: CGFloat,
+        viewportWidth: CGFloat
+    ) -> CGFloat {
+        guard dayColumnWidth > 0, viewportWidth > 0 else { return 0 }
+        let peek = fridayPeekVisibleWidth(dayColumnWidth: dayColumnWidth)
+        let fridayTrailing = CGFloat(ProviderWeeklyScheduleGridMetrics.fridayDayIndex + 1) * dayColumnWidth
+        let maxOffset = maxHorizontalScrollOffset(
+            daysContentWidth: daysContentWidth,
+            viewportWidth: viewportWidth
+        )
+        return min(max(0, fridayTrailing - peek - viewportWidth), maxOffset)
+    }
+
+    static func initialHorizontalContentOffset(
+        dayColumnWidth: CGFloat,
+        daysContentWidth: CGFloat,
+        viewportWidth: CGFloat
+    ) -> CGFloat {
+        fridayPeekContentOffset(
+            dayColumnWidth: dayColumnWidth,
+            daysContentWidth: daysContentWidth,
+            viewportWidth: viewportWidth
+        )
+    }
+
     static func weekStartMonday(from anchor: Date, weekOffset: Int, calendar: Calendar) -> Date {
         let start = calendar.startOfDay(for: anchor)
         let weekday = calendar.component(.weekday, from: start)

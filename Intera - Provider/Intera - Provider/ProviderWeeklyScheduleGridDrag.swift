@@ -492,9 +492,17 @@ struct ProviderWeeklyScheduleGridBookingCardContent: View {
     var isMoveSession: Bool = false
 
     var body: some View {
+        let cornerRadius = ProviderWeeklyScheduleGridMetrics.bookingCardCornerRadius(height: cardHeight)
+
         ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(booking.scheduleAppointmentFillColor)
+
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(
+                    Color.lavaShellCream.opacity(0.22),
+                    lineWidth: max(0.5, min(1, cardHeight * 0.04))
+                )
 
             if isMoveSession {
                 Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
@@ -533,15 +541,17 @@ private struct ProviderWeeklyScheduleGridMoveHoldIndicator: View {
     let commitDuration: TimeInterval
 
     var body: some View {
+        let cornerRadius = ProviderWeeklyScheduleGridMetrics.bookingCardCornerRadius(height: 12)
+
         TimelineView(.animation(minimumInterval: 1 / 30)) { timeline in
             let elapsed = timeline.date.timeIntervalSince(startedAt)
             let progress = min(1, max(0, elapsed / commitDuration))
 
             ZStack {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(Color.orange.opacity(0.10 + 0.10 * progress))
 
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(
                         Color.orange.opacity(0.35 + 0.45 * progress),
                         style: StrokeStyle(lineWidth: 2, dash: progress < 1 ? [5, 4] : [])
@@ -649,7 +659,8 @@ private struct ProviderWeeklyScheduleGridDraggableBookingCard<Content: View>: Vi
                         commitDuration: ProviderWeeklyScheduleGridDragLayout.moveHoldCommitDuration
                     )
                 } else if isMoveSession {
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    let cornerRadius = ProviderWeeklyScheduleGridMetrics.bookingCardCornerRadius(height: height)
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .inset(by: 1)
                         .stroke(Color.orange.opacity(0.92), lineWidth: 2)
                         .allowsHitTesting(false)

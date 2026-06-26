@@ -22,8 +22,47 @@ enum ProviderPushPayloadRouter {
         case noop
     }
 
+    /// Refreshes in-app lists and badges when a push arrives in the **foreground** (banner only).
+    /// Never opens Messages, the bookings sheet, or booking detail — navigation waits for a tap.
+    static func refreshFromForegroundDelivery(userInfo: [AnyHashable: Any]) {
+        let flat = flatten(userInfo: userInfo)
+        let type = (flat["type"] as? String)?.lowercased() ?? ""
+
+        let isBookingRequest = type.contains("booking_request") || type.contains("request_")
+        let isBookingLifecycle = type.hasPrefix("booking_")
+            || type.contains("payment")
+            || type.contains("reminder")
+            || type.contains("confirmation")
+            || type.contains("cancel")
+            || type.contains("complete")
+        let isMessage = type == "message" || type == "new_message"
+
+        if isMessage || isBookingRequest || isBookingLifecycle || type == "badge_update" {
+            NotificationCenter.default.post(
+                name: .providerMessagingUnreadCountShouldRefresh,
+                object: nil
+            )
+        }
+
+        if isBookingRequest || isBookingLifecycle {
+            NotificationCenter.default.post(name: .providerBookingsListShouldRefresh, object: nil)
+        }
+
+        if isBookingRequest {
+            NotificationCenter.default.post(name: .providerRequestsListShouldRefresh, object: nil)
+        }
+
+        if isMessage, let conversationId = intValue(flat["conversationId"]) {
+            NotificationCenter.default.post(
+                name: .providerMessagingConversationShouldRefresh,
+                object: nil,
+                userInfo: ["conversationId": conversationId]
+            )
+        }
+    }
+
     /// Posts one or more `Notification.Name`s based on payload contents. Returns the primary
-    /// dispatch reason (purely informational).
+    /// dispatch reason (purely informational). Use for notification **taps** and cold-start routing.
     @discardableResult
     static func dispatch(userInfo: [AnyHashable: Any]) -> DispatchResult {
         let flat = flatten(userInfo: userInfo)

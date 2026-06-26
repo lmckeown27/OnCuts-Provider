@@ -124,10 +124,16 @@ enum ProviderBookingStatusDisplay {
         }
     }
 
-    /// Accepted bookings still ahead on the schedule — excludes completed, paid, and cancelled.
+    /// Appointments counted in the weekly summary (`[x] appointments this/that week`).
+    /// Includes pending requests and accepted/booked slots; excludes completed, paid, and cancelled.
     static func isUpcomingScheduleAppointment(_ booking: SimpleBookingDTO) -> Bool {
         guard booking.paidAt == nil else { return false }
-        return isScheduleBooked(status: booking.status)
+        switch normalized(booking.status) {
+        case "pending", "accepted", "booked", "in_progress":
+            return true
+        default:
+            return false
+        }
     }
 
     /// Finished appointments still shown on the main schedule.
@@ -159,6 +165,14 @@ enum ProviderBookingStatusDisplay {
         case "cancelled", "canceled": return false
         default: return true
         }
+    }
+
+    /// Week chevron tickers — any on-schedule booking outside the viewed week, excluding paid.
+    static func countsForWeekNavigationTicker(_ booking: SimpleBookingDTO) -> Bool {
+        guard isVisibleOnMainSchedule(status: booking.status) else { return false }
+        if booking.paidAt != nil { return false }
+        if normalized(booking.status) == "paid" { return false }
+        return booking.providerEffectiveScheduledTime != nil
     }
 
     /// Bookings in terminal states cannot have an actionable consumer reschedule request.

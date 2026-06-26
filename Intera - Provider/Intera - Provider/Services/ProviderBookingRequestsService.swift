@@ -6,7 +6,7 @@ enum ProviderBookingRequestsService {
         let enc = barberTableId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? barberTableId
         let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "booking-requests/barber/\(enc)/pending")
         let dec = CampusCutsHTTPClient.jsonDecoderSnake()
-        return try dec.decode(BookingRequestsPendingEnvelope.self, from: data).requests ?? []
+        return try dec.decode(BookingRequestsPendingEnvelope.self, from: data).requests
     }
 
     /// Pending queue plus same-day schedule intersect (bookings + availability).
@@ -14,19 +14,40 @@ enum ProviderBookingRequestsService {
         barberTableId: String,
         bookingsHint: [SimpleBookingDTO]? = nil
     ) async throws -> [RequestTriageItem] {
-        async let pendingTask = listPending(barberTableId: barberTableId)
         let bookings: [SimpleBookingDTO]
         if let bookingsHint, !bookingsHint.isEmpty {
             bookings = bookingsHint
         } else {
             bookings = try await ProviderBookingsService.listBookings(role: "barber")
         }
-        let pending = try await pendingTask
+
+        var pending: [BookingRequestRow]
+        do {
+            pending = try await listPending(barberTableId: barberTableId)
+        } catch {
+            pending = []
+            guard !bookings.isEmpty else { throw error }
+        }
+
+        pending = mergePendingRequests(apiRows: pending, bookings: bookings)
         return await ProviderRequestTriageEngine.build(
             pending: pending,
             bookings: bookings,
             barberTableId: barberTableId
         )
+    }
+
+    /// Fills gaps when `/booking-requests/.../pending` omits rows that still exist on `bookings-simple`.
+    private static func mergePendingRequests(
+        apiRows: [BookingRequestRow],
+        bookings: [SimpleBookingDTO]
+    ) -> [BookingRequestRow] {
+        let apiIds = Set(apiRows.map(\.bookingId))
+        let supplemental = bookings
+            .filter { $0.statusUpper == "PENDING" && !apiIds.contains($0.id) }
+            .map(BookingRequestRow.init(synthesizingPendingBooking:))
+        guard !supplemental.isEmpty else { return apiRows }
+        return apiRows + supplemental
     }
 
     static func accept(bookingId: String, barberTableId: String, message: String?) async throws {
@@ -60,5 +81,25 @@ enum ProviderBookingRequestsService {
             method: "POST",
             jsonBody: ["barberId": barberTableId, "reason": reason]
         )
+    }
+}
+
+extension BookingRequestRow {
+    /// Builds a triage row from `bookings-simple` when the booking-requests endpoint omits it.
+    init(synthesizingPendingBooking booking: SimpleBookingDTO) {
+        bookingId = booking.id
+        customerId = booking.consumerId
+        customerName = booking.consumerDisplayName
+        serviceType = booking.serviceDisplayName
+        if let scheduled = booking.scheduledTime {
+            requestedDate = scheduled.campusCutsISO8601String()
+            requestedTime = nil
+        } else {
+            requestedDate = nil
+            requestedTime = nil
+        }
+        location = booking.location
+        status = booking.status
+        price = booking.priceUsdCents.map { Double($0) / 100.0 }
     }
 }

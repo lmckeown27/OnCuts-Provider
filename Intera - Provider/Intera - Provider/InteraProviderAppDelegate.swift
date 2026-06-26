@@ -130,10 +130,10 @@ extension InteraProviderAppDelegate: UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         // Even before the user taps, refresh badges + unread counts so the inbox UI doesn't
-        // lag behind. The actual navigation only happens on tap.
+        // lag behind. Navigation (Messages overlay, bookings sheet, etc.) only happens on tap.
         let userInfo = notification.request.content.userInfo
         Task { @MainActor in
-            ProviderPushPayloadRouter.dispatch(userInfo: userInfo)
+            ProviderPushPayloadRouter.refreshFromForegroundDelivery(userInfo: userInfo)
         }
         completionHandler([.banner, .badge, .sound, .list])
     }

@@ -18,25 +18,34 @@ struct ProviderWeeklyScheduleGrid: View {
 
     @State private var didInitialScroll = false
     @State private var horizontalScrollOffset: CGFloat = 0
-
-    private static let gridMinWidth: CGFloat = 640
-    private static let daysScrollWidth: CGFloat = gridMinWidth - ProviderWeeklyScheduleGridMetrics.timeGutterWidth
-
-    private var dayColumnWidth: CGFloat {
-        Self.daysScrollWidth / 7
-    }
+    @Environment(\.displayScale) private var displayScale
 
     private var positionedBookings: [ProviderWeeklyScheduleGridPositionedBooking] {
         ProviderWeeklyScheduleGridEngine.positionedBookings(in: model)
     }
 
-    private var moveResolver: ProviderWeeklyScheduleGridMoveResolver {
+    private func moveResolver(viewportWidth: CGFloat) -> ProviderWeeklyScheduleGridMoveResolver {
         ProviderWeeklyScheduleGridMoveResolver(
             model: model,
             calendar: calendar,
-            dayColumnWidth: dayColumnWidth,
+            dayColumnWidth: dayColumnWidth(for: viewportWidth),
             positionedBookings: positionedBookings,
             earliestBookableDate: .now
+        )
+    }
+
+    private func daysContentWidth(for viewportWidth: CGFloat) -> CGFloat {
+        ProviderWeeklyScheduleGridEngine.daysContentWidth(viewportWidth: viewportWidth)
+    }
+
+    private func dayColumnWidth(for viewportWidth: CGFloat) -> CGFloat {
+        ProviderWeeklyScheduleGridEngine.dayColumnWidth(viewportWidth: viewportWidth)
+    }
+
+    private func gridLineStyle(for viewportWidth: CGFloat) -> ProviderWeeklyScheduleGridLineStyle {
+        ProviderWeeklyScheduleGridLineStyle.resolve(
+            dayColumnWidth: dayColumnWidth(for: viewportWidth),
+            displayScale: displayScale
         )
     }
 
@@ -59,43 +68,49 @@ struct ProviderWeeklyScheduleGrid: View {
                 0,
                 geometry.size.width - ProviderWeeklyScheduleGridMetrics.timeGutterWidth
             )
-            VStack(alignment: .leading, spacing: ProviderWeeklyScheduleGridMetrics.dayHeaderGridSpacing) {
-                pinnedDayHeaderRow
-                gridScrollRegion(daysViewportWidth: daysViewportWidth)
-            }
+            gridScrollRegion(daysViewportWidth: daysViewportWidth)
+                .onAppear {
+                    horizontalScrollOffset = ProviderWeeklyScheduleGridEngine.initialHorizontalContentOffset(
+                        dayColumnWidth: dayColumnWidth(for: daysViewportWidth),
+                        daysContentWidth: daysContentWidth(for: daysViewportWidth),
+                        viewportWidth: daysViewportWidth
+                    )
+                }
+                .onChange(of: weekOffset) { _, _ in
+                    horizontalScrollOffset = ProviderWeeklyScheduleGridEngine.initialHorizontalContentOffset(
+                        dayColumnWidth: dayColumnWidth(for: daysViewportWidth),
+                        daysContentWidth: daysContentWidth(for: daysViewportWidth),
+                        viewportWidth: daysViewportWidth
+                    )
+                }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    // MARK: - Headers
+    // MARK: - Day headers (pinned above grid; tracks horizontal day-column scroll)
 
-    private var pinnedDayHeaderRow: some View {
+    private func pinnedDayHeaderRow(daysViewportWidth: CGFloat) -> some View {
         HStack(spacing: 0) {
             Color.providerScheduleGridBackground
                 .frame(width: ProviderWeeklyScheduleGridMetrics.timeGutterWidth)
             ZStack(alignment: .leading) {
-                dayHeaderRow
+                dayHeaderRow(viewportWidth: daysViewportWidth)
                     .offset(x: -horizontalScrollOffset)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(width: daysViewportWidth, alignment: .leading)
             .clipped()
         }
-        .padding(.bottom, 4)
+        .frame(height: ProviderWeeklyScheduleGridMetrics.dayHeaderRowHeight)
         .background(Color.providerScheduleGridBackground)
     }
 
-    private var dayHeaderRow: some View {
+    private func dayHeaderRow(viewportWidth: CGFloat) -> some View {
         HStack(spacing: 0) {
-            ForEach(Array(model.weekDays.enumerated()), id: \.element.id) { index, day in
+            ForEach(Array(model.weekDays.enumerated()), id: \.element.id) { _, day in
                 dayHeaderCell(for: day)
-                    .id(
-                        index == ProviderWeeklyScheduleGridMetrics.fridayDayIndex
-                            ? ProviderWeeklyScheduleGridMetrics.fridayDayScrollID
-                            : day.id
-                    )
             }
         }
-        .frame(width: Self.daysScrollWidth, alignment: .leading)
+        .frame(width: daysContentWidth(for: viewportWidth), alignment: .leading)
     }
 
     private func dayHeaderCell(for day: ProviderWeeklyScheduleDayColumn) -> some View {
@@ -140,37 +155,30 @@ struct ProviderWeeklyScheduleGrid: View {
 
     private func gridScrollRegion(daysViewportWidth: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
-            if model.isEmptyAvailability {
-                HStack(alignment: .top, spacing: 0) {
-                    Color.clear
-                        .frame(width: ProviderWeeklyScheduleGridMetrics.timeGutterWidth)
-                    Text("Set your weekly availability to see open slots.")
-                        .font(.provider(.footnote))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .padding(.top, ProviderWeeklyScheduleGridMetrics.timeGutterTopPadding)
-                        .padding(.horizontal, 4)
-                }
-            } else {
-                ScrollViewReader { verticalProxy in
-                    ScrollViewReader { horizontalProxy in
+            VStack(spacing: 0) {
+                pinnedDayHeaderRow(daysViewportWidth: daysViewportWidth)
+
+                if model.isEmptyAvailability {
+                    HStack(alignment: .top, spacing: 0) {
+                        Color.clear
+                            .frame(width: ProviderWeeklyScheduleGridMetrics.timeGutterWidth)
+                        Text("Set your weekly availability to see open slots.")
+                            .font(.provider(.footnote))
+                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .padding(.top, ProviderWeeklyScheduleGridMetrics.timeGutterTopPadding)
+                            .padding(.horizontal, 4)
+                    }
+                    .frame(height: resolvedGridHeight, alignment: .topLeading)
+                } else {
+                    ScrollViewReader { verticalProxy in
                         verticalGridScroll(daysViewportWidth: daysViewportWidth)
                             .onAppear {
                                 scrollToInitialPosition(proxy: verticalProxy)
-                                scrollToFridayPeek(
-                                    proxy: horizontalProxy,
-                                    viewportWidth: daysViewportWidth,
-                                    animated: false
-                                )
                             }
                             .onChange(of: weekOffset) { _, _ in
                                 didInitialScroll = false
                                 scrollToInitialPosition(proxy: verticalProxy)
-                                scrollToFridayPeek(
-                                    proxy: horizontalProxy,
-                                    viewportWidth: daysViewportWidth,
-                                    animated: true
-                                )
                             }
                             .onChange(of: model.timeRows.count) { _, _ in
                                 if !didInitialScroll {
@@ -189,7 +197,10 @@ struct ProviderWeeklyScheduleGrid: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: resolvedGridHeight, alignment: .topLeading)
+        .frame(
+            height: ProviderWeeklyScheduleGridMetrics.dayHeaderRowHeight + resolvedGridHeight,
+            alignment: .topLeading
+        )
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -219,48 +230,65 @@ struct ProviderWeeklyScheduleGrid: View {
     }
 
     private func horizontalDayColumnsScroll(daysViewportWidth: CGFloat) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            ZStack(alignment: .topLeading) {
-                dayColumnsRow
-                if !model.isEmptyAvailability {
-                    ProviderWeeklyScheduleGridAppointmentsLayer(
-                        model: model,
-                        positionedBookings: positionedBookings,
-                        moveResolver: moveResolver,
-                        dayColumnWidth: dayColumnWidth,
-                        viewportWidth: daysViewportWidth,
-                        viewportHeight: resolvedGridHeight,
-                        appointmentDragEnabled: appointmentDragEnabled,
-                        editingMoveBookingID: $editingMoveBookingID,
-                        onMoveBookingRequested: onMoveBookingRequested,
-                        onViewBooking: onViewBooking,
-                        onBookingTimeChangeProposed: onBookingTimeChangeProposed,
-                        onBookingMoveProposalCleared: onBookingMoveProposalCleared
-                    )
+        let columnWidth = dayColumnWidth(for: daysViewportWidth)
+        let contentWidth = daysContentWidth(for: daysViewportWidth)
+        let resolver = moveResolver(viewportWidth: daysViewportWidth)
+
+        return ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                ZStack(alignment: .topLeading) {
+                    dayColumnsRow(viewportWidth: daysViewportWidth)
+                    if !model.isEmptyAvailability {
+                        ProviderWeeklyScheduleGridAppointmentsLayer(
+                            model: model,
+                            positionedBookings: positionedBookings,
+                            moveResolver: resolver,
+                            dayColumnWidth: columnWidth,
+                            viewportWidth: daysViewportWidth,
+                            viewportHeight: resolvedGridHeight,
+                            appointmentDragEnabled: appointmentDragEnabled,
+                            editingMoveBookingID: $editingMoveBookingID,
+                            onMoveBookingRequested: onMoveBookingRequested,
+                            onViewBooking: onViewBooking,
+                            onBookingTimeChangeProposed: onBookingTimeChangeProposed,
+                            onBookingMoveProposalCleared: onBookingMoveProposalCleared
+                        )
+                    }
                 }
+                .frame(width: contentWidth, alignment: .leading)
             }
-            .frame(width: Self.daysScrollWidth, alignment: .leading)
-        }
-        .providerScheduleGridScrollMarginsZero()
-        .onScrollGeometryChange(for: CGFloat.self) { geometry in
-            geometry.contentOffset.x + geometry.contentInsets.leading
-        } action: { _, newOffset in
-            horizontalScrollOffset = newOffset
+            .providerScheduleGridScrollMarginsZero()
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentOffset.x + geometry.contentInsets.leading
+            } action: { _, newOffset in
+                horizontalScrollOffset = newOffset
+            }
+            .onAppear {
+                applyInitialHorizontalScroll(
+                    proxy: proxy,
+                    viewportWidth: daysViewportWidth,
+                    animated: false
+                )
+            }
+            .onChange(of: weekOffset) { _, _ in
+                applyInitialHorizontalScroll(
+                    proxy: proxy,
+                    viewportWidth: daysViewportWidth,
+                    animated: true
+                )
+            }
         }
     }
 
-    private var dayColumnsRow: some View {
-        HStack(spacing: 0) {
+    private func dayColumnsRow(viewportWidth: CGFloat) -> some View {
+        let lineStyle = gridLineStyle(for: viewportWidth)
+        return HStack(spacing: 0) {
             ForEach(Array(model.weekDays.enumerated()), id: \.element.id) { dayIndex, day in
-                dayColumn(dayIndex: dayIndex, day: day)
-                    .id(
-                        dayIndex == ProviderWeeklyScheduleGridMetrics.fridayDayIndex
-                            ? ProviderWeeklyScheduleGridMetrics.fridayDayScrollID
-                            : day.id
-                    )
+                dayColumn(dayIndex: dayIndex, day: day, lineStyle: lineStyle)
+                    .id(day.id)
             }
         }
-        .frame(width: Self.daysScrollWidth, alignment: .leading)
+        .frame(width: daysContentWidth(for: viewportWidth), alignment: .leading)
     }
 
     private var timeGutter: some View {
@@ -279,11 +307,15 @@ struct ProviderWeeklyScheduleGrid: View {
                 .frame(height: ProviderWeeklyScheduleGridMetrics.rowHeight)
             }
         }
-        .frame(width: ProviderWeeklyScheduleGridMetrics.timeGutterWidth)
+        .frame(width: ProviderWeeklyScheduleGridMetrics.timeGutterWidth, alignment: .trailing)
         .background(Color.providerScheduleGridBackground)
     }
 
-    private func dayColumn(dayIndex: Int, day: ProviderWeeklyScheduleDayColumn) -> some View {
+    private func dayColumn(
+        dayIndex: Int,
+        day: ProviderWeeklyScheduleDayColumn,
+        lineStyle: ProviderWeeklyScheduleGridLineStyle
+    ) -> some View {
         ZStack(alignment: .topLeading) {
             if day.isToday {
                 Color.providerScheduleTodayColumnHighlight
@@ -294,7 +326,7 @@ struct ProviderWeeklyScheduleGrid: View {
                     slotCell(
                         cell: cell,
                         slotStartMin: slotStartMin,
-                        isHourLine: slotStartMin % 60 == 0,
+                        lineStyle: lineStyle,
                         scrollAnchorId: dayIndex == 0 ? "row-\(slotStartMin)" : nil
                     )
                 }
@@ -306,6 +338,11 @@ struct ProviderWeeklyScheduleGrid: View {
                     .frame(height: model.totalContentHeight)
             }
         }
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(Color.providerScheduleTrackStroke.opacity(lineStyle.columnDividerOpacity))
+                .frame(width: lineStyle.columnDividerWidth)
+        }
         .frame(maxWidth: .infinity)
         .frame(height: model.totalContentHeight)
     }
@@ -314,14 +351,14 @@ struct ProviderWeeklyScheduleGrid: View {
     private func slotCell(
         cell: ProviderWeeklyScheduleGridCell,
         slotStartMin: Int,
-        isHourLine: Bool,
+        lineStyle: ProviderWeeklyScheduleGridLineStyle,
         scrollAnchorId: String?
     ) -> some View {
         let slotEndMin = slotStartMin + ProviderWeeklyScheduleGridMetrics.slotMinutes
         let startHHMM = ProviderWeeklyScheduleGridEngine.hhmm(from: slotStartMin)
         let endHHMM = ProviderWeeklyScheduleGridEngine.hhmm(from: slotEndMin)
 
-        let background = slotBackground(for: cell, isHourLine: isHourLine)
+        let background = slotBackground(for: cell, slotStartMin: slotStartMin, lineStyle: lineStyle)
 
         if cell.status == .blocked {
             Button {
@@ -355,28 +392,35 @@ struct ProviderWeeklyScheduleGrid: View {
 
     // MARK: - Interaction
 
-    private func scrollToFridayPeek(
+    private func applyInitialHorizontalScroll(
         proxy: ScrollViewProxy,
         viewportWidth: CGFloat,
         animated: Bool
     ) {
-        guard viewportWidth > 0 else { return }
-        let peek = ProviderWeeklyScheduleGridMetrics.fridayPeekVisibleWidth
+        guard viewportWidth > 0,
+              model.weekDays.indices.contains(ProviderWeeklyScheduleGridMetrics.fridayDayIndex) else { return }
+
+        let columnWidth = dayColumnWidth(for: viewportWidth)
+        let contentWidth = daysContentWidth(for: viewportWidth)
+        let friday = model.weekDays[ProviderWeeklyScheduleGridMetrics.fridayDayIndex]
+        let peek = ProviderWeeklyScheduleGridEngine.fridayPeekVisibleWidth(dayColumnWidth: columnWidth)
         let anchorX = max(0.5, min(0.995, (viewportWidth - peek) / viewportWidth))
+        horizontalScrollOffset = ProviderWeeklyScheduleGridEngine.fridayPeekContentOffset(
+            dayColumnWidth: columnWidth,
+            daysContentWidth: contentWidth,
+            viewportWidth: viewportWidth
+        )
+        let scroll = {
+            proxy.scrollTo(friday.id, anchor: UnitPoint(x: anchorX, y: 0))
+        }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             if animated {
                 withAnimation(.easeOut(duration: 0.2)) {
-                    proxy.scrollTo(
-                        ProviderWeeklyScheduleGridMetrics.fridayDayScrollID,
-                        anchor: UnitPoint(x: anchorX, y: 0)
-                    )
+                    scroll()
                 }
             } else {
-                proxy.scrollTo(
-                    ProviderWeeklyScheduleGridMetrics.fridayDayScrollID,
-                    anchor: UnitPoint(x: anchorX, y: 0)
-                )
+                scroll()
             }
         }
     }
@@ -401,7 +445,6 @@ struct ProviderWeeklyScheduleGrid: View {
 
     // MARK: - Styling
 
-    private var openColor: Color { Color.providerScheduleOpenSlotFill }
     private var blockedColor: Color { Color.providerScheduleBlockedSlotFill }
     private var unavailableColor: Color { Color.providerScheduleCardFill.opacity(0.35) }
 
@@ -410,7 +453,7 @@ struct ProviderWeeklyScheduleGrid: View {
         case .unavailable:
             return unavailableColor
         case .open:
-            return openColor
+            return Color.clear
         case .booked:
             if let booking = cell.booking {
                 return booking.scheduleAppointmentFillColor
@@ -426,8 +469,12 @@ struct ProviderWeeklyScheduleGrid: View {
     @ViewBuilder
     private func slotBackground(
         for cell: ProviderWeeklyScheduleGridCell,
-        isHourLine: Bool
+        slotStartMin: Int,
+        lineStyle: ProviderWeeklyScheduleGridLineStyle
     ) -> some View {
+        let isHourLine = slotStartMin % 60 == 0
+        let isHalfHourLine = slotStartMin % 30 == 0 && !isHourLine
+
         Group {
             if cell.status == .google {
                 ProviderScheduleCrossOutOverlay(cornerRadius: 0, showsBorder: false)
@@ -444,13 +491,23 @@ struct ProviderWeeklyScheduleGrid: View {
             }
         }
         .overlay(alignment: .top) {
-            if isHourLine {
-                Rectangle()
-                    .fill(Color.providerScheduleTrackStroke.opacity(0.55))
-                    .frame(height: 0.5)
+            if cell.status == .open {
+                if isHourLine {
+                    scheduleGridLine(width: lineStyle.hourLineWidth, opacity: lineStyle.hourLineOpacity)
+                } else if isHalfHourLine {
+                    scheduleGridLine(width: lineStyle.halfHourLineWidth, opacity: lineStyle.halfHourLineOpacity)
+                }
+            } else if isHourLine {
+                scheduleGridLine(width: lineStyle.hourLineWidth, opacity: lineStyle.hourLineOpacity)
             }
         }
         .frame(height: ProviderWeeklyScheduleGridMetrics.rowHeight)
+    }
+
+    private func scheduleGridLine(width: CGFloat, opacity: Double) -> some View {
+        Rectangle()
+            .fill(Color.providerScheduleTrackStroke.opacity(opacity))
+            .frame(height: width)
     }
 
     private func dayNumber(for date: Date) -> String {

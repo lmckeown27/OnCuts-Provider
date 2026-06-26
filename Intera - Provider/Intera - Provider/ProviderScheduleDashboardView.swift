@@ -74,6 +74,26 @@ struct ProviderScheduleDashboardView: View {
         }
     }
 
+    private var weekEndExclusive: Date {
+        mondayCalendar.date(byAdding: .day, value: 7, to: weekStartMonday) ?? weekStartMonday
+    }
+
+    private var bookingsBeforeViewedWeekCount: Int {
+        scheduleBookings.filter { booking in
+            guard ProviderBookingStatusDisplay.countsForWeekNavigationTicker(booking) else { return false }
+            guard let scheduled = booking.providerEffectiveScheduledTime else { return false }
+            return scheduled < weekStartMonday
+        }.count
+    }
+
+    private var bookingsAfterViewedWeekCount: Int {
+        scheduleBookings.filter { booking in
+            guard ProviderBookingStatusDisplay.countsForWeekNavigationTicker(booking) else { return false }
+            guard let scheduled = booking.providerEffectiveScheduledTime else { return false }
+            return scheduled >= weekEndExclusive
+        }.count
+    }
+
     private var gridModel: ProviderWeeklyScheduleGridModel {
         ProviderWeeklyScheduleGridEngine.buildModel(
             weekOffset: weekOffset,
@@ -91,11 +111,11 @@ struct ProviderScheduleDashboardView: View {
     }
 
     private func scheduleGridViewportHeight(in geometry: GeometryProxy) -> CGFloat {
-        let dayHeaderAndSpacing: CGFloat = 52 + ProviderWeeklyScheduleGridMetrics.dayHeaderGridSpacing
+        let dayHeaderHeight = ProviderWeeklyScheduleGridMetrics.dayHeaderRowHeight
         let available = geometry.size.height
             - scheduleChromeHeight
             - scheduleVerticalPadding
-            - dayHeaderAndSpacing
+            - dayHeaderHeight
             - 12
         return max(ProviderWeeklyScheduleGridMetrics.minimumGridHeight, available)
     }
@@ -229,6 +249,7 @@ struct ProviderScheduleDashboardView: View {
                 }
             )
             .frame(maxHeight: .infinity, alignment: .top)
+            .padding(.horizontal, -ProviderWeeklyScheduleGridMetrics.scheduleOuterHorizontalInset)
         }
         .onPreferenceChange(ProviderScheduleChromeHeightPreferenceKey.self) { scheduleChromeHeight = $0 }
     }
@@ -287,13 +308,13 @@ struct ProviderScheduleDashboardView: View {
                     Group {
                         if isSavingBookingMove {
                             ProgressView()
-                                .tint(Color.lavaShellCream)
+                                .tint(.white)
                         } else {
                             Text("Save Change")
                                 .font(.provider(size: 14, weight: .semibold))
+                                .foregroundStyle(.white)
                         }
                     }
-                    .foregroundStyle(Color.lavaShellCream)
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -305,6 +326,7 @@ struct ProviderScheduleDashboardView: View {
                 .buttonStyle(.plain)
                 .disabled(!canSaveBookingMove || isSavingBookingMove)
             }
+            .padding(.top, 8)
             .frame(maxWidth: 448)
             .frame(maxWidth: .infinity, alignment: .center)
         }
@@ -340,6 +362,17 @@ struct ProviderScheduleDashboardView: View {
                     .background { scheduleControlCircleBackground }
             }
             .buttonStyle(.plain)
+            .overlay(alignment: .topTrailing) {
+                if bookingsBeforeViewedWeekCount > 0 {
+                    weekNavigationTickerBadge(bookingsBeforeViewedWeekCount)
+                        .offset(x: 5, y: -5)
+                }
+            }
+            .accessibilityLabel(
+                bookingsBeforeViewedWeekCount > 0
+                    ? "Previous week, \(bookingsBeforeViewedWeekCount) booking\(bookingsBeforeViewedWeekCount == 1 ? "" : "s")"
+                    : "Previous week"
+            )
 
             Spacer()
 
@@ -366,10 +399,48 @@ struct ProviderScheduleDashboardView: View {
                     .background { scheduleControlCircleBackground }
             }
             .buttonStyle(.plain)
+            .overlay(alignment: .topTrailing) {
+                if bookingsAfterViewedWeekCount > 0 {
+                    weekNavigationTickerBadge(bookingsAfterViewedWeekCount)
+                        .offset(x: 5, y: -5)
+                }
+            }
+            .accessibilityLabel(
+                bookingsAfterViewedWeekCount > 0
+                    ? "Next week, \(bookingsAfterViewedWeekCount) booking\(bookingsAfterViewedWeekCount == 1 ? "" : "s")"
+                    : "Next week"
+            )
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
         .background { scheduleChromeTrackBackground }
+    }
+
+    @ViewBuilder
+    private func weekNavigationTickerBadge(_ count: Int) -> some View {
+        let label = count > 99 ? "99+" : "\(count)"
+        let text = Text(label)
+            .font(.provider(size: 11, weight: .bold))
+            .foregroundStyle(.white)
+
+        if count > 9 {
+            text
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Color.red.opacity(0.92), in: Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(Color.lavaShellCream.opacity(0.85), lineWidth: 1.5)
+                )
+        } else {
+            text
+                .frame(minWidth: 18, minHeight: 18)
+                .background(Color.red.opacity(0.92), in: Circle())
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.lavaShellCream.opacity(0.85), lineWidth: 1.5)
+                )
+        }
     }
 
     private var scheduleAvailabilityActionsRow: some View {

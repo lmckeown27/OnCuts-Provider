@@ -1229,7 +1229,31 @@ struct AdminPagination: Decodable, Hashable {
 
 struct BookingRequestsPendingEnvelope: Decodable {
     let success: Bool?
-    let requests: [BookingRequestRow]?
+    let requests: [BookingRequestRow]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        success = try container.decodeIfPresent(Bool.self, forKey: .success)
+
+        var decoded: [BookingRequestRow] = []
+        if var array = try? container.nestedUnkeyedContainer(forKey: .requests) {
+            while !array.isAtEnd {
+                let itemDecoder = try array.superDecoder()
+                do {
+                    decoded.append(try BookingRequestRow(from: itemDecoder))
+                } catch {
+                    #if DEBUG
+                    print("[BookingRequestsPendingEnvelope] Skipped request decode: \(error)")
+                    #endif
+                }
+            }
+        }
+        requests = decoded
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case success, requests
+    }
 }
 
 struct BookingRequestRow: Decodable, Identifiable, Hashable {
@@ -1242,6 +1266,72 @@ struct BookingRequestRow: Decodable, Identifiable, Hashable {
     let location: String?
     let status: String?
     let price: Double?
+
+    init(
+        bookingId: String,
+        customerId: String?,
+        customerName: String?,
+        serviceType: String?,
+        requestedDate: String?,
+        requestedTime: String?,
+        location: String?,
+        status: String?,
+        price: Double?
+    ) {
+        self.bookingId = bookingId
+        self.customerId = customerId
+        self.customerName = customerName
+        self.serviceType = serviceType
+        self.requestedDate = requestedDate
+        self.requestedTime = requestedTime
+        self.location = location
+        self.status = status
+        self.price = price
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        bookingId = try ProviderAPIFlexibleDecoding.requiredString(from: container, forKey: .bookingId)
+        customerId = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .customerId)
+        customerName = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .customerName)
+        serviceType = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .serviceType)
+        requestedDate = Self.decodeRequestedDateString(from: container)
+        requestedTime = Self.decodeRequestedTimeString(from: container)
+        location = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .location)
+        status = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .status)
+        price = ProviderAPIFlexibleDecoding.optionalDouble(from: container, forKey: .price)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case bookingId, customerId, customerName, serviceType, requestedDate, requestedTime, location, status, price
+    }
+
+    private static func decodeRequestedDateString(
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) -> String? {
+        if let value = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .requestedDate) {
+            return value
+        }
+        guard let date = ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .requestedDate) else {
+            return nil
+        }
+        return date.campusCutsISO8601String()
+    }
+
+    private static func decodeRequestedTimeString(
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) -> String? {
+        if let value = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .requestedTime) {
+            return value
+        }
+        guard let date = ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .requestedTime) else {
+            return nil
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: date)
+    }
 
     var id: String { bookingId }
 

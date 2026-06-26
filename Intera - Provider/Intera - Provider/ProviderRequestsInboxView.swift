@@ -559,6 +559,7 @@ struct ProviderRequestsInboxContent: View {
                 expandedRequestId = nil
             }
         } catch {
+            guard !providerAllBookingsIsBenignCancellation(error) else { return }
             requestsErrorText = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
             triageItems = []
         }

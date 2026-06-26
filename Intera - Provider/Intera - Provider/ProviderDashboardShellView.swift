@@ -143,6 +143,7 @@ struct ProviderDashboardShellView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .providerRequestsListShouldRefresh)) { _ in
             Task { await refreshHeaderCounts() }
+            NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
         }
         .onReceive(NotificationCenter.default.publisher(for: .interaOpenRequestsInbox)) { _ in
             navigator.popToHub()
