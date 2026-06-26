@@ -17,15 +17,13 @@ enum ProviderShellRoute: Hashable {
     /// `AuthMeUser.hasAdminPrivileges` is true. Barber / user detail pushes happen inside the
     /// dashboard's own `NavigationStack`, not as separate shell stack entries.
     case adminDashboard
-    /// Campus barber roster for peer coordination (barbers) or admin support messaging.
-    case barberChats
 }
 
 extension ProviderShellRoute {
     /// Backdrop for this route only (travels with the push transition — no shared shell underlay).
     var pushedBackdropStyle: ProviderNavigationStackDestinationBackdropStyle {
         switch self {
-        case .messages, .barberChats:
+        case .messages:
             return .neutralGrey
         default:
             return .shell

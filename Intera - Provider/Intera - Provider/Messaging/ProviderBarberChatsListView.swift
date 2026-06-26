@@ -1,8 +1,10 @@
 import SwiftUI
 
 /// Roster of barbers on a campus for peer coordination (barbers) or admin support messaging.
-struct ProviderBarberChatsListView: View {
+struct ProviderBarberChatsRosterView: View {
     @Environment(ProviderSession.self) private var session
+
+    let onOpenConversation: (ConversationRow) -> Void
 
     @State private var barbers: [BarberChatRowDTO] = []
     @State private var campuses: [AdminCampusDTO] = []
@@ -11,8 +13,6 @@ struct ProviderBarberChatsListView: View {
     @State private var isLoading = false
     @State private var isOpeningThread = false
     @State private var errorText: String?
-    @State private var detailPath = NavigationPath()
-    @State private var activeConversation: ConversationRow?
     @State private var openingBarberUserId: String?
 
     private var isAdmin: Bool { session.authUser?.hasAdminPrivileges == true }
@@ -89,63 +89,32 @@ struct ProviderBarberChatsListView: View {
     }
 
     var body: some View {
-        NavigationStack(path: $detailPath) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if usesSupportInbox {
-                        campusPickerCard
-                    } else {
-                        Text("Chat with barbers on your campus")
-                            .font(.provider(.footnote))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    }
-
-                    searchField
-
-                    if let errorText {
-                        Text(errorText)
-                            .font(.provider(.footnote))
-                            .foregroundStyle(.red)
-                    }
-
-                    rosterContent
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-            }
-            .refreshable {
-                await loadRoster()
-            }
-            .navigationTitle("Barber Chats")
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(for: Int.self) { conversationId in
-                if let conversation = activeConversation, conversation.id == conversationId {
-                    ProviderChatDetailHost(
-                        conversation: conversation,
-                        barberTableId: session.barberProfile?.id,
-                        onNavigateBack: {
-                            guard !detailPath.isEmpty else { return }
-                            detailPath.removeLast()
-                            activeConversation = nil
-                        },
-                        onBlocked: {
-                            detailPath = NavigationPath()
-                            activeConversation = nil
-                            Task { await loadRoster() }
-                        }
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.providerNeutralPushedBackdrop)
-                    .toolbar(.hidden, for: .navigationBar)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if usesSupportInbox {
+                    campusPickerCard
                 } else {
-                    ProgressView()
-                        .tint(.providerOlive)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color.providerNeutralPushedBackdrop)
-                        .toolbar(.hidden, for: .navigationBar)
+                    Text("Chat with service providers in your area")
+                        .font(.provider(.footnote))
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
+
+                searchField
+
+                if let errorText {
+                    Text(errorText)
+                        .font(.provider(.footnote))
+                        .foregroundStyle(.red)
+                }
+
+                rosterContent
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .refreshable {
+            await loadRoster()
         }
         .overlay {
             if isOpeningThread {
@@ -170,8 +139,6 @@ struct ProviderBarberChatsListView: View {
         .onReceive(NotificationCenter.default.publisher(for: .providerMessagingUnreadCountShouldRefresh)) { _ in
             Task { await loadRoster() }
         }
-        .foregroundStyle(Color.lavaShellCream)
-        .tint(.providerOlive)
     }
 
     @ViewBuilder
@@ -191,9 +158,9 @@ struct ProviderBarberChatsListView: View {
                 icon: "bubble.left.and.bubble.right",
                 message: searchQuery.isEmpty
                     ? (showsCampusGroups
-                        ? "No barbers on any campus yet."
-                        : "No other barbers on this campus yet.")
-                    : "No barbers found."
+                        ? "No providers on any campus yet."
+                        : "No other providers in your area yet.")
+                    : "No providers found."
             )
         } else if showsCampusGroups {
             LazyVStack(spacing: 16) {
@@ -296,7 +263,7 @@ struct ProviderBarberChatsListView: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(Color.lavaShellCreamTertiary)
-            TextField("Search barbers…", text: $searchQuery)
+            TextField("Search providers…", text: $searchQuery)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
         }
@@ -436,7 +403,7 @@ struct ProviderBarberChatsListView: View {
             }
         } catch let CampusCutsHTTPError.httpStatus(code, msg) {
             barbers = []
-            errorText = msg ?? "Could not load barbers (\(code))."
+            errorText = msg ?? "Could not load providers (\(code))."
         } catch {
             barbers = []
             errorText = error.localizedDescription
@@ -469,9 +436,7 @@ struct ProviderBarberChatsListView: View {
             }
 
             ProviderConversationMessagesPrefetch.prefetch(conversationId: conversationId)
-            let row = barber.conversationRow(conversationId: conversationId)
-            activeConversation = row
-            detailPath.append(conversationId)
+            onOpenConversation(barber.conversationRow(conversationId: conversationId))
             NotificationCenter.default.post(name: .providerMessagingUnreadCountShouldRefresh, object: nil)
         } catch let CampusCutsHTTPError.httpStatus(code, msg) {
             errorText = msg ?? "Could not open chat (\(code))."

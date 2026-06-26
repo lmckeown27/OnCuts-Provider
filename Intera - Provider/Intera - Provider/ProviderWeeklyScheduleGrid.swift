@@ -8,6 +8,7 @@ struct ProviderWeeklyScheduleGrid: View {
     /// When set, the scrollable time region fills this height (typically the remaining hub viewport).
     let viewportHeight: CGFloat?
     var appointmentDragEnabled: Bool = false
+    var onPullToRefresh: (() async -> Void)? = nil
     @Binding var editingMoveBookingID: String?
     let onUnblockTime: (_ blockId: String) -> Void
     let onViewBooking: (SimpleBookingDTO) -> Void
@@ -194,10 +195,12 @@ struct ProviderWeeklyScheduleGrid: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Color.providerScheduleTrackStroke, lineWidth: 0.6)
         }
+        .background(ProviderScheduleGridOrthogonalScrollHandoff())
     }
 
+    @ViewBuilder
     private func verticalGridScroll(daysViewportWidth: CGFloat) -> some View {
-        ScrollView(.vertical, showsIndicators: true) {
+        let scroll = ScrollView(.vertical, showsIndicators: true) {
             HStack(alignment: .top, spacing: 0) {
                 timeGutter
                     .padding(.top, ProviderWeeklyScheduleGridMetrics.timeGutterTopPadding)
@@ -207,6 +210,12 @@ struct ProviderWeeklyScheduleGrid: View {
         }
         .providerScheduleGridScrollMarginsZero()
         .frame(height: resolvedGridHeight)
+
+        if let onPullToRefresh {
+            scroll.refreshable { await onPullToRefresh() }
+        } else {
+            scroll
+        }
     }
 
     private func horizontalDayColumnsScroll(daysViewportWidth: CGFloat) -> some View {

@@ -56,8 +56,8 @@ enum ProviderAppearance {
     static let olive = UIColor(red: 90 / 255, green: 114 / 255, blue: 104 / 255, alpha: 1)
     /// Light green for unread / new-message affordances (`#A8E5BC`).
     static let messageUnreadAccent = UIColor(red: 0xA8 / 255, green: 0xE5 / 255, blue: 0xBC / 255, alpha: 1)
-    /// Olive **text** fill — matches Intera `Color.oliveGreen` (`#849E92` / `#556860`).
-    static let inboxMessageOlive = ProviderOliveGreenTextStyle.fillUIColor
+    /// Standard adaptive body text on provider surfaces.
+    static let inboxMessageOlive = ProviderAppearance.primaryText
     static let oliveFill = UIColor { traits in
         traits.userInterfaceStyle == .dark
             ? UIColor(red: 90 / 255, green: 114 / 255, blue: 104 / 255, alpha: 0.92)
@@ -277,11 +277,11 @@ extension Color {
     /// Light green for unread / new-message badges and ribbons (`#A8E5BC`).
     static var providerMessageUnreadAccent: Color { Color(uiColor: ProviderAppearance.messageUnreadAccent) }
 
-    /// Olive **text** fill (`#849E92` light / `#556860` dark). Prefer ``View/foregroundStyleProviderOliveGreen(opacity:)`` for glyphs.
-    static var oliveGreen: Color { Color(uiColor: ProviderOliveGreenTextStyle.fillUIColor) }
+    /// Standard adaptive body text (`lavaShellCream` / ink).
+    static var oliveGreen: Color { lavaShellCream }
 
-    /// Olive inbox preview text — alias of ``oliveGreen`` for legacy call sites.
-    static var providerInboxMessageOlive: Color { oliveGreen }
+    /// Inbox preview text — alias of secondary body text for legacy call sites.
+    static var providerInboxMessageOlive: Color { lavaShellCreamSecondary }
 
     static var providerFormGroupedBackground: Color {
         Color(uiColor: ProviderAppearance.groupedShellBase)

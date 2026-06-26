@@ -65,9 +65,10 @@ struct ProviderScheduleDashboardView: View {
         bookings.filter(\.isVisibleOnMainSchedule)
     }
 
-    private var weekBookings: [SimpleBookingDTO] {
+    private var weekUpcomingBookings: [SimpleBookingDTO] {
         let weekEnd = mondayCalendar.date(byAdding: .day, value: 7, to: weekStartMonday) ?? weekStartMonday
         return scheduleBookings.filter { booking in
+            guard ProviderBookingStatusDisplay.isUpcomingScheduleAppointment(booking) else { return false }
             guard let scheduled = booking.providerEffectiveScheduledTime else { return false }
             return scheduled >= weekStartMonday && scheduled < weekEnd
         }
@@ -101,18 +102,11 @@ struct ProviderScheduleDashboardView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            ScrollView {
-                scheduleContent(gridViewportHeight: scheduleGridViewportHeight(in: geometry))
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .padding(.bottom, 24)
-                    .frame(maxWidth: .infinity, minHeight: geometry.size.height, alignment: .topLeading)
-            }
-            .scrollContentBackground(.hidden)
-            .scrollIndicators(.hidden)
-            .refreshable {
-                await reloadAll()
-            }
+            scheduleContent(gridViewportHeight: scheduleGridViewportHeight(in: geometry))
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task(id: session.barberProfile?.id) {
@@ -209,6 +203,7 @@ struct ProviderScheduleDashboardView: View {
                 isLoading: isGridLoading,
                 viewportHeight: gridViewportHeight,
                 appointmentDragEnabled: session.hasProviderProfile,
+                onPullToRefresh: { await reloadAll() },
                 editingMoveBookingID: $editingMoveBookingID,
                 onUnblockTime: { blockId in
                     Task { await deleteTimeBlock(blockId: blockId) }
@@ -327,7 +322,7 @@ struct ProviderScheduleDashboardView: View {
     }
 
     private var summaryText: String {
-        let n = weekBookings.count
+        let n = weekUpcomingBookings.count
         let noun = n == 1 ? "appointment" : "appointments"
         if weekOffset == 0 {
             return "\(n) \(noun) this week"
@@ -380,11 +375,17 @@ struct ProviderScheduleDashboardView: View {
     private var scheduleAvailabilityActionsRow: some View {
         HStack(spacing: 8) {
             scheduleActionButton(title: "Edit Schedule") {
+                if let barberId = session.barberProfile?.id {
+                    ProviderAvailabilityEditorPrefetch.begin(barberId: barberId)
+                }
                 shellNavigator.pushRoute(.availability)
             }
             scheduleActionButton(title: "Block Time") {
                 prepareBlockSheetForSelectedWeek()
                 showingBlockTimeSheet = true
+            }
+            scheduleActionButton(title: "Services") {
+                shellNavigator.pushRoute(.services)
             }
         }
         .frame(maxWidth: .infinity, alignment: .center)

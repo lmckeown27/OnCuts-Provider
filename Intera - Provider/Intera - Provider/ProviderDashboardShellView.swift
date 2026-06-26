@@ -326,26 +326,12 @@ struct ProviderDashboardShellView: View {
                 profileMenuActionButton("Account") {
                     navigator.pushRoute(ProviderShellRoute.account)
                 }
-                profileMenuActionButton("Availability") {
-                    if let barberId = session.barberProfile?.id {
-                        ProviderAvailabilityEditorPrefetch.begin(barberId: barberId)
-                    }
-                    navigator.pushRoute(ProviderShellRoute.availability)
-                }
-                profileMenuActionButton("Services") {
-                    navigator.pushRoute(ProviderShellRoute.services)
-                }
                 if session.hasProviderProfile {
                     profileMenuActionButton("Business Analytics") {
                         showingBusinessAnalytics = true
                     }
                     profileMenuActionButton("Payout Settings") {
                         navigator.pushRoute(ProviderShellRoute.payoutSettings)
-                    }
-                }
-                if session.hasProviderProfile || session.authUser?.hasAdminPrivileges == true {
-                    profileMenuActionButton("Barber Chats") {
-                        navigator.pushRoute(ProviderShellRoute.barberChats)
                     }
                 }
             }
@@ -459,25 +445,25 @@ struct ProviderDashboardShellView: View {
             ProviderAdminDashboardView()
                 .providerPushedDestinationChrome(for: route)
                 .providerShellBackToolbar()
-        case .barberChats:
-            ProviderBarberChatsListView()
-                .providerPushedDestinationChrome(for: route)
-                .providerShellBackToolbar()
         }
     }
 
     private func refreshHeaderCounts() async {
+        var chatUnread = 0
         do {
             let rows = try await ProviderMessagesService.listConversations()
-            // Count conversations with ≥ 1 unread message rather than summing the per-row
-            // `unreadCount`. A thread with 5 new messages contributes `+1`, not `+5` — the
-            // "Chats" pill should answer "how many threads need my attention?".
-            unreadConversationCount = rows.reduce(0) { partial, row in
+            chatUnread += rows.reduce(0) { partial, row in
                 partial + ((row.unreadCount ?? 0) > 0 ? 1 : 0)
             }
         } catch {
-            unreadConversationCount = 0
+            chatUnread = 0
         }
+
+        if session.hasProviderProfile || session.authUser?.hasAdminPrivileges == true {
+            chatUnread += await providerRosterUnreadThreadCount()
+        }
+        unreadConversationCount = chatUnread
+
         guard let bid = session.barberProfile?.id else {
             pendingRequestCount = 0
             pendingRescheduleRequestCount = 0
@@ -509,6 +495,26 @@ struct ProviderDashboardShellView: View {
         } catch {
             pendingRescheduleRequestCount = 0
             hasAwaitingPaymentAttention = false
+        }
+    }
+
+    private func providerRosterUnreadThreadCount() async -> Int {
+        do {
+            let isAdmin = session.authUser?.hasAdminPrivileges == true
+            let barbers: [BarberChatRowDTO]
+            if isAdmin {
+                let campuses = try await ProviderAdminService.listCampuses()
+                barbers = try await ProviderBarberChatsService.fetchSupportBarbersAllCampuses(
+                    campusIds: campuses.map(\.id)
+                )
+            } else {
+                barbers = try await ProviderBarberChatsService.fetchPeerBarbers(
+                    campusId: session.authUser?.campusId
+                )
+            }
+            return barbers.filter { $0.unreadCount > 0 }.count
+        } catch {
+            return 0
         }
     }
 

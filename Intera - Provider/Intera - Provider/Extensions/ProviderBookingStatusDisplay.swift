@@ -124,6 +124,12 @@ enum ProviderBookingStatusDisplay {
         }
     }
 
+    /// Accepted bookings still ahead on the schedule — excludes completed, paid, and cancelled.
+    static func isUpcomingScheduleAppointment(_ booking: SimpleBookingDTO) -> Bool {
+        guard booking.paidAt == nil else { return false }
+        return isScheduleBooked(status: booking.status)
+    }
+
     /// Finished appointments still shown on the main schedule.
     static func isScheduleCompleted(status raw: String?) -> Bool {
         switch normalized(raw) {
