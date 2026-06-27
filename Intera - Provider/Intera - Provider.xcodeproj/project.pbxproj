@@ -455,6 +455,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "InteraProvider-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Avila-Provider";
 				INFOPLIST_KEY_NSCameraUsageDescription = "CampusCuts uses the camera so barbers can take photos for their profile and client messages.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "CampusCuts uses Face ID to confirm your identity before deleting your account.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "CampusCuts uses your location so nearby customers can find and book you.";
@@ -504,6 +505,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "InteraProvider-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Avila-Provider";
 				INFOPLIST_KEY_NSCameraUsageDescription = "CampusCuts uses the camera so barbers can take photos for their profile and client messages.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "CampusCuts uses Face ID to confirm your identity before deleting your account.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "CampusCuts uses your location so nearby customers can find and book you.";
