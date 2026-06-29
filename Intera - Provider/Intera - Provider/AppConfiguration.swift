@@ -1,16 +1,16 @@
 import Foundation
 
-/// REST and messaging origins for Avila Platforms / Intera Provider.
+/// REST and messaging origins for Pismo Platforms / Intera Provider.
 /// Third-party auth URLs mirror the Intera consumer app (`AuthBackendVerification` uses these, not hard-coded hosts).
 enum AppConfiguration {
-    /// `https://avilaplatforms.com/api/v1` — trailing path only; callers append `/bookings-simple`, etc.
+    /// `https://pismoplatforms.com/api/v1` — trailing path only; callers append `/bookings-simple`, etc.
     static var apiV1BaseURL: URL {
         if let override = ProcessInfo.processInfo.environment["CAMPUSCUTS_API_BASE"],
            let url = URL(string: override.trimmingCharacters(in: .whitespacesAndNewlines)),
            !override.isEmpty {
             return url
         }
-        return URL(string: "https://avilaplatforms.com/api/v1")!
+        return URL(string: "https://pismoplatforms.com/api/v1")!
     }
 
     /// Socket.IO origin (scheme + host, no `/api/v1`).
@@ -20,7 +20,7 @@ enum AppConfiguration {
            !override.isEmpty {
             return url
         }
-        return URL(string: "https://avilaplatforms.com")!
+        return URL(string: "https://pismoplatforms.com")!
     }
 
     static var apiV1BaseTrimmed: String {
@@ -29,16 +29,16 @@ enum AppConfiguration {
 
     /// Web **provider** dashboard (`BarberPage` parity: schedule, services, availability, payouts, etc.).
     static var providerWebDashboardURL: URL {
-        URL(string: "https://avilaplatforms.com/web/barber")!
+        URL(string: "https://pismoplatforms.com/web/barber")!
     }
 
     /// Public legal pages (web `TermsOfServicePage` / `PrivacyPolicyPage` routes).
     static var termsOfServiceURL: URL {
-        URL(string: "https://avilaplatforms.com/terms")!
+        URL(string: "https://pismoplatforms.com/terms")!
     }
 
     static var privacyPolicyURL: URL {
-        URL(string: "https://avilaplatforms.com/privacy")!
+        URL(string: "https://pismoplatforms.com/privacy")!
     }
 
     // MARK: - OAuth (same contract as Intera consumer `AuthBackendVerification`)

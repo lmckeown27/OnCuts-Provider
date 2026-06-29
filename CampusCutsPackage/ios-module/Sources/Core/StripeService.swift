@@ -7,14 +7,16 @@ import StripePaymentSheet
 /// Stripe SDK bootstrap — publishable key must be in the app Info.plist as `StripePublishableKey`
 /// (e.g. injected via xcconfig at build time). Same as `Bundle.main.infoDictionary?["StripePublishableKey"]`.
 public enum StripeService {
-    /// Call once at launch with your API root (e.g. `https://avilaplatforms.com/api/v1`). When the host is production,
+    /// Call once at launch with your API root (e.g. `https://pismoplatforms.com/api/v1`). When the host is production,
     /// a bundled `pk_test_…` or an unresolved `$(STRIPE_PUBLISHABLE_KEY)` is **not** applied, so the SDK
     /// never enters the wrong Stripe mode before checkout (avoids live PI + test key 404s).
     public static func applyPublishableKeyAlignedWithAPIHost(apiRootTrimmed: String, bundle: Bundle = .main) {
         #if canImport(StripePaymentSheet)
         let root = apiRootTrimmed.trimmingCharacters(in: .whitespacesAndNewlines)
         let host = root.lowercased()
-        let isProductionCampusCuts = host.contains("avilaplatforms.com") || host.contains("campuscut.com")
+        let isProductionCampusCuts = host.contains("pismoplatforms.com")
+            || host.contains("avilaplatforms.com")
+            || host.contains("campuscut.com")
         let raw = Bundle.StripeConfig.publishableKey(for: bundle).trimmingCharacters(in: .whitespacesAndNewlines)
         let looksUnresolved = raw.contains("$(") || raw.contains("${")
 
