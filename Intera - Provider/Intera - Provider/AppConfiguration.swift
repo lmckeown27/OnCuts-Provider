@@ -1,6 +1,6 @@
 import Foundation
 
-/// REST and messaging origins for OnCuts.
+/// REST and messaging origins for OnCuts Provider.
 /// Third-party auth URLs mirror the consumer app (`AuthBackendVerification` uses these, not hard-coded hosts).
 enum AppConfiguration {
     /// `https://pismoplatforms.com/api/v1` — trailing path only; callers append `/bookings-simple`, etc.

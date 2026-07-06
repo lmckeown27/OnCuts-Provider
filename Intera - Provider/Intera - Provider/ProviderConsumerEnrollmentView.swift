@@ -107,7 +107,7 @@ struct ProviderConsumerEnrollmentView: View {
             .alert("Application submitted", isPresented: $showSubmitSuccess) {
                 Button("Got it", role: .cancel) {}
             } message: {
-                Text("Your OnCuts barber application has been submitted. The OnCuts team will be in touch with you shortly.")
+                Text("Your OnCuts Provider application has been submitted. The OnCuts team will be in touch with you shortly.")
             }
         }
         .foregroundStyle(Color.lavaShellCream)
@@ -287,7 +287,7 @@ struct ProviderConsumerEnrollmentView: View {
 
     private var wizardHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Apply to join OnCuts as a barber")
+            Text("Apply to join OnCuts Provider as a barber")
                 .font(.provider(.title3, weight: .semibold))
             Text("Step \(wizardStep) of \(totalWizardSteps)")
                 .font(.provider(.footnote))
@@ -475,7 +475,7 @@ struct ProviderConsumerEnrollmentView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(loadingTitleForNearestCampus)
                         .font(.provider(.subheadline, weight: .medium))
-                    Text("Using your device location to match a OnCuts campus.")
+                    Text("Using your device location to match an OnCuts campus.")
                         .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
@@ -861,7 +861,7 @@ struct ProviderConsumerEnrollmentView: View {
                 TextField(
                     "",
                     text: $whyBeBarber,
-                    prompt: Text("Why do you want to be a OnCuts barber?")
+                    prompt: Text("Why do you want to join OnCuts Provider as a barber?")
                         .foregroundStyle(Color.lavaShellCreamTertiary),
                     axis: .vertical
                 )
@@ -934,7 +934,7 @@ struct ProviderConsumerEnrollmentView: View {
                 reviewRow("Tools", needsTools ? (toolsNeeded.isEmpty ? "Needs tools" : "Needs: \(toolsNeeded)") : "Has own tools")
                 reviewRow("License", licenseReviewSummary)
                 reviewRow("Specialties", Array(selectedSpecialties).sorted().joined(separator: ", "))
-                reviewRow("Why OnCuts?", whyBeBarber)
+                reviewRow("Why OnCuts Provider?", whyBeBarber)
                 if !socialMedia.isEmpty { reviewRow("Social", socialMedia) }
             }
         }
