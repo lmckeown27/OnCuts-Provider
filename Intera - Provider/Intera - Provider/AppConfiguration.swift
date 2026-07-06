@@ -1,7 +1,7 @@
 import Foundation
 
-/// REST and messaging origins for Pismo Platforms / Intera Provider.
-/// Third-party auth URLs mirror the Intera consumer app (`AuthBackendVerification` uses these, not hard-coded hosts).
+/// REST and messaging origins for OnCuts.
+/// Third-party auth URLs mirror the consumer app (`AuthBackendVerification` uses these, not hard-coded hosts).
 enum AppConfiguration {
     /// `https://pismoplatforms.com/api/v1` — trailing path only; callers append `/bookings-simple`, etc.
     static var apiV1BaseURL: URL {
@@ -41,7 +41,7 @@ enum AppConfiguration {
         URL(string: "https://pismoplatforms.com/privacy")!
     }
 
-    // MARK: - OAuth (same contract as Intera consumer `AuthBackendVerification`)
+    // MARK: - OAuth (same contract as consumer `AuthBackendVerification`)
 
     /// `POST …/api/v1/auth/google` — JSON `{ "idToken": "<jwt>" }`.
     static var urlAuthGoogle: URL {

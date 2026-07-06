@@ -42,7 +42,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		9219356E2FA5AA1600D50175 /* Avila - Provider.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Avila - Provider.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		9219356E2FA5AA1600D50175 /* OnCuts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OnCuts.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		9219357D2FA5AA1800D50175 /* Intera - ProviderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Intera - ProviderTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		921935872FA5AA1800D50175 /* Intera - ProviderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Intera - ProviderUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -118,7 +118,7 @@
 		9219356F2FA5AA1600D50175 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				9219356E2FA5AA1600D50175 /* Avila - Provider.app */,
+				9219356E2FA5AA1600D50175 /* OnCuts.app */,
 				9219357D2FA5AA1800D50175 /* Intera - ProviderTests.xctest */,
 				921935872FA5AA1800D50175 /* Intera - ProviderUITests.xctest */,
 			);
@@ -162,7 +162,7 @@
 				92CC001E2FA600010000011E /* SocketIO */,
 			);
 			productName = "Intera - Provider";
-			productReference = 9219356E2FA5AA1600D50175 /* Avila - Provider.app */;
+			productReference = 9219356E2FA5AA1600D50175 /* OnCuts.app */;
 			productType = "com.apple.product-type.application";
 		};
 		9219357C2FA5AA1800D50175 /* Intera - ProviderTests */ = {
@@ -455,11 +455,11 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "InteraProvider-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Avila - Provider";
-				INFOPLIST_KEY_CFBundleName = "Avila - Provider";
-				INFOPLIST_KEY_NSCameraUsageDescription = "CampusCuts uses the camera so barbers can take photos for their profile and client messages.";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "CampusCuts uses Face ID to confirm your identity before deleting your account.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "CampusCuts uses your location so nearby customers can find and book you.";
+				INFOPLIST_KEY_CFBundleDisplayName = "OnCuts";
+				INFOPLIST_KEY_CFBundleName = "OnCuts";
+				INFOPLIST_KEY_NSCameraUsageDescription = "OnCuts uses the camera so providers can take photos for their profile and client messages.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "OnCuts uses Face ID to confirm your identity before deleting your account.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "OnCuts uses your location so nearby customers can find and book you.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -474,9 +474,9 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 1.2.4;
+				MARKETING_VERSION = 1.2.5;
 				PRODUCT_BUNDLE_IDENTIFIER = "Liam.Intera---Provider";
-				PRODUCT_NAME = "Avila - Provider";
+				PRODUCT_NAME = "OnCuts";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -506,11 +506,11 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "InteraProvider-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Avila - Provider";
-				INFOPLIST_KEY_CFBundleName = "Avila - Provider";
-				INFOPLIST_KEY_NSCameraUsageDescription = "CampusCuts uses the camera so barbers can take photos for their profile and client messages.";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "CampusCuts uses Face ID to confirm your identity before deleting your account.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "CampusCuts uses your location so nearby customers can find and book you.";
+				INFOPLIST_KEY_CFBundleDisplayName = "OnCuts";
+				INFOPLIST_KEY_CFBundleName = "OnCuts";
+				INFOPLIST_KEY_NSCameraUsageDescription = "OnCuts uses the camera so providers can take photos for their profile and client messages.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "OnCuts uses Face ID to confirm your identity before deleting your account.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "OnCuts uses your location so nearby customers can find and book you.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -525,9 +525,9 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 1.2.4;
+				MARKETING_VERSION = 1.2.5;
 				PRODUCT_BUNDLE_IDENTIFIER = "Liam.Intera---Provider";
-				PRODUCT_NAME = "Avila - Provider";
+				PRODUCT_NAME = "OnCuts";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -563,7 +563,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Avila - Provider.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Avila - Provider";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OnCuts.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/OnCuts";
 				XROS_DEPLOYMENT_TARGET = 26.2;
 			};
 			name = Debug;
@@ -589,7 +589,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Avila - Provider.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Avila - Provider";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OnCuts.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/OnCuts";
 				XROS_DEPLOYMENT_TARGET = 26.2;
 			};
 			name = Release;

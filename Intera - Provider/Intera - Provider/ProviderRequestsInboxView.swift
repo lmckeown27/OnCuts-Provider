@@ -174,7 +174,7 @@ struct ProviderRequestsInboxContent: View {
                 ContentUnavailableView(
                     "No barber profile",
                     systemImage: "tray",
-                    description: Text("Complete barber onboarding on CampusCuts to see booking requests.")
+                    description: Text("Complete provider onboarding on OnCuts to see booking requests.")
                 )
                 .foregroundStyle(Color.lavaShellCream)
             }

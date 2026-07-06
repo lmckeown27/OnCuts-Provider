@@ -5,7 +5,7 @@
 
 import Foundation
 
-/// API host configuration for the CampusCuts backend.
+/// API host configuration for the OnCuts backend.
 public enum CampusCutsEnvironment: Sendable, Hashable {
     /// Production API (`https://pismoplatforms.com/api/v1`).
     case production

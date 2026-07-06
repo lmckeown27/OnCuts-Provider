@@ -222,7 +222,7 @@ public final class CheckoutViewModel: ObservableObject {
     @Published public private(set) var lastCompletedPaymentIntentId: String?
 
     public init(
-        merchantDisplayName: String = "CampusCuts",
+        merchantDisplayName: String = "OnCuts",
         stripeReturnURL: String = "campuscuts://stripe-redirect"
     ) {
         self.merchantDisplayName = merchantDisplayName

@@ -28,7 +28,7 @@ internal struct CampusCutsHomeView: View {
                     mainContent
                 }
             }
-            .navigationTitle("CampusCuts")
+            .navigationTitle("OnCuts")
             .toolbar {
                 #if os(iOS)
                 ToolbarItem(placement: .topBarTrailing) {

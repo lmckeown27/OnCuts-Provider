@@ -138,7 +138,7 @@ private enum CoordinatorProfileError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noLinkedProvider:
-            return "No barber profile is linked to this account yet. Finish barber setup on CampusCuts, then refresh."
+            return "No barber profile is linked to this account yet. Finish provider setup on OnCuts, then refresh."
         }
     }
 }

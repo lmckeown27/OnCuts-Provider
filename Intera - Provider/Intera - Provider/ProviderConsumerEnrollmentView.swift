@@ -20,7 +20,7 @@ struct ProviderConsumerEnrollmentView: View {
     @State private var campusesLoading = false
 
     /// Geo-driven campus picker state. The applicant's device location resolves to the closest
-    /// CampusCuts campuses (top 5 shown as radio options); a "Search manually" affordance falls
+    /// OnCuts campuses (top 5 shown as radio options); a "Search manually" affordance falls
     /// back to a name search when none of the nearby suggestions are correct.
     @State private var nearestCampusState: NearestCampusState = .idle
     @State private var showManualCampusSearch = false
@@ -107,7 +107,7 @@ struct ProviderConsumerEnrollmentView: View {
             .alert("Application submitted", isPresented: $showSubmitSuccess) {
                 Button("Got it", role: .cancel) {}
             } message: {
-                Text("Your CampusCuts barber application has been submitted. The CampusCut team will be in touch with you shortly.")
+                Text("Your OnCuts barber application has been submitted. The OnCuts team will be in touch with you shortly.")
             }
         }
         .foregroundStyle(Color.lavaShellCream)
@@ -186,8 +186,8 @@ struct ProviderConsumerEnrollmentView: View {
             Text("Questions about your application?")
                 .font(.provider(.footnote))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
-            Link(destination: URL(string: "mailto:campuscuthelp@gmail.com?subject=Barber%20Application%20Issue")!) {
-                Label("campuscuthelp@gmail.com", systemImage: "envelope")
+            Link(destination: URL(string: "mailto:campuscuthelp@gmail.com?subject=OnCuts%20Provider%20Application")!) {
+                Label("Contact OnCuts support", systemImage: "envelope")
                     .font(.provider(.footnote, weight: .medium))
             }
         }
@@ -287,7 +287,7 @@ struct ProviderConsumerEnrollmentView: View {
 
     private var wizardHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Apply to join CampusCuts as a barber")
+            Text("Apply to join OnCuts as a barber")
                 .font(.provider(.title3, weight: .semibold))
             Text("Step \(wizardStep) of \(totalWizardSteps)")
                 .font(.provider(.footnote))
@@ -387,7 +387,7 @@ struct ProviderConsumerEnrollmentView: View {
                         .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 } else if licenseDeclared == false {
-                    Text("Some states require proof of licensure before barbering. The CampusCut team may still ask for documentation.")
+                    Text("Some states require proof of licensure before barbering. The OnCuts team may still ask for documentation.")
                         .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
@@ -409,7 +409,7 @@ struct ProviderConsumerEnrollmentView: View {
                 Image(systemName: licenseAttestation ? "checkmark.square.fill" : "square")
                     .font(.provider(size: 22))
                     .foregroundStyle(licenseAttestation ? Color.providerOlive : Color.lavaShellCreamTertiary)
-                Text("I attest that the license information I've provided is accurate to the best of my knowledge. The CampusCut team may verify it before approval.")
+                Text("I attest that the license information I've provided is accurate to the best of my knowledge. The OnCuts team may verify it before approval.")
                     .font(.provider(.footnote))
                     .foregroundStyle(Color.lavaShellCream)
                     .multilineTextAlignment(.leading)
@@ -475,7 +475,7 @@ struct ProviderConsumerEnrollmentView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(loadingTitleForNearestCampus)
                         .font(.provider(.subheadline, weight: .medium))
-                    Text("Using your device location to match a CampusCuts campus.")
+                    Text("Using your device location to match a OnCuts campus.")
                         .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
                 }
@@ -758,7 +758,7 @@ struct ProviderConsumerEnrollmentView: View {
         switch nearestCampusState {
         case .matching: return "Matching the closest campuses…"
         case .locating: return "Finding your location…"
-        default: return "Finding your nearest CampusCuts campuses…"
+        default: return "Finding your nearest OnCuts campuses…"
         }
     }
 
@@ -782,7 +782,7 @@ struct ProviderConsumerEnrollmentView: View {
         await loadCampusesIfNeeded()
         guard !campuses.isEmpty else {
             nearestCampusState = .failed(
-                "We couldn’t load the list of CampusCuts campuses. Please try again.",
+                "We couldn’t load the list of OnCuts campuses. Please try again.",
                 isPermissionDenied: false
             )
             return
@@ -861,7 +861,7 @@ struct ProviderConsumerEnrollmentView: View {
                 TextField(
                     "",
                     text: $whyBeBarber,
-                    prompt: Text("Why do you want to be a CampusCuts barber?")
+                    prompt: Text("Why do you want to be a OnCuts barber?")
                         .foregroundStyle(Color.lavaShellCreamTertiary),
                     axis: .vertical
                 )
@@ -934,7 +934,7 @@ struct ProviderConsumerEnrollmentView: View {
                 reviewRow("Tools", needsTools ? (toolsNeeded.isEmpty ? "Needs tools" : "Needs: \(toolsNeeded)") : "Has own tools")
                 reviewRow("License", licenseReviewSummary)
                 reviewRow("Specialties", Array(selectedSpecialties).sorted().joined(separator: ", "))
-                reviewRow("Why CampusCuts?", whyBeBarber)
+                reviewRow("Why OnCuts?", whyBeBarber)
                 if !socialMedia.isEmpty { reviewRow("Social", socialMedia) }
             }
         }
@@ -1247,14 +1247,14 @@ enum ProviderBarberApplicationOptions {
         case "pending":
             return StatusCopy(
                 title: "Application under review",
-                description: "Your application has been submitted and is being reviewed by the CampusCut team.",
+                description: "Your application has been submitted and is being reviewed by the OnCuts team.",
                 symbol: "hourglass",
                 tint: .yellow
             )
         case "under_review":
             return StatusCopy(
                 title: "Application under review",
-                description: "Your application is actively being reviewed. The CampusCut team will reach out with next steps.",
+                description: "Your application is actively being reviewed. The OnCuts team will reach out with next steps.",
                 symbol: "doc.text.magnifyingglass",
                 tint: .blue
             )

@@ -42,7 +42,7 @@ internal struct ConsumerHomeView: View {
                     }
                 }
             }
-            .navigationTitle("CampusCuts")
+            .navigationTitle("OnCuts")
             .toolbar {
                 #if os(iOS)
                 ToolbarItem(placement: .topBarTrailing) {

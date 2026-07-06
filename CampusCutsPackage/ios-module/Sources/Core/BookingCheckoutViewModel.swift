@@ -43,7 +43,7 @@ public final class BookingCheckoutViewModel: ObservableObject {
         stripeManager: StripeManager = StripeManager(),
         applePayMerchantId: String? = nil,
         applePayCountryCode: String? = nil,
-        merchantDisplayName: String = "CampusCuts",
+        merchantDisplayName: String = "OnCuts",
         stripeReturnURL: String = "campuscuts://stripe-redirect"
     ) {
         self.apiBaseURLTrimmed = trimApiBaseURL(apiBaseURLTrimmed)

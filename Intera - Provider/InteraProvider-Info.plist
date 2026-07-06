@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Avila - Provider</string>
+	<string>OnCuts</string>
 	<key>CFBundleName</key>
-	<string>Avila - Provider</string>
+	<string>OnCuts</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

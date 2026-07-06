@@ -1,6 +1,6 @@
 import UIKit
 
-// MARK: - Intera Provider Chat design tokens
+// MARK: - OnCuts chat design tokens
 
 enum ProviderChatDesignTokens {
     enum Color {

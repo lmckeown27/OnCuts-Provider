@@ -305,7 +305,7 @@ struct BarberAccountControlView: View {
                     SecureField("Password", text: $deletePassword)
                         .textContentType(.password)
                 } footer: {
-                    Text("Enter your CampusCuts password to permanently delete your account.")
+                    Text("Enter your OnCuts password to permanently delete your account.")
                 }
             }
             .navigationTitle("Confirm Password")

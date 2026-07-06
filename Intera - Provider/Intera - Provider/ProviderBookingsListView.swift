@@ -22,7 +22,7 @@ struct ProviderBookingsListView: View {
                     ContentUnavailableView(
                         "No barber profile",
                         systemImage: "person.crop.circle.badge.exclamationmark",
-                        description: Text("Complete your CampusCuts barber setup on the web, then pull to refresh on the Profile tab.")
+                        description: Text("Complete your OnCuts provider setup on the web, then pull to refresh on the Profile tab.")
                     )
                     .foregroundStyle(Color.lavaShellCream)
                 } else if let errorText, items.isEmpty {
