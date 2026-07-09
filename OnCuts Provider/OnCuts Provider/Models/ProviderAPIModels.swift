@@ -1367,6 +1367,41 @@ struct ConversationsPage: Decodable {
     let conversations: [ConversationRow]
 }
 
+struct ConversationDetailEnvelope: Decodable {
+    let success: Bool?
+    let data: ConversationDetailData?
+}
+
+struct ConversationDetailData: Decodable {
+    let conversation: ConversationRow?
+}
+
+struct StartConversationEnvelope: Decodable {
+    let success: Bool?
+    let data: StartConversationData?
+}
+
+struct StartConversationData: Decodable {
+    let conversation: StartConversationRow?
+}
+
+struct StartConversationRow: Decodable {
+    let id: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case conversationId
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try ProviderAPIFlexibleDecoding.requiredInt(
+            from: container,
+            forKeys: [.id, .conversationId]
+        )
+    }
+}
+
 struct ConversationOtherUser: Decodable, Hashable {
     let id: String?
     let firstName: String?
@@ -1386,6 +1421,23 @@ struct ConversationOtherUser: Decodable, Hashable {
         self.lastName = lastName
         self.displayName = displayName
         self.profilePicture = profilePicture
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case firstName
+        case lastName
+        case displayName
+        case profilePicture
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .id)
+        firstName = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .firstName)
+        lastName = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .lastName)
+        displayName = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .displayName)
+        profilePicture = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .profilePicture)
     }
 }
 
@@ -1412,6 +1464,34 @@ struct ConversationRow: Decodable, Identifiable, Hashable {
         self.lastMessage = lastMessage
         self.otherUser = otherUser
     }
+
+    /// Opens a thread when only the numeric id is known (deep link / booking handoff).
+    static func placeholder(id: Int, bookingId: String? = nil) -> ConversationRow {
+        ConversationRow(id: id, bookingId: bookingId)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case conversationId
+        case bookingId
+        case booking
+        case unreadCount
+        case lastMessage
+        case otherUser
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try ProviderAPIFlexibleDecoding.requiredInt(
+            from: container,
+            forKeys: [.id, .conversationId]
+        )
+        bookingId = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .bookingId)
+        booking = try container.decodeIfPresent(ConversationBookingSummary.self, forKey: .booking)
+        unreadCount = ProviderAPIFlexibleDecoding.optionalInt(from: container, forKey: .unreadCount)
+        lastMessage = try container.decodeIfPresent(ConversationLastMessage.self, forKey: .lastMessage)
+        otherUser = try container.decodeIfPresent(ConversationOtherUser.self, forKey: .otherUser)
+    }
 }
 
 struct ConversationBookingSummary: Decodable, Hashable {
@@ -1424,6 +1504,36 @@ struct ConversationBookingSummary: Decodable, Hashable {
 
     var serviceDisplayName: String {
         ProviderServiceTypeDisplay.format(serviceName)
+    }
+
+    init(
+        id: String? = nil,
+        serviceName: String? = nil,
+        scheduledTime: Date? = nil,
+        status: String? = nil
+    ) {
+        self.id = id
+        self.serviceName = serviceName
+        self.scheduledTime = scheduledTime
+        self.status = status
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case serviceName
+        case scheduledTime
+        case requestedAt
+        case status
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .id)
+        serviceName = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .serviceName)
+        scheduledTime =
+            ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .scheduledTime)
+            ?? ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .requestedAt)
+        status = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .status)
     }
 }
 
@@ -1443,6 +1553,19 @@ struct ConversationLastMessage: Decodable, Hashable {
         self.content = content
         self.time = time
         self.senderId = senderId
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case content
+        case time
+        case senderId
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        content = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .content)
+        time = ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .time)
+        senderId = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .senderId)
     }
 }
 
@@ -1464,26 +1587,6 @@ struct ChatMessageDTO: Decodable, Identifiable, Hashable {
     let messageType: String?
     let mediaUrl: String?
     let metadata: ChatMessageMetadataDTO?
-
-    init(
-        id: Int,
-        content: String?,
-        senderId: String?,
-        createdAt: Date?,
-        isOwn: Bool?,
-        messageType: String?,
-        mediaUrl: String?,
-        metadata: ChatMessageMetadataDTO?
-    ) {
-        self.id = id
-        self.content = content
-        self.senderId = senderId
-        self.createdAt = createdAt
-        self.isOwn = isOwn
-        self.messageType = messageType
-        self.mediaUrl = mediaUrl
-        self.metadata = metadata
-    }
 
     /// Optimistic outbound row shown while a send request is in flight.
     static func pendingOutbound(id: Int, text: String) -> ChatMessageDTO {
@@ -1520,6 +1623,50 @@ struct ChatMessageDTO: Decodable, Identifiable, Hashable {
     var isImage: Bool {
         let type = (messageType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return type == "image"
+    }
+
+    init(
+        id: Int,
+        content: String?,
+        senderId: String?,
+        createdAt: Date?,
+        isOwn: Bool?,
+        messageType: String?,
+        mediaUrl: String?,
+        metadata: ChatMessageMetadataDTO?
+    ) {
+        self.id = id
+        self.content = content
+        self.senderId = senderId
+        self.createdAt = createdAt
+        self.isOwn = isOwn
+        self.messageType = messageType
+        self.mediaUrl = mediaUrl
+        self.metadata = metadata
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case content
+        case senderId
+        case createdAt
+        case isOwn
+        case messageType
+        case mediaUrl
+        case metadata
+        case sender
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try ProviderAPIFlexibleDecoding.requiredInt(from: container, forKeys: [.id])
+        content = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .content)
+        senderId = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .senderId)
+        createdAt = ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .createdAt)
+        isOwn = ProviderAPIFlexibleDecoding.optionalBool(from: container, forKey: .isOwn)
+        messageType = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .messageType)
+        mediaUrl = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .mediaUrl)
+        metadata = try container.decodeIfPresent(ChatMessageMetadataDTO.self, forKey: .metadata)
     }
 }
 

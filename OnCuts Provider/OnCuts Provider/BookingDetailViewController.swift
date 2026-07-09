@@ -533,12 +533,12 @@ final class BookingDetailViewController: UIViewController {
         }
 
         let fresh = try await ProviderBookingsService.fetchBooking(id: current.id)
-        if let conversationId = fresh.conversationId {
-            current = fresh
-            return conversationId
-        }
+        current = fresh
 
-        return try await ProviderMessagesService.conversationId(forBookingId: current.id)
+        return try await ProviderMessagesService.resolveOrStartConversation(
+            bookingId: fresh.id,
+            booking: fresh
+        )
     }
 
     // MARK: - Sections — Pending schedule change

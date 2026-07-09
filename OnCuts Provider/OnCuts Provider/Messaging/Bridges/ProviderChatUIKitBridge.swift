@@ -280,18 +280,23 @@ struct ProviderMessagesInboxView: View {
 
     private func loadConversationsForDeepLink(conversationId: Int) async {
         ProviderConversationMessagesPrefetch.prefetch(conversationId: conversationId)
+
+        if let row = try? await ProviderMessagesService.fetchConversation(conversationId: conversationId) {
+            supplementalConversations[conversationId] = row
+            return
+        }
+
         do {
             let rows = try await ProviderMessagesService.listConversations()
             conversations = rows
             if let match = rows.first(where: { $0.id == conversationId }) {
                 supplementalConversations[conversationId] = match
-            } else if shellNavigator.messagesDetailPath.last == conversationId {
-                shellNavigator.messagesDetailPath.removeAll()
+                return
             }
         } catch {
-            if shellNavigator.messagesDetailPath.last == conversationId {
-                shellNavigator.messagesDetailPath.removeAll()
-            }
+            // Fall through — still open a placeholder thread so send/load can proceed.
         }
+
+        supplementalConversations[conversationId] = .placeholder(id: conversationId)
     }
 }

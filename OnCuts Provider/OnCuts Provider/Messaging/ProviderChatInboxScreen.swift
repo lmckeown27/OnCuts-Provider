@@ -34,12 +34,13 @@ struct ProviderChatInboxScreen: View {
 
         do {
             let fetched = try await ProviderMessagesService.listConversations()
+            let enriched = await ProviderChatInboxScheduleEnrichment.enrich(fetched)
             threads = ProviderChatThread.sortedForInbox(
-                fetched.map { ProviderChatThread.from(row: $0, calendar: calendar) },
+                enriched.map { ProviderChatThread.from(row: $0, calendar: calendar) },
                 calendar: calendar
             )
             errorText = nil
-            onConversationsUpdated(fetched)
+            onConversationsUpdated(enriched)
             for thread in threads.prefix(6) {
                 ProviderConversationMessagesPrefetch.prefetch(conversationId: thread.conversationId)
             }

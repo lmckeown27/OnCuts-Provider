@@ -77,4 +77,46 @@ enum ProviderAPIFlexibleDecoding {
         else { return nil }
         return ProviderBookingScheduleParsing.decodeFlexibleOptionalDate(from: single)
     }
+
+    static func requiredInt<K: CodingKey>(
+        from container: KeyedDecodingContainer<K>,
+        forKeys keys: [K]
+    ) throws -> Int {
+        for key in keys {
+            if let value = optionalInt(from: container, forKey: key) {
+                return value
+            }
+        }
+        guard let firstKey = keys.first else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: container.codingPath,
+                    debugDescription: "Expected an integer-compatible conversation identifier."
+                )
+            )
+        }
+        throw DecodingError.dataCorruptedError(
+            forKey: firstKey,
+            in: container,
+            debugDescription: "Expected an integer-compatible value for one of: \(keys.map(\.stringValue).joined(separator: ", "))."
+        )
+    }
+
+    static func optionalBool<K: CodingKey>(
+        from container: KeyedDecodingContainer<K>,
+        forKey key: K
+    ) -> Bool? {
+        guard container.contains(key) else { return nil }
+        guard (try? container.decodeNil(forKey: key)) != true else { return nil }
+        if let value = try? container.decode(Bool.self, forKey: key) { return value }
+        if let value = try? container.decode(Int.self, forKey: key) { return value != 0 }
+        if let raw = try? container.decode(String.self, forKey: key) {
+            switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "true", "1", "yes": return true
+            case "false", "0", "no": return false
+            default: return nil
+            }
+        }
+        return nil
+    }
 }

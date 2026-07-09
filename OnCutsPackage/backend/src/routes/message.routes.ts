@@ -78,6 +78,26 @@ router.post('/conversations', authenticate, async (req, res, next) => {
 });
 
 /**
+ * GET /api/messages/conversations/:conversationId
+ * Fetch one conversation (same payload shape as the inbox list).
+ */
+router.get('/conversations/:conversationId', authenticate, async (req, res, next) => {
+  try {
+    const userId = (req as any).user.userId;
+    const conversationId = parseInt(req.params.conversationId);
+    const result = await messageService.getConversationForInbox(conversationId, userId);
+
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * GET /api/messages/conversations/:conversationId/messages
  * Get messages in a conversation
  */

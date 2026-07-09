@@ -1,6 +1,6 @@
 # OnCuts Provider
 
-Native iOS app for **service providers** on the [OnCuts](https://pismoplatforms.com) platform — the campus marketplace that connects students with on-site providers (haircuts and related services).
+Native iOS app for **service providers** on the [OnCuts](https://oncuts.com) platform — the campus marketplace that connects students with on-site providers (haircuts and related services).
 
 OnCuts Provider is the provider-side companion to the consumer web and iOS experiences. It targets barbers and other approved service providers who manage schedules, bookings, messaging, and payouts.
 
@@ -13,8 +13,8 @@ OnCuts Provider is the provider-side companion to the consumer web and iOS exper
 | **Platform** | iOS (SwiftUI + UIKit) |
 | **Bundle ID** | `com.oncutsprovider.app` |
 | **Display name** | OnCuts Provider |
-| **Backend** | `https://pismoplatforms.com/api/v1` |
-| **Web parity reference** | [pismoplatforms.com/web/barber](https://pismoplatforms.com/web/barber) |
+| **Backend** | `https://oncuts.com/api/v1` |
+| **Web parity reference** | [oncuts.com/web/barber](https://oncuts.com/web/barber) |
 
 The app mirrors the web provider dashboard (`BarberPage` in the shared codebase) as a native experience: schedule hub, booking requests, messaging, availability, services & pricing, Stripe Connect payouts, and business analytics.
 
@@ -109,8 +109,8 @@ API and socket origins are defined in `OnCuts Provider/OnCuts Provider/AppConfig
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `CAMPUSCUTS_API_BASE` | REST API base URL | `https://pismoplatforms.com/api/v1` |
-| `CAMPUSCUTS_SOCKET_ORIGIN` | Socket.IO origin | `https://pismoplatforms.com` |
+| `CAMPUSCUTS_API_BASE` | REST API base URL | `https://oncuts.com/api/v1` |
+| `CAMPUSCUTS_SOCKET_ORIGIN` | Socket.IO origin | `https://oncuts.com` |
 
 Override these in the Xcode scheme (**Edit Scheme → Run → Arguments → Environment Variables**) when pointing at a local or staging backend.
 

@@ -5,7 +5,7 @@ enum ProviderAppBranding {
     static let displayName = "OnCuts Provider"
     static let shortName = "OnCuts"
 
-    static let marketingSiteHost = "pismoplatforms.com"
+    static let marketingSiteHost = "oncuts.com"
 
     static let bundleIdentifier = "com.oncutsprovider.app"
 

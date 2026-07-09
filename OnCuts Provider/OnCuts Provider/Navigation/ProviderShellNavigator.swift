@@ -170,8 +170,14 @@ final class ProviderShellNavigator {
         }
 
         resetAndPushRoute(.messages)
-        if let conversationId {
-            prepareConversationDeepLink(conversationId)
+        guard let conversationId else { return }
+
+        prepareConversationDeepLink(conversationId)
+        // Defer path mutation to the next run loop so shell push + inner NavigationStack
+        // destination do not both update in the same frame (NavigationRequestObserver warning).
+        Task { @MainActor in
+            await Task.yield()
+            guard case .route(.messages)? = stack.last else { return }
             messagesDetailPath = [conversationId]
         }
     }

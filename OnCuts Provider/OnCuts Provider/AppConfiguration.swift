@@ -3,14 +3,14 @@ import Foundation
 /// REST and messaging origins for OnCuts Provider.
 /// Third-party auth URLs mirror the consumer app (`AuthBackendVerification` uses these, not hard-coded hosts).
 enum AppConfiguration {
-    /// `https://pismoplatforms.com/api/v1` — trailing path only; callers append `/bookings-simple`, etc.
+    /// `https://oncuts.com/api/v1` — trailing path only; callers append `/bookings-simple`, etc.
     static var apiV1BaseURL: URL {
         if let override = ProcessInfo.processInfo.environment["CAMPUSCUTS_API_BASE"],
            let url = URL(string: override.trimmingCharacters(in: .whitespacesAndNewlines)),
            !override.isEmpty {
             return url
         }
-        return URL(string: "https://pismoplatforms.com/api/v1")!
+        return URL(string: "https://oncuts.com/api/v1")!
     }
 
     /// Socket.IO origin (scheme + host, no `/api/v1`).
@@ -20,7 +20,7 @@ enum AppConfiguration {
            !override.isEmpty {
             return url
         }
-        return URL(string: "https://pismoplatforms.com")!
+        return URL(string: "https://oncuts.com")!
     }
 
     static var apiV1BaseTrimmed: String {
@@ -29,7 +29,7 @@ enum AppConfiguration {
 
     /// Web **provider** dashboard (`BarberPage` parity: schedule, services, availability, payouts, etc.).
     static var providerWebDashboardURL: URL {
-        URL(string: "https://pismoplatforms.com/web/barber")!
+        URL(string: "https://oncuts.com/web/barber")!
     }
 
     /// Public legal pages (web `TermsOfServicePage` / `PrivacyPolicyPage` routes).

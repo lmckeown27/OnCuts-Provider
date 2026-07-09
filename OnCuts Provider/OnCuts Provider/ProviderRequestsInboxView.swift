@@ -613,8 +613,11 @@ struct ProviderRequestsInboxContent: View {
         defer { openingMessageRequestId = nil }
 
         do {
-            guard let conversationId = try await ProviderMessagesService.conversationId(
-                forBookingId: item.row.bookingId
+            let linkedBooking = bookingItems.first(where: { $0.id == item.row.bookingId })
+            guard let conversationId = try await ProviderMessagesService.resolveOrStartConversation(
+                bookingId: item.row.bookingId,
+                booking: linkedBooking,
+                request: item.row
             ) else {
                 messageOpenErrorText = "No conversation is linked to this booking yet."
                 showMessageOpenError = true

@@ -28,8 +28,89 @@ extension UIImage {
     }
 }
 
+struct BookingConversationContext {
+    let bookingId: String
+    let consumerUserId: String
+    let serviceName: String?
+    let servicePriceCents: Int?
+    let scheduledTime: Date?
+    let location: String?
+    let notes: String?
+    let consumerName: String?
+    let barberName: String?
+
+    static func from(booking: SimpleBookingDTO) -> BookingConversationContext? {
+        guard let consumerUserId = booking.consumerId?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !consumerUserId.isEmpty
+        else { return nil }
+
+        let consumerName = booking.resolvedConsumerDisplayName
+        return BookingConversationContext(
+            bookingId: booking.id,
+            consumerUserId: consumerUserId,
+            serviceName: booking.serviceName ?? booking.serviceType,
+            servicePriceCents: booking.priceUsdCents,
+            scheduledTime: booking.scheduledTime,
+            location: booking.location,
+            notes: booking.notes,
+            consumerName: consumerName,
+            barberName: booking.resolvedBarberDisplayName
+        )
+    }
+
+    static func from(request: BookingRequestRow) -> BookingConversationContext? {
+        guard let consumerUserId = request.customerId?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !consumerUserId.isEmpty
+        else { return nil }
+
+        return BookingConversationContext(
+            bookingId: request.bookingId,
+            consumerUserId: consumerUserId,
+            serviceName: request.serviceType,
+            servicePriceCents: request.price.map { Int(($0 * 100).rounded()) },
+            scheduledTime: nil,
+            location: request.location,
+            notes: nil,
+            consumerName: request.customerName,
+            barberName: nil
+        )
+    }
+}
+
+private extension SimpleBookingDTO {
+    var resolvedConsumerDisplayName: String? {
+        if let consumerName {
+            let trimmed = consumerName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        let parts = [consumer?.firstName, consumer?.lastName]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
+    var resolvedBarberDisplayName: String? {
+        if let barberName {
+            let trimmed = barberName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        let parts = [barber?.firstName, barber?.lastName]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+}
+
 @MainActor
 enum ProviderMessagesService {
+    private static let bookingConversationDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
     static func listConversations(page: Int = 1) async throws -> [ConversationRow] {
         let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "messages/conversations?page=\(page)&limit=40"
@@ -39,8 +120,33 @@ enum ProviderMessagesService {
         return env.data?.conversations ?? []
     }
 
+    static func fetchConversation(conversationId: Int) async throws -> ConversationRow? {
+        do {
+            let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+                path: "messages/conversations/\(conversationId)"
+            )
+            let dec = OnCutsHTTPClient.jsonDecoderSnake()
+            let env = try dec.decode(ConversationDetailEnvelope.self, from: data)
+            return env.data?.conversation
+        } catch let error as OnCutsHTTPError {
+            if case .httpStatus(404, _) = error { return nil }
+            throw error
+        }
+    }
+
+    /// Conversation-only booking requests use synthetic ids like `conv-123`.
+    static func parseConversationId(fromBookingKey bookingKey: String) -> Int? {
+        let normalized = bookingKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.lowercased().hasPrefix("conv-") else { return nil }
+        return Int(normalized.dropFirst(5))
+    }
+
     /// Resolves the inbox thread for a booking when the booking payload omits `conversationId`.
     static func conversationId(forBookingId bookingId: String) async throws -> Int? {
+        if let parsed = parseConversationId(fromBookingKey: bookingId) {
+            return parsed
+        }
+
         let normalized = bookingId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return nil }
         let conversations = try await listConversations()
@@ -49,6 +155,81 @@ enum ProviderMessagesService {
             let summaryId = row.booking?.id?.trimmingCharacters(in: .whitespacesAndNewlines)
             return linked == normalized || summaryId == normalized
         }?.id
+    }
+
+    /// Finds an existing thread or creates one with booking context (web `startBookingConversation` parity).
+    static func resolveOrStartConversation(
+        bookingId: String,
+        booking: SimpleBookingDTO?,
+        request: BookingRequestRow? = nil
+    ) async throws -> Int? {
+        if let parsed = parseConversationId(fromBookingKey: bookingId) {
+            return parsed
+        }
+
+        if let conversationId = booking?.conversationId {
+            return conversationId
+        }
+
+        if let found = try await conversationId(forBookingId: bookingId) {
+            return found
+        }
+
+        let context = booking.flatMap(BookingConversationContext.from(booking:))
+            ?? request.flatMap(BookingConversationContext.from(request:))
+        guard let context else { return nil }
+
+        return try await startBookingConversation(context: context)
+    }
+
+    static func startBookingConversation(context: BookingConversationContext) async throws -> Int {
+        var body: [String: Any] = [
+            "otherUserId": context.consumerUserId,
+            "bookingId": context.bookingId,
+        ]
+        if let serviceName = context.serviceName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !serviceName.isEmpty {
+            body["serviceName"] = serviceName
+        }
+        if let servicePriceCents = context.servicePriceCents {
+            body["servicePrice"] = Double(servicePriceCents) / 100.0
+        }
+        if let scheduledTime = context.scheduledTime {
+            body["scheduledTime"] = bookingConversationDateFormatter.string(from: scheduledTime)
+        }
+        if let location = context.location?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !location.isEmpty {
+            body["location"] = location
+        }
+        if let notes = context.notes?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !notes.isEmpty {
+            body["notes"] = notes
+        }
+        if let consumerName = context.consumerName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !consumerName.isEmpty {
+            body["consumerName"] = consumerName
+        }
+        if let barberName = context.barberName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !barberName.isEmpty {
+            body["barberName"] = barberName
+        }
+
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "messages/conversations",
+            method: "POST",
+            jsonBody: body,
+            acceptableStatuses: 200 ..< 300
+        )
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
+        if let start = try? dec.decode(StartConversationEnvelope.self, from: data),
+           let id = start.data?.conversation?.id {
+            return id
+        }
+        if let detail = try? dec.decode(ConversationDetailEnvelope.self, from: data),
+           let id = detail.data?.conversation?.id {
+            return id
+        }
+        throw OnCutsHTTPError.decoding
     }
 
     static func listMessages(conversationId: Int) async throws -> [ChatMessageDTO] {

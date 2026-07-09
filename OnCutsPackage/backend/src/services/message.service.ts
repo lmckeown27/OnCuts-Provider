@@ -21,6 +21,17 @@ import {
   sendBarberToBarberMessageEmail 
 } from './email.service';
 
+/** Active threads, or booking-linked threads that are not closed out (paid/cancelled/rejected). */
+const CONVERSATION_MESSAGING_ACCESS_SQL = `
+  (
+    c.is_active = true
+    OR (
+      c.booking_id IS NOT NULL
+      AND COALESCE(b.status::text, '') NOT IN ('PAID', 'CANCELLED', 'REJECTED')
+    )
+  )
+`;
+
 class MessageService {
   /**
    * Get user's conversations with pagination
@@ -68,7 +79,7 @@ class MessageService {
           b."barberId" as booking_barber_id,
           b."serviceType" as booking_service_type,
           b."priceUsdCents" as booking_price_cents,
-          b."requestedAt" as booking_scheduled_time,
+          COALESCE(b."requestedAt", c.scheduled_time) as booking_scheduled_time,
           b.status as linked_booking_status,
           
           -- MESSAGE INFO
@@ -109,15 +120,17 @@ class MessageService {
         )
         LEFT JOIN barbers br ON u.id = br."userId"
         LEFT JOIN bookings b ON c.booking_id = b.id
-        WHERE (c.user1_id = $1 OR c.user2_id = $1) AND c.is_active = true
+        WHERE (c.user1_id = $1 OR c.user2_id = $1) AND ${CONVERSATION_MESSAGING_ACCESS_SQL}
         ORDER BY c.last_message_at DESC NULLS LAST
         LIMIT $2 OFFSET $3`,
         [userId, limit, offset]
       );
 
-      // Get total count (only active conversations)
       const countResult = await pool.query(
-        `SELECT COUNT(*) as total FROM conversations WHERE (user1_id = $1 OR user2_id = $1) AND is_active = true`,
+        `SELECT COUNT(*) as total
+         FROM conversations c
+         LEFT JOIN bookings b ON c.booking_id = b.id
+         WHERE (c.user1_id = $1 OR c.user2_id = $1) AND ${CONVERSATION_MESSAGING_ACCESS_SQL}`,
         [userId]
       );
 
@@ -135,8 +148,7 @@ class MessageService {
           serviceName: conv.conv_service_name || conv.booking_service_type || 'Service',
           servicePrice: conv.conv_service_price ? parseFloat(conv.conv_service_price) : 
                        (conv.booking_price_cents ? (conv.booking_price_cents / 100) : null),
-          // Prefer booking's requestedAt (source of truth) over conversation's cached scheduled_time
-          scheduledTime: conv.booking_scheduled_time || conv.conv_scheduled_time || conv.availability_start_time,
+          scheduledTime: conv.booking_scheduled_time || conv.conv_scheduled_time,
           // Prefer booking's location from conversation (updated on edit) or fallback
           location: conv.conv_location || 'TBD',
           notes: conv.conv_notes || null,
@@ -342,7 +354,7 @@ class MessageService {
           // If same time slot exists and is active/pending, return existing
           if (conv.is_active && conv.booking_status === 'pending') {
             console.log('✅ Found existing pending conversation for same time slot:', conv.id);
-            return await this.getConversationById(conv.id, userId);
+            return await this.getConversationForInbox(conv.id, userId);
           }
           // If rejected/cancelled, allow creating a new booking (don't return old one)
           console.log('📌 Previous conversation exists but was ' + conv.booking_status + ', creating new one');
@@ -404,7 +416,7 @@ class MessageService {
   }
 
   /**
-   * Get conversation by ID
+   * Get conversation by ID (minimal row — used for Socket.IO recipient lookup).
    */
   async getConversationById(conversationId: string | number, userId: string | number): Promise<any> {
     try {
@@ -416,7 +428,8 @@ class MessageService {
           c.booking_id,
           c.created_at
         FROM conversations c
-        WHERE c.id = $1 AND (c.user1_id = $2 OR c.user2_id = $2) AND c.is_active = true`,
+        LEFT JOIN bookings b ON c.booking_id = b.id
+        WHERE c.id = $1 AND (c.user1_id = $2 OR c.user2_id = $2) AND ${CONVERSATION_MESSAGING_ACCESS_SQL}`,
         [conversationId, userId]
       );
 
@@ -437,6 +450,142 @@ class MessageService {
   }
 
   /**
+   * Get a single inbox conversation with the same shape as `getUserConversations`.
+   */
+  async getConversationForInbox(conversationId: string | number, userId: string | number): Promise<any> {
+    try {
+      const result = await pool.query(
+        `SELECT 
+          c.id as conversation_id,
+          c.booking_id,
+          c.created_at as conversation_created,
+          CASE 
+            WHEN c.user1_id = $1 THEN c.user2_id
+            ELSE c.user1_id
+          END as other_user_id,
+          u.first_name as other_user_first_name,
+          u.last_name as other_user_last_name,
+          u."avatarUrl" as other_user_profile_picture,
+          u.role as other_user_type,
+          br.id as barber_id,
+          u.first_name || ' ' || u.last_name as barber_display_name,
+          br.specialties as barber_specialties,
+          br."avgRating" as barber_rating,
+          c.service_name as conv_service_name,
+          c.service_price as conv_service_price,
+          c.scheduled_time as conv_scheduled_time,
+          c.location as conv_location,
+          c.notes as conv_notes,
+          c.booking_status as conv_booking_status,
+          c.barber_name as conv_barber_name,
+          c.consumer_name as conv_consumer_name,
+          b.id as booking_id_ref,
+          b."barberId" as booking_barber_id,
+          b."serviceType" as booking_service_type,
+          b."priceUsdCents" as booking_price_cents,
+          COALESCE(b."requestedAt", c.scheduled_time) as booking_scheduled_time,
+          b.status as linked_booking_status,
+          (
+            SELECT m.content 
+            FROM messages m 
+            WHERE m.conversation_id = c.id 
+            ORDER BY m.created_at DESC 
+            LIMIT 1
+          ) as last_message,
+          (
+            SELECT m.sender_id 
+            FROM messages m 
+            WHERE m.conversation_id = c.id 
+            ORDER BY m.created_at DESC 
+            LIMIT 1
+          ) as last_message_sender_id,
+          (
+            SELECT m.created_at 
+            FROM messages m 
+            WHERE m.conversation_id = c.id 
+            ORDER BY m.created_at DESC 
+            LIMIT 1
+          ) as last_message_time,
+          (
+            SELECT COUNT(*) 
+            FROM messages m 
+            WHERE m.conversation_id = c.id 
+            AND m.sender_id != $1 
+            AND m.is_read = false
+          ) as unread_count
+        FROM conversations c
+        JOIN users u ON (
+          CASE 
+            WHEN c.user1_id = $1 THEN c.user2_id
+            ELSE c.user1_id
+          END = u.id
+        )
+        LEFT JOIN barbers br ON u.id = br."userId"
+        LEFT JOIN bookings b ON c.booking_id = b.id
+        WHERE c.id = $2 AND (c.user1_id = $1 OR c.user2_id = $1) AND ${CONVERSATION_MESSAGING_ACCESS_SQL}
+        LIMIT 1`,
+        [userId, conversationId]
+      );
+
+      if (result.rows.length === 0) {
+        throw new ApiError(404, 'Conversation not found or has been deleted');
+      }
+
+      const conv = result.rows[0];
+      const conversation = {
+        id: conv.conversation_id,
+        bookingId: conv.booking_id,
+        booking: (conv.conv_service_name || conv.booking_id_ref) ? {
+          id: conv.booking_id_ref || null,
+          barberId: conv.booking_barber_id || conv.barber_id || null,
+          serviceName: conv.conv_service_name || conv.booking_service_type || 'Service',
+          servicePrice: conv.conv_service_price ? parseFloat(conv.conv_service_price) :
+                       (conv.booking_price_cents ? (conv.booking_price_cents / 100) : null),
+          scheduledTime: conv.booking_scheduled_time,
+          location: conv.conv_location || 'TBD',
+          notes: conv.conv_notes || null,
+          status: (conv.linked_booking_status || conv.conv_booking_status || 'pending').toLowerCase(),
+          barberName: conv.conv_barber_name,
+          consumerName: conv.conv_consumer_name,
+        } : null,
+        otherUser: {
+          id: conv.other_user_id,
+          firstName: conv.other_user_first_name,
+          lastName: conv.other_user_last_name,
+          displayName: conv.barber_display_name || `${conv.other_user_first_name} ${conv.other_user_last_name}`,
+          profilePicture: conv.other_user_profile_picture,
+          userType: conv.other_user_type?.toLowerCase() || 'consumer',
+          barberInfo: (conv.other_user_type === 'BARBER' || conv.other_user_type === 'barber')
+            ? {
+                id: conv.barber_id,
+                displayName: conv.barber_display_name,
+                specialties: conv.barber_specialties,
+                rating: conv.barber_rating,
+              }
+            : null,
+        },
+        lastMessage: conv.last_message
+          ? {
+              content: conv.last_message,
+              senderId: conv.last_message_sender_id,
+              time: conv.last_message_time,
+            }
+          : null,
+        unreadCount: parseInt(conv.unread_count) || 0,
+        createdAt: conv.conversation_created,
+      };
+
+      return {
+        success: true,
+        data: { conversation },
+      };
+    } catch (error) {
+      console.error('Get conversation for inbox error:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Send a message in a conversation
    */
   async sendMessage(
@@ -447,10 +596,10 @@ class MessageService {
     mediaUrl: string | null = null
   ): Promise<any> {
     try {
-      // Check access - only allow sending to active conversations
       const convCheck = await pool.query(
-        `SELECT user1_id, user2_id FROM conversations 
-         WHERE id = $1 AND (user1_id = $2 OR user2_id = $2) AND is_active = true`,
+        `SELECT c.user1_id, c.user2_id FROM conversations c
+         LEFT JOIN bookings b ON c.booking_id = b.id
+         WHERE c.id = $1 AND (c.user1_id = $2 OR c.user2_id = $2) AND ${CONVERSATION_MESSAGING_ACCESS_SQL}`,
         [conversationId, senderId]
       );
 
