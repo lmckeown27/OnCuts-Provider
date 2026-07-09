@@ -3,12 +3,12 @@ import CryptoKit
 import Foundation
 import os
 
-private let pushLog = Logger(subsystem: "com.campuscuts.intera-provider", category: "push")
+private let pushLog = Logger(subsystem: ProviderAppBranding.loggerSubsystem, category: "push")
 
 /// Coordinates the lifecycle of the iOS device registration record on the CampusCuts backend.
 ///
 /// Touch points:
-///   * `onAPNsTokenReceived(_:)` — called from `InteraProviderAppDelegate` once APNs hands us a
+///   * `onAPNsTokenReceived(_:)` — called from `OnCutsProviderAppDelegate` once APNs hands us a
 ///     fresh hex device token. Stores it and re-registers if signed in.
 ///   * `refreshAfterSignIn()` — called from `ProviderSession` right after `isSignedIn` flips to
 ///     true (manual sign-in, OAuth verified-session adoption, or bootstrap on launch with a
@@ -27,7 +27,7 @@ enum ProviderPushDeviceRegistration {
     /// token rotation.
     static let tokenReregistrationCooldownSeconds: TimeInterval = 120
 
-    /// Set by `InteraProviderAppDelegate` whenever APNs delivers a fresh device token. Stores
+    /// Set by `OnCutsProviderAppDelegate` whenever APNs delivers a fresh device token. Stores
     /// the hex token, forwards it to Firebase Messaging if available, then opportunistically
     /// re-registers with the backend.
     static func onAPNsTokenReceived(_ hexToken: String) async {

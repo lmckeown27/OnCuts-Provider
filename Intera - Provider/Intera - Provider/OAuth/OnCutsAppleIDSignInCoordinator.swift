@@ -9,7 +9,7 @@ import AppKit
 #endif
 
 /// Presents **Sign in with Apple** using `ASAuthorizationController` so the UI can show **Continue with** + logo instead of `SignInWithAppleButton`.
-enum InteraAppleIDSignInCoordinator {
+enum OnCutsAppleIDSignInCoordinator {
     private static var active: AppleIDSignInSession?
 
     static func perform(completion: @escaping @MainActor (Result<ASAuthorization, Error>) -> Void) {
@@ -53,7 +53,7 @@ private final class AppleIDSignInSession: NSObject, ASAuthorizationControllerDel
             return win
         }
         guard let scene = scenes.first else {
-            fatalError("InteraAppleIDSignInCoordinator: no UIWindowScene")
+            fatalError("OnCutsAppleIDSignInCoordinator: no UIWindowScene")
         }
         return UIWindow(windowScene: scene)
         #elseif os(macOS)
@@ -63,7 +63,7 @@ private final class AppleIDSignInSession: NSObject, ASAuthorizationControllerDel
         if let w = NSApplication.shared.windows.first {
             return w
         }
-        assertionFailure("InteraAppleIDSignInCoordinator: no NSWindow for presentation anchor")
+        assertionFailure("OnCutsAppleIDSignInCoordinator: no NSWindow for presentation anchor")
         return NSWindow()
         #else
         fatalError("Unsupported platform for Sign in with Apple")
@@ -73,14 +73,14 @@ private final class AppleIDSignInSession: NSObject, ASAuthorizationControllerDel
     func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
         Task { @MainActor in
             self.completion(.success(authorization))
-            InteraAppleIDSignInCoordinator.clearActive()
+            OnCutsAppleIDSignInCoordinator.clearActive()
         }
     }
 
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
         Task { @MainActor in
             self.completion(.failure(error))
-            InteraAppleIDSignInCoordinator.clearActive()
+            OnCutsAppleIDSignInCoordinator.clearActive()
         }
     }
 }

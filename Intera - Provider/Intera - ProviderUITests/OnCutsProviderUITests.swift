@@ -1,6 +1,6 @@
 import XCTest
 
-final class InteraProviderUITests: XCTestCase {
+final class OnCutsProviderUITests: XCTestCase {
     @MainActor
     func testLaunch() throws {
         let app = XCUIApplication()

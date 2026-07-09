@@ -4,9 +4,9 @@ import UIKit
 #endif
 
 @main
-struct InteraProviderApp: App {
+struct OnCutsProviderApp: App {
     #if os(iOS) || os(visionOS)
-    @UIApplicationDelegateAdaptor(InteraProviderAppDelegate.self) private var appDelegate
+    @UIApplicationDelegateAdaptor(OnCutsProviderAppDelegate.self) private var appDelegate
     #endif
 
     @State private var session = ProviderSession()

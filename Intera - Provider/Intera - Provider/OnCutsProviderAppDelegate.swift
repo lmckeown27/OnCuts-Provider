@@ -6,7 +6,7 @@ import UserNotifications
 import SwiftUI
 import os
 
-private let pushLog = Logger(subsystem: "com.campuscuts.intera-provider", category: "push")
+private let pushLog = Logger(subsystem: ProviderAppBranding.loggerSubsystem, category: "push")
 
 /// Hosts the small pieces of UIKit/Foundation lifecycle that SwiftUI doesn't model directly:
 ///
@@ -22,10 +22,10 @@ private let pushLog = Logger(subsystem: "com.campuscuts.intera-provider", catego
 ///     (`didReceive` → `ProviderPushPayloadRouter` → `NotificationCenter` post → SwiftUI
 ///     observer reacts).
 ///   * Cold-start payload handoff (`launchOptions[.remoteNotification]`).
-final class InteraProviderAppDelegate: NSObject {}
+final class OnCutsProviderAppDelegate: NSObject {}
 
 #if os(iOS) || os(visionOS)
-extension InteraProviderAppDelegate: UIApplicationDelegate {
+extension OnCutsProviderAppDelegate: UIApplicationDelegate {
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
@@ -120,7 +120,7 @@ extension InteraProviderAppDelegate: UIApplicationDelegate {
 
 // MARK: - UNUserNotificationCenterDelegate (foreground display + tap)
 
-extension InteraProviderAppDelegate: UNUserNotificationCenterDelegate {
+extension OnCutsProviderAppDelegate: UNUserNotificationCenterDelegate {
     /// Foreground delivery: show the system banner + badge + sound like the lock-screen
     /// version. Mirrors consumer-app behavior so providers don't miss a booking ping just
     /// because they happen to be on the dashboard.
@@ -154,7 +154,7 @@ extension InteraProviderAppDelegate: UNUserNotificationCenterDelegate {
 
 // MARK: - MessagingDelegate (only active when Firebase is fully configured)
 
-extension InteraProviderAppDelegate: MessagingDelegate {
+extension OnCutsProviderAppDelegate: MessagingDelegate {
     /// Captures the FCM token. We don't currently forward it to the backend — CampusCuts sends
     /// pushes via direct APNs using the hex token from `register-device`. If you ever want to
     /// switch delivery to FCM (e.g., to support Android with one server-side codepath), POST

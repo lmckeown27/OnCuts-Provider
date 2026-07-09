@@ -621,7 +621,7 @@ struct ProviderRequestsInboxContent: View {
                 return
             }
             NotificationCenter.default.post(
-                name: .interaOpenMessagingConversation,
+                name: .onCutsOpenMessagingConversation,
                 object: nil,
                 userInfo: ["conversationId": conversationId]
             )

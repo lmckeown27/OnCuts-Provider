@@ -1,11 +1,11 @@
 import Foundation
 
-/// Persists Apple-supplied **email** and **name** from the first authorization so later sign-ins can send them to the API when Apple omits them (Intera consumer `AppleSignInSupplementStore` parity).
+/// Persists Apple-supplied **email** and **name** from the first authorization so later sign-ins can send them to the API when Apple omits them (OnCuts consumer `AppleSignInSupplementStore` parity).
 enum AppleSignInSupplementStore {
     private enum Keys {
-        static let email = "InteraProvider.AppleSignIn.supplementalEmail"
-        static let firstName = "InteraProvider.AppleSignIn.supplementalFirstName"
-        static let lastName = "InteraProvider.AppleSignIn.supplementalLastName"
+        static let email = ProviderAppBranding.UserDefaultsKey.appleSignInSupplementEmail
+        static let firstName = ProviderAppBranding.UserDefaultsKey.appleSignInSupplementFirstName
+        static let lastName = ProviderAppBranding.UserDefaultsKey.appleSignInSupplementLastName
     }
 
     static func loadEmail() -> String? { nonEmpty(UserDefaults.standard.string(forKey: Keys.email)) }

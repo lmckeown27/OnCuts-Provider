@@ -1,16 +1,16 @@
-# Intera Provider app — service provider capabilities from CampusCuts (web)
+# OnCuts Provider app — service provider capabilities from CampusCuts (web)
 
-This document inventories **what a service provider can do today** on the CampusCuts web experience (`/web/*`), grouped by product area. Use it as a **parity checklist** when building the Intera Provider app.
+This document inventories **what a service provider can do today** on the CampusCuts web experience (`/web/*`), grouped by product area. Use it as a **parity checklist** when building the OnCuts Provider app.
 
 **Terminology**
 
-- **Service provider** — The person or business offering on-site services (hair, nails, etc.). CampusCuts and this codebase still use **“barber”** in many **URLs, tables, and React names** (`/web/barber`, `BarberPage`, `/barbers/...`). Those literals are kept below for implementation accuracy; product copy in Intera Provider should prefer **service provider** unless you are citing code or the API.
+- **Service provider** — The person or business offering on-site services (hair, nails, etc.). CampusCuts and this codebase still use **“barber”** in many **URLs, tables, and React names** (`/web/barber`, `BarberPage`, `/barbers/...`). Those literals are kept below for implementation accuracy; product copy in OnCuts Provider should prefer **service provider** unless you are citing code or the API.
 
 **Scope notes**
 
 - The **primary service provider hub** on web is **`/web/barber`** (`BarberPage` — legacy component name). Most day-to-day actions live there (modals, calendar, bookings, notifications, payout settings, etc.).
 - API paths below are shown **relative to the web app’s configured API base** (typically something like `/api/v1` for `api.service` calls; some older `fetch` calls use `/api/...` directly—mirror whatever the production web client uses).
-- A few routes exist with **placeholder or mock UI**; they are called out so Intera is not built against non-functional web screens alone.
+- A few routes exist with **placeholder or mock UI**; they are called out so OnCuts Provider is not built against non-functional web screens alone.
 
 ---
 
@@ -93,7 +93,7 @@ Route: **`/web/payment/:bookingId`** (`PostServicePaymentPage`).
 
 | Action | UI | Notes |
 |--------|-----|-------|
-| Hide specific **paid** bookings from Past tab / slot lists | “Hide” / eye-off style controls | Persisted in **`localStorage`** key `campuscuts_barber_hidden_paid_bookings_${barberId}` — not server state. Intera Provider should decide whether to replicate or replace with server prefs. |
+| Hide specific **paid** bookings from Past tab / slot lists | “Hide” / eye-off style controls | Persisted in **`localStorage`** key `campuscuts_barber_hidden_paid_bookings_${barberId}` — not server state. OnCuts Provider should decide whether to replicate or replace with server prefs. |
 
 ### 3e. **Appointment details** route (stub)
 
@@ -145,7 +145,7 @@ Backend also exposes: `PUT /barbers/:id/availability` with `schedule` array (`up
 | **Start Stripe Connect onboarding** | `POST /barber/connect/create` → redirect to `onboarding_url`. |
 | **Open Stripe Express / Connect dashboard** | `GET /barber/connect/dashboard` → open `dashboard_url` in new tab. |
 
-*Note:* Payout routes use the **`/barber/...`** prefix in the API today; Intera Provider calls the same endpoints regardless of in-app terminology.
+*Note:* Payout routes use the **`/barber/...`** prefix in the API today; OnCuts Provider calls the same endpoints regardless of in-app terminology.
 
 ### Static / informational pages
 
@@ -218,7 +218,7 @@ Routes: **`/web/barber/messages`**, **`/web/barber/messages/:conversationId`** (
 | `POST /barbers/:id/portfolio` | Upload image (`multipart/form-data`). |
 | `DELETE /barbers/:barberId/portfolio/:imageId` | Remove image. |
 
-The profile editor copy points students to **Instagram** as portfolio; Intera Provider may still want direct portfolio CRUD for parity with **API capability**.
+The profile editor copy points students to **Instagram** as portfolio; OnCuts Provider may still want direct portfolio CRUD for parity with **API capability**.
 
 ### Delete provider profile
 
@@ -230,7 +230,7 @@ The profile editor copy points students to **Instagram** as portfolio; Intera Pr
 
 ## 9. Reviews (read)
 
-Service providers **see** customer feedback on completed / paid bookings in dashboard modals (stars/text). Consumers submit reviews via booking payment flow (`POST /bookings-simple/:id/review` on backend). Intera Provider should at least:
+Service providers **see** customer feedback on completed / paid bookings in dashboard modals (stars/text). Consumers submit reviews via booking payment flow (`POST /bookings-simple/:id/review` on backend). OnCuts Provider should at least:
 
 - Show **per-booking** review if returned on booking payload.
 - Optionally: `GET /barbers/:barberId/reviews` for a consolidated list (used elsewhere in app ecosystem).
@@ -255,7 +255,7 @@ Route: **`/web/wallet`** (`WalletPage`).
 - Availability updates (`availability-update` custom event / socket).
 - Notification-driven UI refresh patterns.
 
-Intera Provider should subscribe to the **same server events** (or push equivalents) for parity with live dashboards.
+OnCuts Provider should subscribe to the **same server events** (or push equivalents) for parity with live dashboards.
 
 ---
 
@@ -285,7 +285,7 @@ These are **not** “every service provider” but **are** actions some provider
 
 ## 14. Quick API map (provider-centric; legacy path segments)
 
-REST paths below reflect **current CampusCuts** naming (`barbers`, `barber`, `role=barber`). Intera Provider should call them as-is until the backend offers aliases.
+REST paths below reflect **current CampusCuts** naming (`barbers`, `barber`, `role=barber`). OnCuts Provider should call them as-is until the backend offers aliases.
 
 **Bookings**
 
@@ -327,7 +327,7 @@ REST paths below reflect **current CampusCuts** naming (`barbers`, `barber`, `ro
 
 ---
 
-## 15. Suggested Intera Provider parity checklist (high level)
+## 15. Suggested OnCuts Provider parity checklist (high level)
 
 Use this as a binary checklist per feature group:
 

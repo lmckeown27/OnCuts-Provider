@@ -445,7 +445,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "Intera - Provider/InteraProvider.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "Intera - Provider/OnCutsProvider.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 2MAGWNY7VS;
@@ -454,7 +454,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "InteraProvider-Info.plist";
+				INFOPLIST_FILE = "OnCutsProvider-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "OnCuts Provider";
 				INFOPLIST_KEY_CFBundleName = "OnCuts Provider";
 				INFOPLIST_KEY_NSCameraUsageDescription = "OnCuts Provider uses the camera so providers can take photos for their profile and client messages.";
@@ -496,7 +496,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "Intera - Provider/InteraProvider.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "Intera - Provider/OnCutsProvider.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 2MAGWNY7VS;
@@ -505,7 +505,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "InteraProvider-Info.plist";
+				INFOPLIST_FILE = "OnCutsProvider-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "OnCuts Provider";
 				INFOPLIST_KEY_CFBundleName = "OnCuts Provider";
 				INFOPLIST_KEY_NSCameraUsageDescription = "OnCuts Provider uses the camera so providers can take photos for their profile and client messages.";

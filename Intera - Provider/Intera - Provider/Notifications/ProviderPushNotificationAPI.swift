@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-private let pushLog = Logger(subsystem: "com.campuscuts.intera-provider", category: "push")
+private let pushLog = Logger(subsystem: "com.oncuts.provider", category: "push")
 
 /// Thin wrapper over the two device-registration endpoints exposed by the CampusCuts backend:
 ///

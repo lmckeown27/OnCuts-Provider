@@ -1,7 +1,7 @@
 import AuthenticationServices
 import Foundation
 
-/// Bridges `ASAuthorizationAppleIDCredential` → supplement persistence (Intera consumer `AppleSignInAppSupport` parity).
+/// Bridges `ASAuthorizationAppleIDCredential` → supplement persistence (OnCuts consumer `AppleSignInAppSupport` parity).
 enum AppleSignInAppSupport {
     static func mergeCredentialIntoSupplementStore(_ credential: ASAuthorizationAppleIDCredential) {
         if let e = credential.email {

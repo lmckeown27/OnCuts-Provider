@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Shell background (system light / dark — no lava lamp)
 
-enum InteraLavaMidnight {
+enum OnCutsLavaMidnight {
     /// Primary screen background — `systemBackground` (white in light mode, dark in dark mode).
     static var color: Color { Color(uiColor: uiColor) }
     #if os(iOS)
@@ -31,7 +31,7 @@ private struct ProviderGroupedShellBackgroundFill: View {
 }
 
 /// Shared root background for the signed-in shell.
-struct InteraHubTabShellBackground: View {
+struct OnCutsHubTabShellBackground: View {
     var body: some View {
         ProviderShellBackgroundFill()
     }
@@ -39,13 +39,13 @@ struct InteraHubTabShellBackground: View {
 
 // MARK: - Pushed destinations
 
-private struct InteraPushedNavigationChromeFill: View {
+private struct OnCutsPushedNavigationChromeFill: View {
     var body: some View {
         ProviderShellBackgroundFill()
     }
 }
 
-private struct InteraNeutralPushedNavigationChromeFill: View {
+private struct OnCutsNeutralPushedNavigationChromeFill: View {
     var body: some View {
         ProviderGroupedShellBackgroundFill()
     }
@@ -63,9 +63,9 @@ extension View {
             Group {
                 switch style {
                 case .shell:
-                    InteraPushedNavigationChromeFill()
+                    OnCutsPushedNavigationChromeFill()
                 case .neutralGrey:
-                    InteraNeutralPushedNavigationChromeFill()
+                    OnCutsNeutralPushedNavigationChromeFill()
                 }
             }
             .ignoresSafeArea()
@@ -83,7 +83,7 @@ enum ProviderNavigationStackDestinationBackdropStyle {
 // MARK: - Navigation chrome
 
 extension View {
-    func interaNavigationShellBackgroundClear() -> some View {
+    func onCutsNavigationShellBackgroundClear() -> some View {
         #if os(iOS) || os(visionOS) || os(macOS)
         containerBackground(Color.clear, for: .navigation)
         #else
@@ -92,7 +92,7 @@ extension View {
     }
 
     func providerHubScheduleChrome() -> some View {
-        interaNavigationShellBackgroundClear()
+        onCutsNavigationShellBackgroundClear()
     }
 
     @ViewBuilder
@@ -103,7 +103,7 @@ extension View {
         if let backdrop {
             containerBackground(backdrop.containerColor, for: .navigation)
         } else {
-            interaNavigationShellBackgroundClear()
+            onCutsNavigationShellBackgroundClear()
         }
         #else
         self
@@ -117,9 +117,9 @@ extension View {
             Group {
                 switch style {
                 case .shell:
-                    InteraPushedNavigationChromeFill()
+                    OnCutsPushedNavigationChromeFill()
                 case .neutralGrey:
-                    InteraNeutralPushedNavigationChromeFill()
+                    OnCutsNeutralPushedNavigationChromeFill()
                 }
             }
             .ignoresSafeArea()
@@ -151,7 +151,7 @@ private struct ProviderLavaScreenChromeModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .interaNavigationShellBackgroundClear()
+            .onCutsNavigationShellBackgroundClear()
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarColorScheme(colorScheme == .dark ? .dark : .light, for: .navigationBar)
     }

@@ -72,7 +72,7 @@ enum ProviderPushPayloadRouter {
         if type == "message" || type == "new_message" {
             if let conversationId = intValue(flat["conversationId"]) {
                 NotificationCenter.default.post(
-                    name: .interaOpenMessagingConversation,
+                    name: .onCutsOpenMessagingConversation,
                     object: nil,
                     userInfo: ["conversationId": conversationId]
                 )
@@ -102,12 +102,12 @@ enum ProviderPushPayloadRouter {
             NotificationCenter.default.post(name: .providerBookingsListShouldRefresh, object: nil)
             if isBookingRequest {
                 NotificationCenter.default.post(name: .providerRequestsListShouldRefresh, object: nil)
-                NotificationCenter.default.post(name: .interaOpenRequestsInbox, object: nil)
+                NotificationCenter.default.post(name: .onCutsOpenRequestsInbox, object: nil)
                 return .requestsRefresh
             }
             if let bookingId = stringValue(flat["bookingId"]) {
                 NotificationCenter.default.post(
-                    name: .interaOpenBookingDetail,
+                    name: .onCutsOpenBookingDetail,
                     object: nil,
                     userInfo: ["bookingId": bookingId]
                 )
@@ -119,7 +119,7 @@ enum ProviderPushPayloadRouter {
         // 3. Unknown type but contains an id we recognize — opportunistically route on the id.
         if let conversationId = intValue(flat["conversationId"]) {
             NotificationCenter.default.post(
-                name: .interaOpenMessagingConversation,
+                name: .onCutsOpenMessagingConversation,
                 object: nil,
                 userInfo: ["conversationId": conversationId]
             )
@@ -127,7 +127,7 @@ enum ProviderPushPayloadRouter {
         }
         if let bookingId = stringValue(flat["bookingId"]) {
             NotificationCenter.default.post(
-                name: .interaOpenBookingDetail,
+                name: .onCutsOpenBookingDetail,
                 object: nil,
                 userInfo: ["bookingId": bookingId]
             )

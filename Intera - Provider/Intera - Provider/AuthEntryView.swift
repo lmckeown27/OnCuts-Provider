@@ -248,7 +248,7 @@ struct AuthEntryView: View {
                     Text("Continue with")
                         .font(.provider(size: 11, weight: .semibold))
                         .foregroundStyle(Color(white: 0.22))
-                    InteraGoogleGMark(size: 20)
+                    OnCutsGoogleGMark(size: 20)
                     if isBusy {
                         ProgressView()
                             .scaleEffect(0.8)
@@ -588,7 +588,7 @@ struct AuthEntryView: View {
         guard !isBusy else { return }
         isBusy = true
         errorText = nil
-        InteraAppleIDSignInCoordinator.perform { result in
+        OnCutsAppleIDSignInCoordinator.perform { result in
             Task { @MainActor in
                 isBusy = false
                 await handleAppleSignIn(result)

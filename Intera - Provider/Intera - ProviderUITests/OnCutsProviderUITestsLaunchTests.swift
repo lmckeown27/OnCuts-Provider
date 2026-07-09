@@ -1,6 +1,6 @@
 import XCTest
 
-final class InteraProviderUITestsLaunchTests: XCTestCase {
+final class OnCutsProviderUITestsLaunchTests: XCTestCase {
     override class var runsForEachTargetApplicationUIConfiguration: Bool { true }
 
     override func setUpWithError() throws {

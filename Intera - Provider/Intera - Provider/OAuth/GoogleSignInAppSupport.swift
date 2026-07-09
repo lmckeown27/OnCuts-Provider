@@ -8,7 +8,7 @@ import UIKit
 import AppKit
 #endif
 
-/// Thrown when the user invokes Google sign-in but `GoogleService-Info.plist` / `CLIENT_ID` is missing or still a placeholder (Intera consumer parity).
+/// Thrown when the user invokes Google sign-in but `GoogleService-Info.plist` / `CLIENT_ID` is missing or still a placeholder (OnCuts consumer parity).
 enum GoogleSignInFlowError: LocalizedError {
     case missingConfiguration
     case noHostWindow
@@ -26,7 +26,7 @@ enum GoogleSignInFlowError: LocalizedError {
     }
 }
 
-/// Parity with Intera consumer `GoogleSignInAppSupport`: plist-based `CLIENT_ID`, launch `configure()`, `onOpenURL` → `handleURL`, `signOut` after a failed backend exchange.
+/// Parity with OnCuts consumer `GoogleSignInAppSupport`: plist-based `CLIENT_ID`, launch `configure()`, `onOpenURL` → `handleURL`, `signOut` after a failed backend exchange.
 enum GoogleSignInAppSupport {
     /// Reads **`CLIENT_ID`** from bundled **`GoogleService-Info.plist`**, else **`GIDClientID`** from the main bundle Info dictionary. Rejects obvious placeholders.
     static func loadClientIDFromGoogleServicePlist() -> String? {

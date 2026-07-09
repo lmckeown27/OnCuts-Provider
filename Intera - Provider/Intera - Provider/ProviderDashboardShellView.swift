@@ -119,13 +119,13 @@ struct ProviderDashboardShellView: View {
             await refreshHeaderCounts()
         }
         // Push router → in-app routing. Three observer cases:
-        //   1. `interaOpenMessagingConversation` → push Messages and focus the conversation in
+        //   1. `onCutsOpenMessagingConversation` → push Messages and focus the conversation in
         //      `messagesDetailPath` (replaces duplicates; refreshes if already open).
         //   2. `providerMessagingUnreadCountShouldRefresh` → refetch unread badge count.
         //   3. `providerBookingsListShouldRefresh` / `providerRequestsListShouldRefresh` →
         //      refresh pending count badge so the header is consistent with the server state.
-        //   4. `interaOpenRequestsInbox` → present the pending booking-requests sheet (new-request pushes).
-        .onReceive(NotificationCenter.default.publisher(for: .interaOpenMessagingConversation)) { notification in
+        //   4. `onCutsOpenRequestsInbox` → present the pending booking-requests sheet (new-request pushes).
+        .onReceive(NotificationCenter.default.publisher(for: .onCutsOpenMessagingConversation)) { notification in
             showingRequestsInbox = false
             let conversationId = Self.conversationId(from: notification.userInfo)
             navigator.openMessages(conversationId: conversationId)
@@ -145,7 +145,7 @@ struct ProviderDashboardShellView: View {
             Task { await refreshHeaderCounts() }
             NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .interaOpenRequestsInbox)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .onCutsOpenRequestsInbox)) { _ in
             navigator.popToHub()
             presentBookingsInbox()
             Task { await refreshHeaderCounts() }
@@ -153,7 +153,7 @@ struct ProviderDashboardShellView: View {
         .onReceive(NotificationCenter.default.publisher(for: ProviderAwaitingPaymentTracker.didChangeNotification)) { _ in
             Task { await refreshHeaderCounts() }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .interaOpenBookingDetail)) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: .onCutsOpenBookingDetail)) { notification in
             navigator.popToHub()
             pendingInboxBookingDetailId = Self.bookingId(from: notification.userInfo)
             presentBookingsInbox()

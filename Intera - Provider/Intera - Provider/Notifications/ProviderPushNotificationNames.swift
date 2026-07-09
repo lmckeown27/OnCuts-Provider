@@ -14,15 +14,21 @@ import Foundation
 extension Notification.Name {
     /// Posted with `userInfo["conversationId"]: Int` when a message push is delivered or tapped.
     /// The dashboard shell observes this to push the inbox + open the right thread.
-    static let interaOpenMessagingConversation = Notification.Name("InteraOpenMessagingConversation")
+    static let onCutsOpenMessagingConversation = Notification.Name(
+        ProviderAppBranding.PushRoutingPayload.openMessagingConversation
+    )
 
     /// Posted with `userInfo["bookingId"]: String` when a booking *lifecycle* push is tapped
     /// (confirmed, paid, cancelled, etc.). Opens the all-bookings list — not incoming requests.
-    static let interaOpenBookingDetail = Notification.Name("InteraOpenBookingDetail")
+    static let onCutsOpenBookingDetail = Notification.Name(
+        ProviderAppBranding.PushRoutingPayload.openBookingDetail
+    )
 
     /// Posted when a new **booking request** push is tapped (`new_booking_request`, etc.).
     /// The dashboard shell presents the pending-requests inbox sheet.
-    static let interaOpenRequestsInbox = Notification.Name("InteraOpenRequestsInbox")
+    static let onCutsOpenRequestsInbox = Notification.Name(
+        ProviderAppBranding.PushRoutingPayload.openRequestsInbox
+    )
 
     /// Sent when a booking-related push or socket event implies the list of bookings is stale.
     /// Listeners refresh in place; no navigation side-effect.

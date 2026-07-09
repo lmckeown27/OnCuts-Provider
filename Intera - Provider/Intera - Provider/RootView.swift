@@ -5,7 +5,7 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
-            InteraHubTabShellBackground()
+            OnCutsHubTabShellBackground()
             Group {
                 if session.isBootstrapping {
                     ProgressView("Loading…")
@@ -38,7 +38,7 @@ struct RootView: View {
         .task {
             await session.bootstrap()
             #if os(iOS) || os(visionOS)
-            await InteraProviderAppDelegate.requestNotificationAuthorizationAndRegister()
+            await OnCutsProviderAppDelegate.requestNotificationAuthorizationAndRegister()
             #endif
         }
     }

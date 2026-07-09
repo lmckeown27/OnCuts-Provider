@@ -453,7 +453,7 @@ enum ProviderBarberChatOpener {
         let conversationId = try await ProviderBarberChatsService.startSupportConversation(barberUserId: barberUserId)
         ProviderConversationMessagesPrefetch.prefetch(conversationId: conversationId)
         NotificationCenter.default.post(
-            name: .interaOpenMessagingConversation,
+            name: .onCutsOpenMessagingConversation,
             object: nil,
             userInfo: ["conversationId": conversationId]
         )

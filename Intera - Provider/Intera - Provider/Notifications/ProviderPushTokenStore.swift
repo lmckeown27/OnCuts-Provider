@@ -20,11 +20,11 @@ enum ProviderPushTokenStore {
     private static let suite = UserDefaults.standard
 
     private enum Key {
-        static let apnsHexToken = "intera.provider.push.apnsHexToken"
-        static let lastRegisteredToken = "intera.provider.push.lastRegisteredToken"
-        static let lastRegisteredJWTFingerprint = "intera.provider.push.lastRegisteredJWTFingerprint"
-        static let lastRegisteredAt = "intera.provider.push.lastRegisteredAt"
-        static let logoutSince = "intera.provider.push.logoutSince"
+        static let apnsHexToken = ProviderAppBranding.UserDefaultsKey.pushAPNsHexToken
+        static let lastRegisteredToken = ProviderAppBranding.UserDefaultsKey.pushLastRegisteredToken
+        static let lastRegisteredJWTFingerprint = ProviderAppBranding.UserDefaultsKey.pushLastRegisteredJWTFingerprint
+        static let lastRegisteredAt = ProviderAppBranding.UserDefaultsKey.pushLastRegisteredAt
+        static let logoutSince = ProviderAppBranding.UserDefaultsKey.pushLogoutSince
     }
 
     // MARK: - APNs hex token

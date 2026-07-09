@@ -34,11 +34,11 @@ enum AppConfiguration {
 
     /// Public legal pages (web `TermsOfServicePage` / `PrivacyPolicyPage` routes).
     static var termsOfServiceURL: URL {
-        URL(string: "https://pismoplatforms.com/terms")!
+        ProviderAppBranding.termsOfServiceURL
     }
 
     static var privacyPolicyURL: URL {
-        URL(string: "https://pismoplatforms.com/privacy")!
+        ProviderAppBranding.privacyPolicyURL
     }
 
     // MARK: - OAuth (same contract as consumer `AuthBackendVerification`)

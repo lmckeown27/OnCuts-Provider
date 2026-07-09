@@ -1,6 +1,6 @@
 import Testing
 
-struct InteraProviderTests {
+struct OnCutsProviderTests {
     @Test func placeholder() async throws {
         #expect(true)
     }

@@ -40,7 +40,7 @@ final class BookingDetailViewController: UIViewController {
     private enum Token {
         /// Midnight base — matches the lava-lamp's base color so the screen blends with
         /// the dashboard's animated background when pushed onto the SwiftUI nav stack.
-        static let background = InteraLavaMidnight.uiColor
+        static let background = OnCutsLavaMidnight.uiColor
         /// Olive accent shared with the rest of the provider chrome.
         static let accent = ProviderAppearance.olive
         static let primaryText = ProviderAppearance.primaryText
@@ -516,7 +516,7 @@ final class BookingDetailViewController: UIViewController {
                     onOpenConversation(conversationId)
                 } else {
                     NotificationCenter.default.post(
-                        name: .interaOpenMessagingConversation,
+                        name: .onCutsOpenMessagingConversation,
                         object: nil,
                         userInfo: ["conversationId": conversationId]
                     )
@@ -1466,7 +1466,7 @@ struct BookingDetailHost: UIViewControllerRepresentable {
             barberTableId: session.barberProfile?.id,
             onOpenConversation: { conversationId in
                 NotificationCenter.default.post(
-                    name: .interaOpenMessagingConversation,
+                    name: .onCutsOpenMessagingConversation,
                     object: nil,
                     userInfo: ["conversationId": conversationId]
                 )
@@ -1476,7 +1476,7 @@ struct BookingDetailHost: UIViewControllerRepresentable {
         #if os(iOS)
         return ProviderOpaqueScreenContainerViewController(
             content: detail,
-            fillColor: InteraLavaMidnight.uiColor
+            fillColor: OnCutsLavaMidnight.uiColor
         )
         #else
         return detail

@@ -23,7 +23,7 @@ struct ProviderOAuthSessionOutcome: Sendable {
 }
 
 /// Exchanges Google / Apple ID tokens for **CampusCuts** JWTs (`data.accessToken`). Never use the provider JWT as the API `Authorization` bearer.
-/// Same envelope as email verification; uses `AppConfiguration` auth URLs; Apple retries `urlAuthAppleLegacy` on **404** (Intera consumer parity).
+/// Same envelope as email verification; uses `AppConfiguration` auth URLs; Apple retries `urlAuthAppleLegacy` on **404** (OnCuts consumer parity).
 enum AuthBackendVerification {
     private struct VerifyEnvelope: Decodable {
         let data: VerifyData?

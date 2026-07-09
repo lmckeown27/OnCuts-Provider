@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Standard Google multicolor “G” from the **`GoogleGLogo`** asset (product icon set from Google’s `gstatic` branding).
-struct InteraGoogleGMark: View {
+struct OnCutsGoogleGMark: View {
     var size: CGFloat = 20
 
     var body: some View {
