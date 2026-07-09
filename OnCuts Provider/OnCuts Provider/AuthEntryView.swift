@@ -1,5 +1,5 @@
 import AuthenticationServices
-import CampusCutsModule
+import OnCutsModule
 import SwiftUI
 
 /// Landing: **Sign in manually** (pushed email/password), Apple & Google as side-by-side pills, **Create account** for barber registration.
@@ -16,7 +16,7 @@ struct AuthEntryView: View {
     @State private var acceptedTerms = false
     @State private var presentedLegalDocument: LegalDocument?
 
-    @State private var campuses: [CampusCutsSignUpCampus] = []
+    @State private var campuses: [OnCutsSignUpCampus] = []
     @State private var campusesLoading = false
     @State private var showCampusPicker = false
     @State private var selectedCampusId = ""
@@ -361,11 +361,11 @@ struct AuthEntryView: View {
         }
     }
 
-    private var selectedCreateAccountCampus: CampusCutsSignUpCampus? {
+    private var selectedCreateAccountCampus: OnCutsSignUpCampus? {
         campuses.first { $0.id == selectedCampusId }
     }
 
-    private var filteredCreateAccountCampuses: [CampusCutsSignUpCampus] {
+    private var filteredCreateAccountCampuses: [OnCutsSignUpCampus] {
         let query = campusSearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !query.isEmpty else { return campuses }
         return campuses.filter { $0.name.lowercased().contains(query) }
@@ -576,7 +576,7 @@ struct AuthEntryView: View {
         campusesLoading = true
         defer { campusesLoading = false }
         do {
-            campuses = try await CampusCutsSignUpAPI.fetchCampuses(
+            campuses = try await OnCutsSignUpAPI.fetchCampuses(
                 apiV1BaseTrimmed: AppConfiguration.apiV1BaseTrimmed
             )
         } catch {
@@ -677,7 +677,7 @@ struct AuthEntryView: View {
         errorText = nil
         defer { isBusy = false }
         do {
-            let req = CampusCutsRegisterRequest(
+            let req = OnCutsRegisterRequest(
                 email: email.trimmingCharacters(in: .whitespacesAndNewlines),
                 password: password,
                 firstName: firstName.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -686,7 +686,7 @@ struct AuthEntryView: View {
                 campusId: selectedCampusId,
                 acceptedTerms: acceptedTerms
             )
-            let sent = try await CampusCutsAuthService.sendRegistrationVerificationEmail(
+            let sent = try await OnCutsAuthService.sendRegistrationVerificationEmail(
                 apiV1BaseTrimmed: AppConfiguration.apiV1BaseTrimmed,
                 request: req
             )
@@ -706,7 +706,7 @@ struct AuthEntryView: View {
         defer { isBusy = false }
         do {
             let code = verificationCode.trimmingCharacters(in: .whitespacesAndNewlines)
-            let verified = try await CampusCutsAuthService.verify(
+            let verified = try await OnCutsAuthService.verify(
                 code: code,
                 email: verificationEmail,
                 apiV1BaseTrimmed: AppConfiguration.apiV1BaseTrimmed
@@ -722,7 +722,7 @@ struct AuthEntryView: View {
         errorText = nil
         defer { isBusy = false }
         do {
-            _ = try await CampusCutsAuthService.resendVerificationCode(
+            _ = try await OnCutsAuthService.resendVerificationCode(
                 email: verificationEmail,
                 apiV1BaseTrimmed: AppConfiguration.apiV1BaseTrimmed
             )

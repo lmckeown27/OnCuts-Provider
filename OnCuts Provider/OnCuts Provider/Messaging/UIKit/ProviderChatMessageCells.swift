@@ -1,4 +1,4 @@
-import CampusCutsModule
+import OnCutsModule
 import UIKit
 
 // MARK: - Message bubble cell
@@ -207,7 +207,7 @@ final class ProviderChatMessageCell: UITableViewCell {
     private func loadMessageImage(from storedPath: String) {
         imageLoadTask?.cancel()
         messageImageView.image = nil
-        guard let url = CampusCutsS3ImageURL.url(forStoredPath: storedPath) else { return }
+        guard let url = OnCutsS3ImageURL.url(forStoredPath: storedPath) else { return }
         imageLoadTask = URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
             guard let data, let image = UIImage(data: data) else { return }
             DispatchQueue.main.async {

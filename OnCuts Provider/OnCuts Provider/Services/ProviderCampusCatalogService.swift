@@ -19,7 +19,7 @@ enum ProviderCampusCatalogService {
                 path += "?search=\(enc)"
             }
         }
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: path)
         let dec = JSONDecoder()
         dec.keyDecodingStrategy = .convertFromSnakeCase
         let rows = try dec.decode(PublicCampusListEnvelope.self, from: data).data ?? []

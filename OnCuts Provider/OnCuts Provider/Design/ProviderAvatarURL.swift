@@ -1,10 +1,10 @@
 import Foundation
-import CampusCutsModule
+import OnCutsModule
 
 /// Resolves stored avatar paths (S3 keys or full HTTPS URLs) for remote image loading.
 enum ProviderAvatarURL {
     static func resolve(_ storedPath: String?) -> URL? {
-        CampusCutsS3ImageURL.url(forStoredPath: storedPath)
+        OnCutsS3ImageURL.url(forStoredPath: storedPath)
     }
 }
 

@@ -40,7 +40,7 @@ enum ProviderBarberChatsService {
 
     /// Start or reopen a peer barber-to-barber thread.
     static func startPeerConversation(otherBarberUserId: String) async throws -> Int {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "messages/barber-chats",
             method: "POST",
             jsonBody: ["otherBarberUserId": otherBarberUserId]
@@ -50,7 +50,7 @@ enum ProviderBarberChatsService {
 
     /// Admin opens a support thread with a barber (`booking_id IS NULL`).
     static func startSupportConversation(barberUserId: String) async throws -> Int {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "messages/cm-barber",
             method: "POST",
             jsonBody: ["barberUserId": barberUserId]
@@ -59,7 +59,7 @@ enum ProviderBarberChatsService {
     }
 
     private static func fetchBarbers(path: String) async throws -> [BarberChatRowDTO] {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: path)
         let dec = JSONDecoder()
         let env = try dec.decode(BarberChatsListEnvelope.self, from: data)
         return env.data?.barbers ?? []
@@ -69,7 +69,7 @@ enum ProviderBarberChatsService {
         let dec = JSONDecoder()
         let env = try dec.decode(StartBarberChatConversationEnvelope.self, from: data)
         guard let id = env.data?.conversation?.id else {
-            throw CampusCutsHTTPError.decoding
+            throw OnCutsHTTPError.decoding
         }
         return id
     }

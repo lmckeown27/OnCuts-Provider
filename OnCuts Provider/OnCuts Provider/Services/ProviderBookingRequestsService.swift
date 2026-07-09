@@ -4,8 +4,8 @@ import Foundation
 enum ProviderBookingRequestsService {
     static func listPending(barberTableId: String) async throws -> [BookingRequestRow] {
         let enc = barberTableId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? barberTableId
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "booking-requests/barber/\(enc)/pending")
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "booking-requests/barber/\(enc)/pending")
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         return try dec.decode(BookingRequestsPendingEnvelope.self, from: data).requests
     }
 
@@ -53,7 +53,7 @@ enum ProviderBookingRequestsService {
     static func accept(bookingId: String, barberTableId: String, message: String?) async throws {
         var body: [String: Any] = ["barberId": barberTableId]
         if let message, !message.isEmpty { body["message"] = message }
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "booking-requests/\(bookingId)/accept",
             method: "POST",
             jsonBody: body
@@ -76,7 +76,7 @@ enum ProviderBookingRequestsService {
     }
 
     static func reject(bookingId: String, barberTableId: String, reason: String) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "booking-requests/\(bookingId)/reject",
             method: "POST",
             jsonBody: ["barberId": barberTableId, "reason": reason]

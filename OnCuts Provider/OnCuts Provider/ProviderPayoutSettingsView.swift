@@ -237,7 +237,7 @@ struct ProviderPayoutSettingsView: View {
     }
 
     private static func userMessage(for error: Error, fallback: String) -> String {
-        if let e = error as? CampusCutsHTTPError, case .httpStatus(_, let raw) = e {
+        if let e = error as? OnCutsHTTPError, case .httpStatus(_, let raw) = e {
             if let data = raw?.data(using: .utf8),
                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let err = obj["error"] as? [String: Any],

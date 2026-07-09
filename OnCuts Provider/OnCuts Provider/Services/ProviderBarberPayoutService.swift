@@ -89,43 +89,43 @@ private enum ProviderBarberPayoutJSON {
 
 enum ProviderBarberPayoutService {
     static func fetchPayoutSummary() async throws -> BarberPayoutSummaryDTO {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "barber/payout/summary")
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "barber/payout/summary")
         let env = try ProviderBarberPayoutJSON.decoder.decode(BarberPayoutAPIEnvelope<BarberPayoutSummaryDTO>.self, from: data)
         guard let summary = env.data else {
-            throw CampusCutsHTTPError.decoding
+            throw OnCutsHTTPError.decoding
         }
         return summary
     }
 
     static func fetchConnectStatus() async throws -> BarberConnectStatusDTO {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "barber/connect/status")
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "barber/connect/status")
         let env = try ProviderBarberPayoutJSON.decoder.decode(BarberPayoutAPIEnvelope<BarberConnectStatusDTO>.self, from: data)
         guard let status = env.data else {
-            throw CampusCutsHTTPError.decoding
+            throw OnCutsHTTPError.decoding
         }
         return status
     }
 
     /// Stripe-hosted Connect onboarding or account-update link (same as web `POST /barber/connect/create`).
     static func createConnectOnboardingURL() async throws -> URL {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "barber/connect/create",
             method: "POST",
             jsonBody: [:]
         )
         let env = try ProviderBarberPayoutJSON.decoder.decode(BarberPayoutAPIEnvelope<BarberConnectOnboardingBodyDTO>.self, from: data)
         guard let body = env.data, let url = URL(string: body.onboardingUrl) else {
-            throw CampusCutsHTTPError.decoding
+            throw OnCutsHTTPError.decoding
         }
         return url
     }
 
     /// Stripe Express dashboard login URL (same as web `GET /barber/connect/dashboard`).
     static func fetchStripeDashboardURL() async throws -> URL {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "barber/connect/dashboard")
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "barber/connect/dashboard")
         let env = try ProviderBarberPayoutJSON.decoder.decode(BarberPayoutAPIEnvelope<BarberConnectDashboardBodyDTO>.self, from: data)
         guard let body = env.data, let url = URL(string: body.dashboardUrl) else {
-            throw CampusCutsHTTPError.decoding
+            throw OnCutsHTTPError.decoding
         }
         return url
     }

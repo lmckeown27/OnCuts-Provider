@@ -29,10 +29,10 @@ enum ProviderBarberAnalyticsService {
 
     private static func fetchAggregate(barberId: String) async -> BarberAnalyticsAggregateDTO? {
         let enc = barberId.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlPathAllowed) ?? barberId
-        guard let data = try? await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "barbers/\(enc)/analytics") else {
+        guard let data = try? await OnCutsHTTPClient.requestDataThrowingSuccess(path: "barbers/\(enc)/analytics") else {
             return nil
         }
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         return try? dec.decode(Envelope<BarberAnalyticsAggregateDTO>.self, from: data).data
     }
 }

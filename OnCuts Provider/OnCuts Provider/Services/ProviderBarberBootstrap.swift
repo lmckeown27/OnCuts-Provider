@@ -1,4 +1,4 @@
-import CampusCutsModule
+import OnCutsModule
 import Foundation
 
 /// Calls public `GET /barbers/user/:userId`, which auto-creates a `barbers` row when the DB role is **BARBER** or **CAMPUS_MANAGER** (e.g. after application approval).
@@ -11,7 +11,7 @@ enum ProviderBarberBootstrap {
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let tok = CampusCutsAuthTokenStore.loadAccessToken(), !tok.isEmpty {
+        if let tok = OnCutsAuthTokenStore.loadAccessToken(), !tok.isEmpty {
             req.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization")
         }
         _ = try? await URLSession.shared.data(for: req)

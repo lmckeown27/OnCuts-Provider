@@ -137,7 +137,7 @@ struct ProviderAdminUserDetailView: View {
         errorText = nil
         do {
             bookings = try await ProviderAdminService.userBookings(userId: user.id)
-        } catch let CampusCutsHTTPError.httpStatus(code, msg) {
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
             errorText = msg ?? "Server returned \(code)."
         } catch {
             errorText = error.localizedDescription

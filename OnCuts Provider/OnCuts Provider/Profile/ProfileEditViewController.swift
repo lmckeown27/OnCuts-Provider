@@ -804,7 +804,7 @@ final class ProfileEditViewController: UIViewController, UITextFieldDelegate, UI
                 loadRemoteProfileImage(from: url)
             }
             await onRefresh?()
-        } catch let err as CampusCutsHTTPError {
+        } catch let err as OnCutsHTTPError {
             let message = err.errorDescription ?? "Upload failed."
             presentSimpleAlert(title: "Couldn't upload photo", message: message)
         } catch {

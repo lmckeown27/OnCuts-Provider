@@ -1832,7 +1832,7 @@ struct ProviderAdminDashboardView: View {
             let (s, c) = try await (st, cs)
             stats = s
             campuses = c
-        } catch let CampusCutsHTTPError.httpStatus(code, msg) {
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
             errorText = msg ?? "Server returned \(code)."
         } catch {
             errorText = error.localizedDescription
@@ -1857,7 +1857,7 @@ struct ProviderAdminDashboardView: View {
             moderationReports = try await ProviderAdminService.listModerationReports(
                 status: reportsStatusFilter.apiStatus
             )
-        } catch let CampusCutsHTTPError.httpStatus(code, msg) {
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
             moderationReports = []
             reportsError = msg ?? "Could not load reports (\(code))."
         } catch {
@@ -1874,7 +1874,7 @@ struct ProviderAdminDashboardView: View {
             bannedUsers = try await ProviderAdminService.listBannedUsers(
                 category: bannedCategoryFilter
             )
-        } catch let CampusCutsHTTPError.httpStatus(code, msg) {
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
             bannedUsers = []
             bannedError = msg ?? "Could not load banned users (\(code))."
         } catch {
@@ -1892,7 +1892,7 @@ struct ProviderAdminDashboardView: View {
                 reportId: pending.report.id,
                 action: pending.action
             )
-        } catch let CampusCutsHTTPError.httpStatus(code, msg) {
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
             reportsError = msg ?? "Resolution failed (\(code))."
         } catch {
             reportsError = error.localizedDescription
@@ -1910,7 +1910,7 @@ struct ProviderAdminDashboardView: View {
         bannedError = nil
         do {
             try await ProviderAdminService.unbanUser(userId: target.id)
-        } catch let CampusCutsHTTPError.httpStatus(code, msg) {
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
             bannedError = msg ?? "Unban failed (\(code))."
         } catch {
             bannedError = error.localizedDescription

@@ -1,4 +1,4 @@
-import CampusCutsModule
+import OnCutsModule
 import Foundation
 import UIKit
 
@@ -12,20 +12,20 @@ private struct ProfilePhotoUploadData: Decodable {
 
 @MainActor
 enum ProviderAuthService {
-    static func login(email: String, password: String) async throws -> CampusCutsVerifiedSession {
-        try await CampusCutsAuthService.loginWithEmailPassword(
+    static func login(email: String, password: String) async throws -> OnCutsVerifiedSession {
+        try await OnCutsAuthService.loginWithEmailPassword(
             email: email,
             password: password,
             apiV1BaseTrimmed: AppConfiguration.apiV1BaseTrimmed
         )
     }
 
-    static func persistSession(_ session: CampusCutsVerifiedSession) {
-        CampusCutsAuthTokenStore.save(accessToken: session.accessToken, refreshToken: session.refreshToken)
+    static func persistSession(_ session: OnCutsVerifiedSession) {
+        OnCutsAuthTokenStore.save(accessToken: session.accessToken, refreshToken: session.refreshToken)
     }
 
     static func clearSession() {
-        CampusCutsAuthTokenStore.clear()
+        OnCutsAuthTokenStore.clear()
     }
 
     /// Exchange the stored refresh token for a new access token whose `role` claim matches the
@@ -33,7 +33,7 @@ enum ProviderAuthService {
     /// carrying an older JWT (e.g. from before promotion) that `/admin/*` rejects.
     @discardableResult
     static func refreshAccessTokenIfPossible() async throws -> Bool {
-        guard let refresh = CampusCutsAuthTokenStore.loadRefreshToken()?.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard let refresh = OnCutsAuthTokenStore.loadRefreshToken()?.trimmingCharacters(in: .whitespacesAndNewlines),
               !refresh.isEmpty
         else {
             return false
@@ -41,7 +41,7 @@ enum ProviderAuthService {
 
         let base = AppConfiguration.apiV1BaseTrimmed
         guard let url = URL(string: base + "/auth/refresh-token") else {
-            throw CampusCutsHTTPError.invalidURL
+            throw OnCutsHTTPError.invalidURL
         }
 
         var req = URLRequest(url: url)
@@ -52,11 +52,11 @@ enum ProviderAuthService {
 
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else {
-            throw CampusCutsHTTPError.httpStatus(-1, nil)
+            throw OnCutsHTTPError.httpStatus(-1, nil)
         }
         guard (200 ..< 300).contains(http.statusCode) else {
             let msg = String(data: data, encoding: .utf8)
-            throw CampusCutsHTTPError.httpStatus(http.statusCode, msg)
+            throw OnCutsHTTPError.httpStatus(http.statusCode, msg)
         }
 
         struct RefreshEnvelope: Decodable {
@@ -73,10 +73,10 @@ enum ProviderAuthService {
               let access = payload.accessToken ?? payload.token,
               !access.isEmpty
         else {
-            throw CampusCutsHTTPError.decoding
+            throw OnCutsHTTPError.decoding
         }
 
-        CampusCutsAuthTokenStore.save(accessToken: access, refreshToken: refresh)
+        OnCutsAuthTokenStore.save(accessToken: access, refreshToken: refresh)
         return true
     }
 
@@ -87,12 +87,12 @@ enum ProviderAuthService {
     }
 
     static func fetchAuthMe() async throws -> AuthMeUser {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "auth/me")
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "auth/me")
         let dec = JSONDecoder()
         dec.keyDecodingStrategy = .convertFromSnakeCase
         let env = try dec.decode(AuthMeEnvelope.self, from: data)
         guard let u = env.data else {
-            throw CampusCutsHTTPError.decoding
+            throw OnCutsHTTPError.decoding
         }
         return u
     }
@@ -100,17 +100,17 @@ enum ProviderAuthService {
     /// `POST /upload/profile-photo` — multipart field `image` (web `userService.uploadProfilePhoto`).
     /// Updates `users."avatarUrl"` on the server for the signed-in user.
     static func uploadProfilePhoto(jpegData: Data, fileName: String = "profile.jpg") async throws -> String {
-        let data = try await CampusCutsHTTPClient.uploadMultipart(
+        let data = try await OnCutsHTTPClient.uploadMultipart(
             path: "upload/profile-photo",
             fieldName: "image",
             fileName: fileName,
             mimeType: "image/jpeg",
             fileData: jpegData
         )
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(ProfilePhotoUploadEnvelope.self, from: data)
         guard let url = env.data?.url?.trimmingCharacters(in: .whitespacesAndNewlines), !url.isEmpty else {
-            throw CampusCutsHTTPError.decoding
+            throw OnCutsHTTPError.decoding
         }
         return url
     }
@@ -129,12 +129,12 @@ enum ProviderAuthService {
     }
 
     static func fetchBarberMe() async throws -> BarberMeProfile {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "barbers/me")
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "barbers/me")
         let dec = JSONDecoder()
         dec.keyDecodingStrategy = .convertFromSnakeCase
         let env = try dec.decode(BarberMeEnvelope.self, from: data)
         guard let p = env.data else {
-            throw CampusCutsHTTPError.httpStatus(404, env.message)
+            throw OnCutsHTTPError.httpStatus(404, env.message)
         }
         return p
     }
@@ -149,7 +149,7 @@ enum ProviderAuthService {
         if let password, !password.isEmpty {
             body["password"] = password
         }
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "users/\(enc)",
             method: "DELETE",
             jsonBody: body
@@ -172,7 +172,7 @@ enum ProviderAuthService {
             "specialties": specialties,
             "is_active": isActive,
         ]
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "barbers/\(enc)",
             method: "PUT",
             jsonBody: body

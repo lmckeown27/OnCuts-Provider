@@ -1,4 +1,4 @@
-import CampusCutsModule
+import OnCutsModule
 import CryptoKit
 import Foundation
 import os
@@ -39,7 +39,7 @@ enum ProviderPushDeviceRegistration {
         ProviderPushTokenStore.apnsHexToken = normalized
         pushLog.notice("onAPNsTokenReceived: stored token \(maskedToken(normalized), privacy: .public)")
 
-        let hasJWT = CampusCutsAuthTokenStore.loadAccessToken()?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        let hasJWT = OnCutsAuthTokenStore.loadAccessToken()?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
         if hasJWT {
             await registerIfNeeded()
         } else {
@@ -85,7 +85,7 @@ enum ProviderPushDeviceRegistration {
             pushLog.notice("registerIfNeeded: skip — no APNs token yet (waiting on iOS to deliver one)")
             return
         }
-        guard let jwt = CampusCutsAuthTokenStore.loadAccessToken()?.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard let jwt = OnCutsAuthTokenStore.loadAccessToken()?.trimmingCharacters(in: .whitespacesAndNewlines),
               !jwt.isEmpty
         else {
             pushLog.notice("registerIfNeeded: skip — no JWT in keychain (user not signed in)")

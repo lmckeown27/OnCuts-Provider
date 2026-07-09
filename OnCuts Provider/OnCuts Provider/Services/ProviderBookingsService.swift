@@ -7,8 +7,8 @@ enum ProviderBookingsService {
         if let status, !status.isEmpty {
             path += "&status=\(status.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? status)"
         }
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: path)
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(BookingsSimpleListEnvelope.self, from: data)
         let bookings = env.resolvedBookings
         #if DEBUG
@@ -24,8 +24,8 @@ enum ProviderBookingsService {
     }
 
     static func fetchBooking(id: String) async throws -> SimpleBookingDTO {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "bookings-simple/\(id)")
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "bookings-simple/\(id)")
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(BookingSimpleDetailEnvelope.self, from: data)
         guard let booking = env.booking?.asSimpleBookingDTO() else {
             throw URLError(.badServerResponse)
@@ -34,7 +34,7 @@ enum ProviderBookingsService {
     }
 
     static func updateBookingStatus(id: String, status: String) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "bookings-simple/\(id)/status",
             method: "PUT",
             jsonBody: ["status": status]
@@ -42,7 +42,7 @@ enum ProviderBookingsService {
     }
 
     static func markComplete(id: String) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "bookings-simple/\(id)/complete",
             method: "PUT",
             jsonBody: [:]
@@ -50,7 +50,7 @@ enum ProviderBookingsService {
     }
 
     static func undoComplete(id: String) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "bookings-simple/\(id)/undo-complete",
             method: "PUT",
             jsonBody: [:]
@@ -58,7 +58,7 @@ enum ProviderBookingsService {
     }
 
     static func requestPayment(id: String) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "bookings-simple/\(id)/request-payment",
             method: "POST",
             jsonBody: [:]
@@ -69,7 +69,7 @@ enum ProviderBookingsService {
         var body: [String: Any] = ["scheduledTime": scheduledTimeISO]
         if let location { body["location"] = location }
         if let notes { body["notes"] = notes }
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "bookings-simple/\(id)",
             method: "PUT",
             jsonBody: body
@@ -79,7 +79,7 @@ enum ProviderBookingsService {
     static func cancelBooking(id: String, reason: String?) async throws {
         var body: [String: Any] = [:]
         if let reason, !reason.isEmpty { body["reason"] = reason }
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "bookings-simple/\(id)",
             method: "DELETE",
             jsonBody: body
@@ -87,7 +87,7 @@ enum ProviderBookingsService {
     }
 
     static func approveRescheduleRequest(bookingId: String) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "bookings-simple/\(bookingId)/reschedule-request/approve",
             method: "POST",
             jsonBody: [:]
@@ -95,7 +95,7 @@ enum ProviderBookingsService {
     }
 
     static func rejectRescheduleRequest(bookingId: String) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "bookings-simple/\(bookingId)/reschedule-request/reject",
             method: "POST",
             jsonBody: [:]

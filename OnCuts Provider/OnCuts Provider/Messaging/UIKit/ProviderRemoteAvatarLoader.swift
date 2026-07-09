@@ -1,5 +1,5 @@
 import UIKit
-import CampusCutsModule
+import OnCutsModule
 
 /// Loads a remote profile image into a `UIImageView`, with cancellation for cell reuse.
 final class ProviderRemoteAvatarLoader {

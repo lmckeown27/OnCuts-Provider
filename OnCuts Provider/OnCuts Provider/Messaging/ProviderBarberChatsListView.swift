@@ -401,7 +401,7 @@ struct ProviderBarberChatsRosterView: View {
             } else {
                 barbers = try await ProviderBarberChatsService.fetchPeerBarbers(campusId: selectedCampusId)
             }
-        } catch let CampusCutsHTTPError.httpStatus(code, msg) {
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
             barbers = []
             errorText = msg ?? "Could not load providers (\(code))."
         } catch {
@@ -438,7 +438,7 @@ struct ProviderBarberChatsRosterView: View {
             ProviderConversationMessagesPrefetch.prefetch(conversationId: conversationId)
             onOpenConversation(barber.conversationRow(conversationId: conversationId))
             NotificationCenter.default.post(name: .providerMessagingUnreadCountShouldRefresh, object: nil)
-        } catch let CampusCutsHTTPError.httpStatus(code, msg) {
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
             errorText = msg ?? "Could not open chat (\(code))."
         } catch {
             errorText = error.localizedDescription

@@ -102,7 +102,7 @@ struct ProviderAdminBarberDetailView: View {
         errorText = nil
         do {
             _ = try await ProviderBarberChatOpener.openSupportChat(barberUserId: barber.id)
-        } catch let CampusCutsHTTPError.httpStatus(code, msg) {
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
             errorText = msg ?? "Could not open chat (\(code))."
         } catch {
             errorText = error.localizedDescription
@@ -218,7 +218,7 @@ struct ProviderAdminBarberDetailView: View {
         errorText = nil
         do {
             bookings = try await ProviderAdminService.barberBookings(barberRecordId: recordId)
-        } catch let CampusCutsHTTPError.httpStatus(code, msg) {
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
             errorText = msg ?? "Server returned \(code)."
         } catch {
             errorText = error.localizedDescription
@@ -234,7 +234,7 @@ struct ProviderAdminBarberDetailView: View {
         defer { isToggling = false }
         do {
             try await ProviderAdminService.setBarberActive(barberRecordId: recordId, isActive: newValue)
-        } catch let CampusCutsHTTPError.httpStatus(code, msg) {
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
             barber = withIsActive(barber, newValue: previous)
             errorText = msg ?? "Visibility update failed (\(code))."
         } catch {

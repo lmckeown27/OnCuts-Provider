@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		9227ECA72FA5BC180084502B /* CampusCutsModule in Frameworks */ = {isa = PBXBuildFile; productRef = 92ABCD022FA6000100000002 /* CampusCutsModule */; };
+		9227ECA72FA5BC180084502B /* OnCutsModule in Frameworks */ = {isa = PBXBuildFile; productRef = 92ABCD022FA6000100000002 /* OnCutsModule */; };
 		9227ECA82FA5BC180084502B /* Core in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC00112FA6000100000111 /* Core */; };
 		9227ECA92FA5BC180084502B /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC00122FA6000100000112 /* GoogleSignIn */; };
 		9227ECAA2FA5BC180084502B /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC00132FA6000100000113 /* GoogleSignInSwift */; };
@@ -84,7 +84,7 @@
 				9227ECAA2FA5BC180084502B /* GoogleSignInSwift in Frameworks */,
 				9227ECA92FA5BC180084502B /* GoogleSignIn in Frameworks */,
 				9227ECA82FA5BC180084502B /* Core in Frameworks */,
-				9227ECA72FA5BC180084502B /* CampusCutsModule in Frameworks */,
+				9227ECA72FA5BC180084502B /* OnCutsModule in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -145,7 +145,7 @@
 			);
 			name = "OnCuts Provider";
 			packageProductDependencies = (
-				92ABCD022FA6000100000002 /* CampusCutsModule */,
+				92ABCD022FA6000100000002 /* OnCutsModule */,
 				92CC00112FA6000100000111 /* Core */,
 				92CC00122FA6000100000112 /* GoogleSignIn */,
 				92CC00132FA6000100000113 /* GoogleSignInSwift */,
@@ -244,7 +244,7 @@
 			mainGroup = 921935652FA5AA1600D50175;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				92ABCD012FA6000100000001 /* XCLocalSwiftPackageReference "../CampusCutsPackage" */,
+				92ABCD012FA6000100000001 /* XCLocalSwiftPackageReference "../OnCutsPackage" */,
 				92CC00012FA6000100000101 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 				92CC00022FA6000100000102 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				92CC00032FA6000100000103 /* XCRemoteSwiftPackageReference "stripe-ios" */,
@@ -686,9 +686,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		92ABCD012FA6000100000001 /* XCLocalSwiftPackageReference "../CampusCutsPackage" */ = {
+		92ABCD012FA6000100000001 /* XCLocalSwiftPackageReference "../OnCutsPackage" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../CampusCutsPackage;
+			relativePath = ../OnCutsPackage;
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -728,14 +728,14 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		92ABCD022FA6000100000002 /* CampusCutsModule */ = {
+		92ABCD022FA6000100000002 /* OnCutsModule */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 92ABCD012FA6000100000001 /* XCLocalSwiftPackageReference "../CampusCutsPackage" */;
-			productName = CampusCutsModule;
+			package = 92ABCD012FA6000100000001 /* XCLocalSwiftPackageReference "../OnCutsPackage" */;
+			productName = OnCutsModule;
 		};
 		92CC00112FA6000100000111 /* Core */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 92ABCD012FA6000100000001 /* XCLocalSwiftPackageReference "../CampusCutsPackage" */;
+			package = 92ABCD012FA6000100000001 /* XCLocalSwiftPackageReference "../OnCutsPackage" */;
 			productName = Core;
 		};
 		92CC00122FA6000100000112 /* GoogleSignIn */ = {

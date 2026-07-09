@@ -1,4 +1,4 @@
-import CampusCutsModule
+import OnCutsModule
 import Foundation
 
 enum AuthBackendVerificationError: LocalizedError {
@@ -18,7 +18,7 @@ enum AuthBackendVerificationError: LocalizedError {
 
 /// Session from `POST /auth/google` or `POST /auth/apple` plus flags from `data.user` (consumer parity).
 struct ProviderOAuthSessionOutcome: Sendable {
-    let session: CampusCutsVerifiedSession
+    let session: OnCutsVerifiedSession
     let needsPlatformPassword: Bool
 }
 
@@ -156,7 +156,7 @@ enum AuthBackendVerification {
         let role = nonEmptyTrim(user?.role) ?? "CONSUMER"
         let emailFinal = em.isEmpty ? "user@signed-in.local" : em
         let needsPw = user?.needsPlatformPassword ?? false
-        let session = CampusCutsVerifiedSession(
+        let session = OnCutsVerifiedSession(
             accessToken: access,
             refreshToken: refresh,
             userId: uid,

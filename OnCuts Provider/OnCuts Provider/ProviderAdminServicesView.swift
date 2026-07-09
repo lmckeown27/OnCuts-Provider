@@ -584,7 +584,7 @@ struct ProviderAdminServicesView: View {
             toast = "\(name) added."
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             toast = nil
-        } catch let CampusCutsHTTPError.httpStatus(_, msg) {
+        } catch let OnCutsHTTPError.httpStatus(_, msg) {
             addServiceError = msg ?? "Could not add service."
         } catch {
             addServiceError = error.localizedDescription

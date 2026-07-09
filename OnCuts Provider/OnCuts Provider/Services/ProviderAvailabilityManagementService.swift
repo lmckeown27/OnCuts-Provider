@@ -11,8 +11,8 @@ enum ProviderAvailabilityManagementService {
     // MARK: - Weekly schedule
 
     static func fetchWeeklySchedule(barberId: String) async throws -> WeeklyScheduleDTO {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "barbers/\(barberId)/availability")
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "barbers/\(barberId)/availability")
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(WeeklyScheduleEnvelope.self, from: data)
         return env.data?.weeklySchedule ?? WeeklyScheduleDTO()
     }
@@ -22,7 +22,7 @@ enum ProviderAvailabilityManagementService {
             // Backend column key is snake_case (`weekly_schedule`) — see `barber.controller.ts`.
             "weekly_schedule": try schedule.jsonObject(),
         ]
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "barbers/\(barberId)",
             method: "PUT",
             jsonBody: body
@@ -41,8 +41,8 @@ enum ProviderAvailabilityManagementService {
         if let endDate { query.append("endDate=\(endDate)") }
         var path = "barbers/\(barberId)/time-blocks"
         if !query.isEmpty { path += "?" + query.joined(separator: "&") }
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: path)
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(BarberTimeBlocksEnvelope.self, from: data)
         return env.data ?? []
     }
@@ -60,18 +60,18 @@ enum ProviderAvailabilityManagementService {
             "endTime": endTime,
         ]
         if let reason, !reason.isEmpty { body["reason"] = reason }
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "barbers/\(barberId)/time-blocks",
             method: "POST",
             jsonBody: body,
             acceptableStatuses: 200 ..< 300
         )
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         return try? dec.decode(BarberTimeBlockSingleEnvelope.self, from: data).data
     }
 
     static func deleteTimeBlock(barberId: String, blockId: String) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "barbers/\(barberId)/time-blocks/\(blockId)",
             method: "DELETE"
         )
@@ -80,30 +80,30 @@ enum ProviderAvailabilityManagementService {
     // MARK: - Google Calendar
 
     static func googleCalendarStatus() async throws -> GoogleCalendarStatusDTO {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "auth/google-calendar/status")
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "auth/google-calendar/status")
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         return try dec.decode(GoogleCalendarStatusDTO.self, from: data)
     }
 
     static func googleCalendarConnectURL() async throws -> URL {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "auth/google-calendar/connect")
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "auth/google-calendar/connect")
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let payload = try dec.decode(GoogleCalendarAuthURLDTO.self, from: data)
         guard let url = URL(string: payload.authUrl) else {
-            throw CampusCutsHTTPError.invalidURL
+            throw OnCutsHTTPError.invalidURL
         }
         return url
     }
 
     static func googleCalendarDisconnect() async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "auth/google-calendar/disconnect",
             method: "DELETE"
         )
     }
 
     static func googleCalendarUpdateSyncEnabled(_ enabled: Bool) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "auth/google-calendar/sync-settings",
             method: "PUT",
             jsonBody: ["syncEnabled": enabled]
@@ -116,7 +116,7 @@ enum ProviderAvailabilityManagementService {
         let start = formatter.string(from: startDate)
         let end = formatter.string(from: endDate)
         let path = "auth/google-calendar/busy-times?startDate=\(start)&endDate=\(end)"
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: path)
         struct Payload: Decodable {
             let busyTimes: [Interval]?
             struct Interval: Decodable {
@@ -124,7 +124,7 @@ enum ProviderAvailabilityManagementService {
                 let end: Date
             }
         }
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let payload = try dec.decode(Payload.self, from: data)
         return (payload.busyTimes ?? []).map { ProviderWeeklyScheduleBusyInterval(start: $0.start, end: $0.end) }
     }

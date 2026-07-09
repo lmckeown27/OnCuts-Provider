@@ -5,8 +5,8 @@ import Foundation
 @MainActor
 enum ProviderBarberServicesService {
     static func fetchServiceCatalog() async throws -> [AdminServiceCatalogItem] {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "admin/services")
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "admin/services")
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(AdminServicesListEnvelope.self, from: data)
         let list = env.data ?? []
         return list.filter { ($0.isActive ?? true) }
@@ -14,11 +14,11 @@ enum ProviderBarberServicesService {
 
     static func fetchBarberUserProfile(userId: String) async throws -> BarberUserProfileDTO {
         let enc = userId.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlPathAllowed) ?? userId
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "barbers/user/\(enc)")
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "barbers/user/\(enc)")
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(BarberUserProfileEnvelope.self, from: data)
         guard let profile = env.data else {
-            throw CampusCutsHTTPError.decoding
+            throw OnCutsHTTPError.decoding
         }
         return profile
     }
@@ -40,7 +40,7 @@ enum ProviderBarberServicesService {
             "specialties": specialties,
             "pricing": pricingBody,
         ]
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "barbers/\(enc)",
             method: "PUT",
             jsonBody: body

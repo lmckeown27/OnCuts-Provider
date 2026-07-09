@@ -1,4 +1,4 @@
-import CampusCutsModule
+import OnCutsModule
 import Foundation
 import Observation
 
@@ -35,7 +35,7 @@ final class ProviderSession {
     func bootstrap() async {
         isBootstrapping = true
         defer { isBootstrapping = false }
-        guard CampusCutsAuthTokenStore.loadAccessToken() != nil else {
+        guard OnCutsAuthTokenStore.loadAccessToken() != nil else {
             isSignedIn = false
             authUser = nil
             barberProfile = nil
@@ -68,7 +68,7 @@ final class ProviderSession {
     }
 
     /// After email verification during **Create account**.
-    func adoptVerifiedSession(_ verified: CampusCutsVerifiedSession) async throws {
+    func adoptVerifiedSession(_ verified: OnCutsVerifiedSession) async throws {
         lastError = nil
         ProviderAuthService.persistSession(verified)
         try await refreshProfileAfterSignIn()
@@ -112,7 +112,7 @@ final class ProviderSession {
     /// Mirrors web `ConsumerProfileEditor.handleDeleteAccount` + `DELETE /users/:id`.
     func deleteAccount(password: String?) async throws {
         guard let id = authUser?.id else {
-            throw CampusCutsHTTPError.notAuthenticated
+            throw OnCutsHTTPError.notAuthenticated
         }
         await ProviderPushDeviceRegistration.unregisterOnSignOut()
         try await ProviderAuthService.deleteAccount(userId: id, password: password)

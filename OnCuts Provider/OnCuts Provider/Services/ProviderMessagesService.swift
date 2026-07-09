@@ -31,10 +31,10 @@ extension UIImage {
 @MainActor
 enum ProviderMessagesService {
     static func listConversations(page: Int = 1) async throws -> [ConversationRow] {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "messages/conversations?page=\(page)&limit=40"
         )
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(ConversationsEnvelope.self, from: data)
         return env.data?.conversations ?? []
     }
@@ -52,16 +52,16 @@ enum ProviderMessagesService {
     }
 
     static func listMessages(conversationId: Int) async throws -> [ChatMessageDTO] {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "messages/conversations/\(conversationId)/messages?page=1&limit=100"
         )
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(MessagesEnvelope.self, from: data)
         return env.data?.messages ?? []
     }
 
     static func sendText(conversationId: Int, text: String) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "messages/conversations/\(conversationId)/messages",
             method: "POST",
             jsonBody: ["content": text, "messageType": "text"]
@@ -69,23 +69,23 @@ enum ProviderMessagesService {
     }
 
     static func uploadChatImage(jpegData: Data, fileName: String = "photo.jpg") async throws -> String {
-        let data = try await CampusCutsHTTPClient.uploadMultipart(
+        let data = try await OnCutsHTTPClient.uploadMultipart(
             path: "upload/chat-image",
             fieldName: "image",
             fileName: fileName,
             mimeType: "image/jpeg",
             fileData: jpegData
         )
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(ChatImageUploadEnvelope.self, from: data)
         guard let url = env.data?.url, !url.isEmpty else {
-            throw CampusCutsHTTPError.decoding
+            throw OnCutsHTTPError.decoding
         }
         return url
     }
 
     static func sendImage(conversationId: Int, mediaUrl: String) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "messages/conversations/\(conversationId)/messages",
             method: "POST",
             jsonBody: ["content": "", "messageType": "image", "mediaUrl": mediaUrl]
@@ -93,7 +93,7 @@ enum ProviderMessagesService {
     }
 
     static func markRead(conversationId: Int) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "messages/conversations/\(conversationId)/read",
             method: "PUT",
             jsonBody: [:]
@@ -103,7 +103,7 @@ enum ProviderMessagesService {
     // MARK: - UGC safety (Guideline 1.2)
 
     static func blockConsumer(userId: String) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "messages/blocks",
             method: "POST",
             jsonBody: ["blockedUserId": userId]
@@ -111,7 +111,7 @@ enum ProviderMessagesService {
     }
 
     static func reportConsumer(userId: String, conversationId: Int, reason: String) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "messages/reports",
             method: "POST",
             jsonBody: [
@@ -135,8 +135,8 @@ enum ProviderMessagesService {
     }
 
     static func listBlockedUsers() async throws -> [BlockedConsumerRow] {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "messages/blocks")
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "messages/blocks")
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(BlockedConsumersEnvelope.self, from: data)
         return env.data ?? []
     }

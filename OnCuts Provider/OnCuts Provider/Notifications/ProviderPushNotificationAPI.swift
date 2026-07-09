@@ -8,7 +8,7 @@ private let pushLog = Logger(subsystem: "com.oncuts.provider", category: "push")
 ///   * `POST /api/v1/notifications/register-device`
 ///   * `DELETE /api/v1/notifications/unregister-device`
 ///
-/// Both expect a Bearer JWT (handled by `CampusCutsHTTPClient`). The token shape we send is the
+/// Both expect a Bearer JWT (handled by `OnCutsHTTPClient`). The token shape we send is the
 /// raw **APNs hex token** — even though Firebase Messaging is also configured, server-side
 /// delivery is APNs-driven, not FCM-driven.
 @MainActor
@@ -32,7 +32,7 @@ enum ProviderPushNotificationAPI {
             body["bundleId"] = bundleId
         }
         do {
-            _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+            _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
                 path: "notifications/register-device",
                 method: "POST",
                 jsonBody: body
@@ -59,7 +59,7 @@ enum ProviderPushNotificationAPI {
             body["deviceToken"] = token
         }
         do {
-            _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+            _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
                 path: "notifications/unregister-device",
                 method: "DELETE",
                 jsonBody: body

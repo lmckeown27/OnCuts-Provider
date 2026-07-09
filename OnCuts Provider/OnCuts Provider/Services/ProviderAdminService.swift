@@ -8,8 +8,8 @@ enum ProviderAdminService {
     // MARK: - Platform stats
 
     static func platformStats() async throws -> AdminPlatformStatsDTO {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "admin/stats")
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "admin/stats")
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         struct Env: Decodable {
             let success: Bool?
             let data: AdminPlatformStatsDTO?
@@ -22,7 +22,7 @@ enum ProviderAdminService {
     // MARK: - Campuses
 
     static func listCampuses() async throws -> [AdminCampusDTO] {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "admin/campuses")
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "admin/campuses")
         // Backend returns camelCase (`managerId`, …). A snake_case key strategy can mis-map those keys and fail decoding.
         let dec = JSONDecoder()
         let env = try dec.decode(AdminCampusesEnvelope.self, from: data)
@@ -30,16 +30,16 @@ enum ProviderAdminService {
     }
 
     static func aggregatePerformance() async throws -> AdminCampusPerformanceDTO? {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "admin/campuses/aggregate/performance")
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "admin/campuses/aggregate/performance")
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         return try decodeAdminCampusPerformance(from: data, decoder: dec)
     }
 
     static func campusPerformance(campusId: String) async throws -> AdminCampusPerformanceDTO? {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "admin/campuses/\(campusId)/performance"
         )
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         return try decodeAdminCampusPerformance(from: data, decoder: dec)
     }
 
@@ -48,7 +48,7 @@ enum ProviderAdminService {
     /// `GET /admin/campuses/aggregate/metrics?period=daily|weekly|monthly|yearly|…`
     static func aggregateMetrics(period: String) async throws -> AdminMetricsSnapshotDTO {
         let q = period.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? period
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "admin/campuses/aggregate/metrics?period=\(q)"
         )
         let dec = JSONDecoder()
@@ -59,7 +59,7 @@ enum ProviderAdminService {
     static func campusMetrics(campusId: String, period: String) async throws -> AdminMetricsSnapshotDTO {
         let enc = campusId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? campusId
         let q = period.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? period
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "admin/campuses/\(enc)/metrics?period=\(q)"
         )
         let dec = JSONDecoder()
@@ -76,23 +76,23 @@ enum ProviderAdminService {
     }
 
     static func campusBarbers(campusId: String) async throws -> [AdminBarberDTO] {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "admin/campuses/\(campusId)/barbers"
         )
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         return try dec.decode(AdminBarbersEnvelope.self, from: data).resolved
     }
 
     static func allBarbers() async throws -> [AdminBarberDTO] {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "admin/barbers")
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "admin/barbers")
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         return try dec.decode(AdminBarbersEnvelope.self, from: data).resolved
     }
 
     static func barberBookings(barberRecordId: String, page: Int = 1, limit: Int = 50) async throws -> [AdminBarberBookingDTO] {
         let path = "admin/barbers/\(barberRecordId)/bookings?page=\(page)&limit=\(limit)"
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: path)
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         return try dec.decode(AdminBarberBookingsEnvelope.self, from: data).resolved
     }
 
@@ -110,8 +110,8 @@ enum ProviderAdminService {
         if let paymentFilter, !paymentFilter.isEmpty { query += "&paymentFilter=\(paymentFilter)" }
         if let statusFilter, !statusFilter.isEmpty { query += "&statusFilter=\(statusFilter)" }
         let path = "bookings-simple/campus/\(campusId)?\(query)"
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: path)
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(BookingsSimpleListEnvelope.self, from: data)
         return env.data?.bookings ?? []
     }
@@ -120,8 +120,8 @@ enum ProviderAdminService {
 
     static func listPlatformServices(includeInactive: Bool) async throws -> [AdminServiceCatalogItem] {
         let q = includeInactive ? "?includeInactive=true" : ""
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "admin/services\(q)")
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "admin/services\(q)")
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(AdminServicesListEnvelope.self, from: data)
         return env.data ?? []
     }
@@ -146,7 +146,7 @@ enum ProviderAdminService {
         if let description, !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             body["description"] = description
         }
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "admin/services",
             method: "POST",
             jsonBody: body
@@ -161,7 +161,7 @@ enum ProviderAdminService {
         maxDurationMinutes: Int
     ) async throws {
         let basePriceCents = (minPriceCents + maxPriceCents) / 2
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "admin/services/\(id)",
             method: "PUT",
             jsonBody: [
@@ -175,7 +175,7 @@ enum ProviderAdminService {
     }
 
     static func setPlatformServiceActive(id: Int, isActive: Bool) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "admin/services/\(id)",
             method: "PUT",
             jsonBody: ["isActive": isActive]
@@ -183,7 +183,7 @@ enum ProviderAdminService {
     }
 
     static func deactivatePlatformService(id: Int) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "admin/services/\(id)",
             method: "DELETE"
         )
@@ -198,22 +198,22 @@ enum ProviderAdminService {
             parts.append("campusId=\(enc)")
         }
         let path = "admin/users?" + parts.joined(separator: "&")
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: path)
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         return try dec.decode(AdminUsersEnvelope.self, from: data).resolved
     }
 
     static func userBookings(userId: String, page: Int = 1, limit: Int = 50) async throws -> [AdminConsumerBookingDTO] {
         let path = "admin/users/\(userId)/bookings?page=\(page)&limit=\(limit)"
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: path)
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         return try dec.decode(AdminConsumerBookingsEnvelope.self, from: data).resolved
     }
 
     // MARK: - Barber visibility (admin can toggle isActive via PUT /barbers/:id)
 
     static func setBarberActive(barberRecordId: String, isActive: Bool) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "barbers/\(barberRecordId)",
             method: "PUT",
             jsonBody: ["is_active": isActive]
@@ -239,8 +239,8 @@ enum ProviderAdminService {
             parts.append("status=\(status.rawValue)")
         }
         let path = "admin/moderation/reports?" + parts.joined(separator: "&")
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: path)
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         return try dec.decode(AdminModerationReportsEnvelope.self, from: data).resolved
     }
 
@@ -255,8 +255,8 @@ enum ProviderAdminService {
             parts.append("category=\(category.rawValue)")
         }
         let path = "admin/moderation/banned-users?" + parts.joined(separator: "&")
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: path)
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         return try dec.decode(AdminBannedUsersEnvelope.self, from: data).resolved
     }
 
@@ -273,7 +273,7 @@ enum ProviderAdminService {
         if let trimmed = notes?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
             body["notes"] = trimmed
         }
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "admin/moderation/reports/\(reportId)/resolve",
             method: "POST",
             jsonBody: body
@@ -282,7 +282,7 @@ enum ProviderAdminService {
 
     /// `POST /admin/users/:userId/unban` — empty body. Reverses `users.isBanned = true`.
     static func unbanUser(userId: String) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "admin/users/\(userId)/unban",
             method: "POST",
             jsonBody: [:]

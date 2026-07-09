@@ -14,8 +14,8 @@ enum ProviderAvailabilityService {
         let dateString = Self.yyyyMMdd(date, timeZone: timeZone)
         let encoded = dateString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? dateString
         let path = "barbers/\(barberId)/availability?date=\(encoded)"
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: path)
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(BarberAvailabilityDayEnvelope.self, from: data)
         return env.data ?? BarberAvailabilityDayData(
             date: dateString,

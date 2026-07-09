@@ -65,14 +65,14 @@ struct BarberApplicationsListResult {
 @MainActor
 enum ProviderBarberApplicationService {
     static func fetchMyApplication() async throws -> BarberApplicationSummary? {
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: "barber-applications/my-application")
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "barber-applications/my-application")
         let dec = JSONDecoder()
         dec.keyDecodingStrategy = .convertFromSnakeCase
         return try dec.decode(BarberApplicationMyEnvelope.self, from: data).data
     }
 
     static func submitApplication(body: [String: Any]) async throws {
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "barber-applications",
             method: "POST",
             jsonBody: body
@@ -107,8 +107,8 @@ enum ProviderBarberApplicationService {
         let query = comps.percentEncodedQuery ?? ""
         let path = "barber-applications" + (query.isEmpty ? "" : "?\(query)")
 
-        let data = try await CampusCutsHTTPClient.requestDataThrowingSuccess(path: path)
-        let dec = CampusCutsHTTPClient.jsonDecoderSnake()
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: path)
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(BarberApplicationsListEnvelope.self, from: data)
         return BarberApplicationsListResult(
             applications: env.data?.applications ?? [],
@@ -135,7 +135,7 @@ enum ProviderBarberApplicationService {
             fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             body["interviewScheduledAt"] = fmt.string(from: interviewScheduledAt)
         }
-        _ = try await CampusCutsHTTPClient.requestDataThrowingSuccess(
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "barber-applications/\(id)/status",
             method: "PUT",
             jsonBody: body

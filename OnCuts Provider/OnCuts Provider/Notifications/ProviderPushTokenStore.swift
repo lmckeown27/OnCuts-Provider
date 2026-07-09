@@ -13,7 +13,7 @@ import Foundation
 ///     that if a sign-out + sign-in race overlaps, the backend can ignore stale unregisters.
 ///
 /// We intentionally store a **fingerprint** of the JWT (SHA-256 prefix) rather than the raw
-/// token; the JWT itself is stored separately by `CampusCutsAuthTokenStore` and rotated on
+/// token; the JWT itself is stored separately by `OnCutsAuthTokenStore` and rotated on
 /// sign-in/sign-out. Storing the fingerprint lets us answer "is this the same login?" without
 /// duplicating the auth token in two places.
 enum ProviderPushTokenStore {
