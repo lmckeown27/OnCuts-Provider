@@ -181,7 +181,7 @@ export const submitApplication = async (req: AuthRequest, res: Response, next: N
         [user.campusId]
       );
 
-      let campusName = applicant.campus_name || 'Intera provider';
+      let campusName = applicant.campus_name || 'OnCuts Provider';
       if (user.campusId) {
         const campusInfo = await pool.query('SELECT name FROM campuses WHERE id = $1', [user.campusId]);
         if (campusInfo.rows[0]?.name) {

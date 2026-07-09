@@ -2,8 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   Google Sign-In only: CLIENT_ID + REVERSED_CLIENT_ID (no Firebase API key / GCM metadata).
-  Bundle is Liam.Intera---Provider. If Google rejects the token for this bundle, add this bundle ID
-  to this OAuth client in Google Cloud Console or create a dedicated iOS OAuth client for Provider.
+  Legacy bundle ID is Liam.Intera---Provider (OnCuts Provider display name). If Google rejects the token
+  for this bundle, add this bundle ID to this OAuth client in Google Cloud Console or create a
+  dedicated iOS OAuth client for OnCuts Provider.
 -->
 <plist version="1.0">
 <dict>

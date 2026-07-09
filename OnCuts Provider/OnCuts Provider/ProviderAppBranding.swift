@@ -7,7 +7,7 @@ enum ProviderAppBranding {
 
     static let marketingSiteHost = "pismoplatforms.com"
 
-    /// Platform bundle ID — unchanged until Apple Developer cutover.
+    /// Platform bundle ID — frozen until Apple Developer / Firebase cutover.
     static let bundleIdentifier = "Liam.Intera---Provider"
 
     static let loggerSubsystem = "com.oncuts.provider"
@@ -33,6 +33,7 @@ enum ProviderAppBranding {
     }
 
     /// Wire payload names shared with the consumer app until backend routing is renamed.
+    /// Intentionally still `InteraOpen*` so existing APNs payloads keep working.
     enum PushRoutingPayload {
         static let openMessagingConversation = "InteraOpenMessagingConversation"
         static let openBookingDetail = "InteraOpenBookingDetail"

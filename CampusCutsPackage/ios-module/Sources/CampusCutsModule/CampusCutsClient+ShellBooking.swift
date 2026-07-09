@@ -2,7 +2,7 @@
 //  CampusCutsClient+ShellBooking.swift
 //  CampusCutsModule
 //
-//  Public API for host apps (e.g. Intera) to load barber services and day availability
+//  Public API for host apps (e.g. OnCuts Provider) to load barber services and day availability
 //  using the same networking stack as the module.
 //
 

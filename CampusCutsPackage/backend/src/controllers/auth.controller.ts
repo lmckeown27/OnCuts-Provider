@@ -483,7 +483,7 @@ export const verifyEmailRegistration = async (req: AuthRequest, res: Response, n
       ? approvedGuestApp.rows[0].campus_id 
       : pendingReg.campusId;
 
-    // Barbers and consumers may register without a campus (e.g. Intera Provider uses device location instead of manual campus pick).
+    // Barbers and consumers may register without a campus (e.g. OnCuts Provider uses device location instead of manual campus pick).
     if (!campusId) {
       logger.info(`User ${email} registering as ${dbRole} without campus affiliation`);
     }

@@ -30,37 +30,37 @@
 			containerPortal = 921935662FA5AA1600D50175 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 9219356D2FA5AA1600D50175;
-			remoteInfo = "Intera - Provider";
+			remoteInfo = "OnCuts Provider";
 		};
 		921935882FA5AA1800D50175 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 921935662FA5AA1600D50175 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 9219356D2FA5AA1600D50175;
-			remoteInfo = "Intera - Provider";
+			remoteInfo = "OnCuts Provider";
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		9219356E2FA5AA1600D50175 /* OnCuts Provider.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OnCuts Provider.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		9219357D2FA5AA1800D50175 /* Intera - ProviderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Intera - ProviderTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		921935872FA5AA1800D50175 /* Intera - ProviderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Intera - ProviderUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		9219357D2FA5AA1800D50175 /* OnCuts ProviderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "OnCuts ProviderTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		921935872FA5AA1800D50175 /* OnCuts ProviderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "OnCuts ProviderUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		921935702FA5AA1600D50175 /* Intera - Provider */ = {
+		921935702FA5AA1600D50175 /* OnCuts Provider */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "Intera - Provider";
+			path = "OnCuts Provider";
 			sourceTree = "<group>";
 		};
-		921935802FA5AA1800D50175 /* Intera - ProviderTests */ = {
+		921935802FA5AA1800D50175 /* OnCuts ProviderTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "Intera - ProviderTests";
+			path = "OnCuts ProviderTests";
 			sourceTree = "<group>";
 		};
-		9219358A2FA5AA1800D50175 /* Intera - ProviderUITests */ = {
+		9219358A2FA5AA1800D50175 /* OnCuts ProviderUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "Intera - ProviderUITests";
+			path = "OnCuts ProviderUITests";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -108,9 +108,9 @@
 		921935652FA5AA1600D50175 = {
 			isa = PBXGroup;
 			children = (
-				921935702FA5AA1600D50175 /* Intera - Provider */,
-				921935802FA5AA1800D50175 /* Intera - ProviderTests */,
-				9219358A2FA5AA1800D50175 /* Intera - ProviderUITests */,
+				921935702FA5AA1600D50175 /* OnCuts Provider */,
+				921935802FA5AA1800D50175 /* OnCuts ProviderTests */,
+				9219358A2FA5AA1800D50175 /* OnCuts ProviderUITests */,
 				9219356F2FA5AA1600D50175 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -119,8 +119,8 @@
 			isa = PBXGroup;
 			children = (
 				9219356E2FA5AA1600D50175 /* OnCuts Provider.app */,
-				9219357D2FA5AA1800D50175 /* Intera - ProviderTests.xctest */,
-				921935872FA5AA1800D50175 /* Intera - ProviderUITests.xctest */,
+				9219357D2FA5AA1800D50175 /* OnCuts ProviderTests.xctest */,
+				921935872FA5AA1800D50175 /* OnCuts ProviderUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -128,9 +128,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		9219356D2FA5AA1600D50175 /* Intera - Provider */ = {
+		9219356D2FA5AA1600D50175 /* OnCuts Provider */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 921935912FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "Intera - Provider" */;
+			buildConfigurationList = 921935912FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "OnCuts Provider" */;
 			buildPhases = (
 				9219356A2FA5AA1600D50175 /* Sources */,
 				9219356B2FA5AA1600D50175 /* Frameworks */,
@@ -141,9 +141,9 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				921935702FA5AA1600D50175 /* Intera - Provider */,
+				921935702FA5AA1600D50175 /* OnCuts Provider */,
 			);
-			name = "Intera - Provider";
+			name = "OnCuts Provider";
 			packageProductDependencies = (
 				92ABCD022FA6000100000002 /* CampusCutsModule */,
 				92CC00112FA6000100000111 /* Core */,
@@ -161,13 +161,13 @@
 				92CC001D2FA600010000011D /* StripePaymentSheet */,
 				92CC001E2FA600010000011E /* SocketIO */,
 			);
-			productName = "Intera - Provider";
+			productName = "OnCuts Provider";
 			productReference = 9219356E2FA5AA1600D50175 /* OnCuts Provider.app */;
 			productType = "com.apple.product-type.application";
 		};
-		9219357C2FA5AA1800D50175 /* Intera - ProviderTests */ = {
+		9219357C2FA5AA1800D50175 /* OnCuts ProviderTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 921935942FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "Intera - ProviderTests" */;
+			buildConfigurationList = 921935942FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "OnCuts ProviderTests" */;
 			buildPhases = (
 				921935792FA5AA1800D50175 /* Sources */,
 				9219357A2FA5AA1800D50175 /* Frameworks */,
@@ -179,18 +179,18 @@
 				9219357F2FA5AA1800D50175 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				921935802FA5AA1800D50175 /* Intera - ProviderTests */,
+				921935802FA5AA1800D50175 /* OnCuts ProviderTests */,
 			);
-			name = "Intera - ProviderTests";
+			name = "OnCuts ProviderTests";
 			packageProductDependencies = (
 			);
-			productName = "Intera - ProviderTests";
-			productReference = 9219357D2FA5AA1800D50175 /* Intera - ProviderTests.xctest */;
+			productName = "OnCuts ProviderTests";
+			productReference = 9219357D2FA5AA1800D50175 /* OnCuts ProviderTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		921935862FA5AA1800D50175 /* Intera - ProviderUITests */ = {
+		921935862FA5AA1800D50175 /* OnCuts ProviderUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 921935972FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "Intera - ProviderUITests" */;
+			buildConfigurationList = 921935972FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "OnCuts ProviderUITests" */;
 			buildPhases = (
 				921935832FA5AA1800D50175 /* Sources */,
 				921935842FA5AA1800D50175 /* Frameworks */,
@@ -202,13 +202,13 @@
 				921935892FA5AA1800D50175 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				9219358A2FA5AA1800D50175 /* Intera - ProviderUITests */,
+				9219358A2FA5AA1800D50175 /* OnCuts ProviderUITests */,
 			);
-			name = "Intera - ProviderUITests";
+			name = "OnCuts ProviderUITests";
 			packageProductDependencies = (
 			);
-			productName = "Intera - ProviderUITests";
-			productReference = 921935872FA5AA1800D50175 /* Intera - ProviderUITests.xctest */;
+			productName = "OnCuts ProviderUITests";
+			productReference = 921935872FA5AA1800D50175 /* OnCuts ProviderUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -234,7 +234,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 921935692FA5AA1600D50175 /* Build configuration list for PBXProject "Intera - Provider" */;
+			buildConfigurationList = 921935692FA5AA1600D50175 /* Build configuration list for PBXProject "OnCuts Provider" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -255,9 +255,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				9219356D2FA5AA1600D50175 /* Intera - Provider */,
-				9219357C2FA5AA1800D50175 /* Intera - ProviderTests */,
-				921935862FA5AA1800D50175 /* Intera - ProviderUITests */,
+				9219356D2FA5AA1600D50175 /* OnCuts Provider */,
+				9219357C2FA5AA1800D50175 /* OnCuts ProviderTests */,
+				921935862FA5AA1800D50175 /* OnCuts ProviderUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -313,12 +313,12 @@
 /* Begin PBXTargetDependency section */
 		9219357F2FA5AA1800D50175 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 9219356D2FA5AA1600D50175 /* Intera - Provider */;
+			target = 9219356D2FA5AA1600D50175 /* OnCuts Provider */;
 			targetProxy = 9219357E2FA5AA1800D50175 /* PBXContainerItemProxy */;
 		};
 		921935892FA5AA1800D50175 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 9219356D2FA5AA1600D50175 /* Intera - Provider */;
+			target = 9219356D2FA5AA1600D50175 /* OnCuts Provider */;
 			targetProxy = 921935882FA5AA1800D50175 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -445,7 +445,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "Intera - Provider/OnCutsProvider.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "OnCuts Provider/OnCutsProvider.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 2MAGWNY7VS;
@@ -496,7 +496,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "Intera - Provider/OnCutsProvider.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "OnCuts Provider/OnCutsProvider.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 2MAGWNY7VS;
@@ -614,7 +614,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_TARGET_NAME = "Intera - Provider";
+				TEST_TARGET_NAME = "OnCuts Provider";
 				XROS_DEPLOYMENT_TARGET = 26.2;
 			};
 			name = Debug;
@@ -639,7 +639,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_TARGET_NAME = "Intera - Provider";
+				TEST_TARGET_NAME = "OnCuts Provider";
 				XROS_DEPLOYMENT_TARGET = 26.2;
 			};
 			name = Release;
@@ -647,7 +647,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		921935692FA5AA1600D50175 /* Build configuration list for PBXProject "Intera - Provider" */ = {
+		921935692FA5AA1600D50175 /* Build configuration list for PBXProject "OnCuts Provider" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				9219358F2FA5AA1800D50175 /* Debug */,
@@ -656,7 +656,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		921935912FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "Intera - Provider" */ = {
+		921935912FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "OnCuts Provider" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				921935922FA5AA1800D50175 /* Debug */,
@@ -665,7 +665,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		921935942FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "Intera - ProviderTests" */ = {
+		921935942FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "OnCuts ProviderTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				921935952FA5AA1800D50175 /* Debug */,
@@ -674,7 +674,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		921935972FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "Intera - ProviderUITests" */ = {
+		921935972FA5AA1800D50175 /* Build configuration list for PBXNativeTarget "OnCuts ProviderUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				921935982FA5AA1800D50175 /* Debug */,

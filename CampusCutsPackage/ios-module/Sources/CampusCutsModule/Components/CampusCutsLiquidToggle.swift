@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Frosted consent control for legal steps; matches Intera liquid-glass surfaces.
+/// Frosted consent control for legal steps; matches OnCuts liquid-glass surfaces.
 /// Uses an explicit `Button` instead of `Toggle` so taps are not disrupted by window-level
 /// gesture recognizers (which often fail to classify SwiftUI `UISwitch` views as `UIControl`).
 public struct CampusCutsLiquidToggle: View {

@@ -154,7 +154,7 @@ Backend also exposes: `PUT /barbers/:id/availability` with `schedule` array (`up
 | `/web/barber/earnings` | **`BarberEarningsPage`** — mostly **static copy** + link back to dashboard Payout Settings; **not** a live analytics API page. |
 | `/web/barber/connect`, `/web/barber/connect/return`, `/web/barber/connect/refresh` | Redirect / explain **Stripe Connect**; return URLs land on **`/web/barber?showPayoutSettings=true`**. |
 
-### Backend analytics (available for Intera even if web under-uses)
+### Backend analytics (available for OnCuts Provider even if web under-uses)
 
 | Endpoint | Purpose |
 |----------|---------|
@@ -242,7 +242,7 @@ Service providers **see** customer feedback on completed / paid bookings in dash
 Route: **`/web/wallet`** (`WalletPage`).
 
 - Uses **`walletV2Service`** (balance, transactions, escrows). **Not linked from `BarberPage`** in the inventory pass; providers may still open it if the app links there.
-- Decide with product whether Intera **Provider** includes this or only **Stripe Connect** surfaces (§5).
+- Decide with product whether OnCuts Provider includes this or only **Stripe Connect** surfaces (§5).
 
 ---
 
@@ -268,11 +268,11 @@ If `user.is_admin` or campus manager flags are set, **`BarberPage`** exposes ext
 | `AdminDashboard` | Cross-campus / admin operations (uses admin API patterns — see component). |
 | `CampusManagerDashboard` | Approve providers, locations, campus ops (large modal). |
 
-These are **not** “every service provider” but **are** actions some provider accounts can take from the same web session—include in Intera if the same users install the Provider app.
+These are **not** “every service provider” but **are** actions some provider accounts can take from the same web session—include in OnCuts Provider if the same users install the Provider app.
 
 ---
 
-## 13. Routes present but weak / mock (Intera caution)
+## 13. Routes present but weak / mock (OnCuts Provider caution)
 
 | Item | Issue |
 |------|-------|

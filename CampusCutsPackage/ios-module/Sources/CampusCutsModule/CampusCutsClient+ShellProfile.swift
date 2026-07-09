@@ -2,7 +2,7 @@
 //  CampusCutsClient+ShellProfile.swift
 //  CampusCutsModule
 //
-//  Public profile/booking APIs for host apps (Intera profile, appointments, barber portfolio).
+//  Public profile/booking APIs for host apps (OnCuts / OnCuts Provider profile, appointments, barber portfolio).
 //
 
 import Foundation
