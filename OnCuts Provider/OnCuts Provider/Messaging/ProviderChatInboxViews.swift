@@ -50,24 +50,22 @@ struct ProviderChatThreadCard: View {
     }
 
     private var nameHeader: some View {
-        ZStack(alignment: .center) {
-            Text(thread.clientName)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(thread.titleLine)
                 .font(.provider(.headline, weight: .bold))
                 .foregroundStyle(Color.primary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .center)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             if thread.hasUnread {
-                HStack {
-                    Spacer()
-                    Text(thread.unreadBadgeLabel)
-                        .font(.provider(.caption, weight: .bold))
-                        .foregroundStyle(Color(red: 26 / 255, green: 28 / 255, blue: 38 / 255))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(Color.providerMessageUnreadAccent))
-                }
+                Text(thread.unreadBadgeLabel)
+                    .font(.provider(.caption, weight: .bold))
+                    .foregroundStyle(Color(red: 26 / 255, green: 28 / 255, blue: 38 / 255))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.providerMessageUnreadAccent))
+                    .fixedSize(horizontal: true, vertical: true)
             }
         }
     }
@@ -89,11 +87,10 @@ struct ProviderChatThreadCard: View {
 
             Spacer(minLength: 8)
 
-            Text(thread.serviceName)
-                .font(.provider(.subheadline, weight: .semibold))
-                .foregroundStyle(Color.primary)
+            Text(thread.bookingStatusTitle)
+                .font(.provider(.caption, weight: .semibold))
+                .foregroundStyle(Color.secondary)
                 .multilineTextAlignment(.trailing)
-                .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
@@ -124,7 +121,7 @@ struct ProviderChatThreadCard: View {
     }
 
     private var messageRibbon: some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .center, spacing: 6) {
             if thread.hasUnread {
                 Circle()
                     .fill(Color.providerMessageUnreadAccent)
@@ -140,7 +137,7 @@ struct ProviderChatThreadCard: View {
                 .fixedSize(horizontal: true, vertical: true)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 10)
     }
 }
 

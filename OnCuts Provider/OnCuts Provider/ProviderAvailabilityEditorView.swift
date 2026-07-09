@@ -1,5 +1,13 @@
 import SwiftUI
 
+/// How `ProviderAvailabilityEditorView` is presented from the shell.
+enum ProviderAvailabilityEditorPresentation {
+    /// Full Availability hub (summary, actions, optional time blocks).
+    case hub
+    /// Weekly day/interval editor only — opened from the schedule hub **Edit Schedule** action.
+    case weeklyEditorOnly
+}
+
 /// In-app management for the things the web `BarberPage` exposes outside of bookings:
 ///   1. ~~Google Calendar busy-time integration~~ — parked behind `#if false` blocks in this
 ///      file until the integration is built out end-to-end. The state vars, section view,
@@ -11,6 +19,8 @@ import SwiftUI
 ///
 /// Replaces the previous "managed on the web dashboard" caption on the schedule home.
 struct ProviderAvailabilityEditorView: View {
+    var presentation: ProviderAvailabilityEditorPresentation = .hub
+
     @Environment(ProviderSession.self) private var session
     @Environment(\.dismiss) private var dismiss
 
@@ -49,6 +59,22 @@ struct ProviderAvailabilityEditorView: View {
 
     private var weeklyDirty: Bool { weekly != originalWeekly }
 
+    private var navigationTitleText: String {
+        presentation == .weeklyEditorOnly ? "Edit Schedule" : "Availability"
+    }
+
+    private var showsAvailabilityActionsRow: Bool {
+        presentation == .hub
+    }
+
+    private var showsEditScheduleAction: Bool {
+        !weeklyEditorReady
+    }
+
+    private var showsTimeBlocksSection: Bool {
+        presentation == .hub && !timeBlocks.isEmpty
+    }
+
     private var scheduleCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.firstWeekday = 2
@@ -62,12 +88,12 @@ struct ProviderAvailabilityEditorView: View {
                     if let savedToast {
                         inlineBanner(text: savedToast, tint: .green)
                     }
-                    if session.hasProviderProfile, !isLoadingContent {
+                    if session.hasProviderProfile, !isLoadingContent, showsAvailabilityActionsRow {
                         availabilityActionsRow
                     }
                     weeklyScheduleSection
                         .id("weekly-schedule")
-                    if !timeBlocks.isEmpty {
+                    if showsTimeBlocksSection {
                         timeBlocksSection
                     }
                 }
@@ -87,11 +113,11 @@ struct ProviderAvailabilityEditorView: View {
             }
         }
         .providerNavigationStackDestinationBackdrop()
-        .navigationTitle("Availability")
+        .navigationTitle(navigationTitleText)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text("Availability")
+                Text(navigationTitleText)
                     .font(.provider(.headline, weight: .semibold))
             }
         }
@@ -167,7 +193,9 @@ struct ProviderAvailabilityEditorView: View {
 
     private var availabilityActionsRow: some View {
         HStack(spacing: 10) {
-            availabilityActionButton(title: "Edit Schedule", action: beginWeeklyScheduleEditing)
+            if showsEditScheduleAction {
+                availabilityActionButton(title: "Edit Schedule", action: beginWeeklyScheduleEditing)
+            }
             availabilityActionButton(title: "Block Time", action: { showingAddBlock = true })
         }
         .frame(maxWidth: .infinity, alignment: .center)
@@ -632,7 +660,9 @@ struct ProviderAvailabilityEditorView: View {
     // MARK: - Network
 
     private func loadAll(forceRefresh: Bool = false) async {
-        weeklyEditorReady = false
+        if presentation == .hub {
+            weeklyEditorReady = false
+        }
 
         guard let barberId = session.barberProfile?.id else {
             isLoadingContent = false
@@ -702,7 +732,7 @@ struct ProviderAvailabilityEditorView: View {
 
     private func prepareWeeklyEditor() async {
         await Task.yield()
-        weeklyEditorReady = false
+        weeklyEditorReady = presentation == .weeklyEditorOnly
     }
 
     // MARK: Google Calendar fetch helper — TEMPORARILY DISABLED.

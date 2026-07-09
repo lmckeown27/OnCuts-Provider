@@ -46,7 +46,8 @@ struct ProviderWeeklyScheduleGridMoveResolver {
             dayIndex: dayIndex(atGridX: gridX),
             rowIndex: rowIndex(atGridY: gridY),
             rowSpan: positioned.rowSpan,
-            excludingBookingID: positioned.booking.id
+            excludingBookingID: positioned.booking.id,
+            enforceEarliestBookable: false
         )
         let offsetX = CGFloat(resolved.dayIndex - positioned.dayIndex) * dayColumnWidth
         let offsetY = CGFloat(resolved.startRowIndex - positioned.startRowIndex) * rowHeight
@@ -86,13 +87,7 @@ struct ProviderWeeklyScheduleGridMoveResolver {
         gridX: CGFloat,
         gridY: CGFloat
     ) -> Date? {
-        let offset = clampedDragOffsetFromGridPoint(for: positioned, gridX: gridX, gridY: gridY)
-        let proposed = proposedPosition(
-            for: positioned,
-            totalOffsetX: offset.x,
-            totalOffsetY: offset.y
-        )
-        return scheduledDate(dayIndex: proposed.dayIndex, startRowIndex: proposed.startRowIndex)
+        rawProposedDate(for: positioned, gridX: gridX, gridY: gridY)
     }
 
     @discardableResult
@@ -125,23 +120,25 @@ struct ProviderWeeklyScheduleGridMoveResolver {
         let proposed = proposedPosition(
             for: positioned,
             totalOffsetX: totalOffsetX,
-            totalOffsetY: totalOffsetY
+            totalOffsetY: totalOffsetY,
+            enforceEarliestBookable: false
         )
         guard proposed.dayIndex != positioned.dayIndex || proposed.startRowIndex != positioned.startRowIndex else {
             return false
         }
-        guard let proposedDate = scheduledDate(
-            dayIndex: proposed.dayIndex,
-            startRowIndex: proposed.startRowIndex
-        ) else {
-            return false
-        }
+        let proposedDate: Date?
         let targetsPast: Bool
         if let gridX, let gridY {
+            proposedDate = rawProposedDate(for: positioned, gridX: gridX, gridY: gridY)
             targetsPast = isTargetingPastTime(for: positioned, gridX: gridX, gridY: gridY)
         } else {
-            targetsPast = false
+            proposedDate = scheduledDate(
+                dayIndex: proposed.dayIndex,
+                startRowIndex: proposed.startRowIndex
+            )
+            targetsPast = proposedDate.map { $0.timeIntervalSince(earliestBookableDate) < -30 } ?? true
         }
+        guard let proposedDate else { return false }
         onProposed(positioned.booking, proposedDate, targetsPast)
         return true
     }
@@ -149,7 +146,8 @@ struct ProviderWeeklyScheduleGridMoveResolver {
     private func proposedPosition(
         for positioned: ProviderWeeklyScheduleGridPositionedBooking,
         totalOffsetX: CGFloat,
-        totalOffsetY: CGFloat
+        totalOffsetY: CGFloat,
+        enforceEarliestBookable: Bool = true
     ) -> (dayIndex: Int, startRowIndex: Int) {
         let dayDelta = Int(round(totalOffsetX / dayColumnWidth))
         let rowDelta = Int(round(totalOffsetY / rowHeight))
@@ -157,7 +155,8 @@ struct ProviderWeeklyScheduleGridMoveResolver {
             dayIndex: positioned.dayIndex + dayDelta,
             rowIndex: positioned.startRowIndex + rowDelta,
             rowSpan: positioned.rowSpan,
-            excludingBookingID: positioned.booking.id
+            excludingBookingID: positioned.booking.id,
+            enforceEarliestBookable: enforceEarliestBookable
         )
     }
 
@@ -592,10 +591,10 @@ private struct ProviderWeeklyScheduleGridDraggableBookingCard<Content: View>: Vi
     @State private var persistedOffset: CGPoint = .zero
     @State private var isPanActive = false
     @State private var isPressingForMove = false
-    @State private var holdIndicationStartedAt: Date?
+    @State private var pressBeganAt: Date?
     @State private var suppressNextTap = false
 
-    private var showsDragOverlay: Bool {
+    private var showsMoveInteractionOverlay: Bool {
         canRequestMove || isMoveSession
     }
 
@@ -610,31 +609,33 @@ private struct ProviderWeeklyScheduleGridDraggableBookingCard<Content: View>: Vi
         content()
             .frame(width: columnWidth, height: height, alignment: .topLeading)
             .contentShape(Rectangle())
-            .onTapGesture {
-                guard !suppressNextTap, !isMoveSession, !isPanActive else { return }
-                onTap()
-            }
             .overlay {
-                if showsDragOverlay {
+                if showsMoveInteractionOverlay {
                     ProviderWeeklyScheduleGridPlaneDragOverlay(
+                        allowsImmediateDrag: isMoveSession,
                         onHoldIndicationBegan: {
-                            holdIndicationStartedAt = Date()
+                            pressBeganAt = Date()
                             withAnimation(.easeInOut(duration: 0.12)) {
                                 isPressingForMove = true
                             }
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         },
                         onHoldIndicationEnded: {
-                            holdIndicationStartedAt = nil
+                            pressBeganAt = nil
                             withAnimation(.easeInOut(duration: 0.12)) {
                                 isPressingForMove = false
                             }
                         },
                         onMoveBegan: {
-                            guard !isMoveSession else { return }
-                            holdIndicationStartedAt = nil
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            onMoveRequested()
+                            if !isMoveSession {
+                                onMoveRequested()
+                            }
+                            isPanActive = true
+                        },
+                        onTap: {
+                            guard !suppressNextTap else { return }
+                            onTap()
                         },
                         onChanged: handleDragChanged,
                         onEnded: handleDragEnded,
@@ -650,10 +651,14 @@ private struct ProviderWeeklyScheduleGridDraggableBookingCard<Content: View>: Vi
                         useCardViewportForEdgeScroll: isMoveSession && isPanActive
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: onTap)
                 }
             }
             .overlay {
-                if isPressingForMove, !isMoveSession, let startedAt = holdIndicationStartedAt {
+                if isPressingForMove, !isMoveSession, let startedAt = pressBeganAt {
                     ProviderWeeklyScheduleGridMoveHoldIndicator(
                         startedAt: startedAt,
                         commitDuration: ProviderWeeklyScheduleGridDragLayout.moveHoldCommitDuration
@@ -682,14 +687,16 @@ private struct ProviderWeeklyScheduleGridDraggableBookingCard<Content: View>: Vi
                     liveDragOffset = .zero
                     isPanActive = false
                     isPressingForMove = false
-                    holdIndicationStartedAt = nil
+                    pressBeganAt = nil
                 }
             }
             .accessibilityLabel("\(accessibilityName), tap for booking details")
             .accessibilityHint(
                 isMoveSession
                     ? "Drag to a new time, then save the change."
-                    : "Press and hold to move this booking."
+                    : canRequestMove
+                        ? "Tap for booking details. Press and hold to move this booking."
+                        : "Tap for booking details."
             )
             .accessibilityAddTraits(isMoveSession ? .allowsDirectInteraction : [])
     }
@@ -707,7 +714,7 @@ private struct ProviderWeeklyScheduleGridDraggableBookingCard<Content: View>: Vi
     }
 
     private func handleDragChanged(_ gridPoint: CGPoint, scrollOffset: CGPoint) {
-        guard isMoveSession else { return }
+        guard isMoveSession || isPanActive else { return }
         if !isPanActive {
             isPanActive = true
         }
@@ -725,12 +732,13 @@ private struct ProviderWeeklyScheduleGridDraggableBookingCard<Content: View>: Vi
     }
 
     private func handleDragEnded(_ gridPoint: CGPoint, scrollOffset: CGPoint) {
-        guard isMoveSession else { return }
+        guard isMoveSession || isPanActive else { return }
         isPanActive = false
         isPressingForMove = false
-        holdIndicationStartedAt = nil
+        pressBeganAt = nil
         liveDragOffset = .zero
         suppressTapBriefly()
+        guard isMoveSession else { return }
         let snapped = snapDragOffsetFromGridPoint(gridPoint)
         let finalOffset = CGPoint(
             x: min(max(snapped.x, minDayOffsetX), maxDayOffsetX),
@@ -751,12 +759,15 @@ private struct ProviderWeeklyScheduleGridDraggableBookingCard<Content: View>: Vi
     }
 }
 
-// MARK: - UIKit plane drag
+// MARK: - UIKit plane drag overlay
 
 private struct ProviderWeeklyScheduleGridPlaneDragOverlay: UIViewRepresentable {
+    /// When `true`, pan begins immediately (booking is already in move mode).
+    var allowsImmediateDrag: Bool = false
     var onHoldIndicationBegan: () -> Void
     var onHoldIndicationEnded: () -> Void
     var onMoveBegan: () -> Void
+    var onTap: () -> Void
     var onChanged: (CGPoint, CGPoint) -> Void
     var onEnded: (CGPoint, CGPoint) -> Void
     var onInteractionReset: () -> Void
@@ -772,9 +783,11 @@ private struct ProviderWeeklyScheduleGridPlaneDragOverlay: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
+            allowsImmediateDrag: allowsImmediateDrag,
             onHoldIndicationBegan: onHoldIndicationBegan,
             onHoldIndicationEnded: onHoldIndicationEnded,
             onMoveBegan: onMoveBegan,
+            onTap: onTap,
             onChanged: onChanged,
             onEnded: onEnded,
             onInteractionReset: onInteractionReset,
@@ -816,6 +829,15 @@ private struct ProviderWeeklyScheduleGridPlaneDragOverlay: UIViewRepresentable {
         view.addGestureRecognizer(longPress)
         context.coordinator.longPressRecognizer = longPress
 
+        let tap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleTap(_:))
+        )
+        tap.delegate = context.coordinator
+        tap.require(toFail: longPress)
+        view.addGestureRecognizer(tap)
+        context.coordinator.tapRecognizer = tap
+
         let pan = UIPanGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handlePan(_:))
@@ -829,9 +851,11 @@ private struct ProviderWeeklyScheduleGridPlaneDragOverlay: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.allowsImmediateDrag = allowsImmediateDrag
         context.coordinator.onHoldIndicationBegan = onHoldIndicationBegan
         context.coordinator.onHoldIndicationEnded = onHoldIndicationEnded
         context.coordinator.onMoveBegan = onMoveBegan
+        context.coordinator.onTap = onTap
         context.coordinator.onChanged = onChanged
         context.coordinator.onEnded = onEnded
         context.coordinator.onInteractionReset = onInteractionReset
@@ -852,9 +876,11 @@ private struct ProviderWeeklyScheduleGridPlaneDragOverlay: UIViewRepresentable {
     }
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var allowsImmediateDrag: Bool
         var onHoldIndicationBegan: () -> Void
         var onHoldIndicationEnded: () -> Void
         var onMoveBegan: () -> Void
+        var onTap: () -> Void
         var onChanged: (CGPoint, CGPoint) -> Void
         var onEnded: (CGPoint, CGPoint) -> Void
         var onInteractionReset: () -> Void
@@ -870,9 +896,14 @@ private struct ProviderWeeklyScheduleGridPlaneDragOverlay: UIViewRepresentable {
         weak var panRecognizer: UIPanGestureRecognizer?
         weak var preparingLongPressRecognizer: UILongPressGestureRecognizer?
         weak var longPressRecognizer: UILongPressGestureRecognizer?
+        weak var tapRecognizer: UITapGestureRecognizer?
 
         private var didBeginMoveSession = false
         private var isHoldIndicationActive = false
+
+        private var canTrackPan: Bool {
+            allowsImmediateDrag || didBeginMoveSession
+        }
 
         private var scrollOffsetObservations: [NSKeyValueObservation] = []
         private weak var horizontalScrollView: UIScrollView?
@@ -886,9 +917,11 @@ private struct ProviderWeeklyScheduleGridPlaneDragOverlay: UIViewRepresentable {
         private weak var edgeScrollRecognizer: UIPanGestureRecognizer?
 
         init(
+            allowsImmediateDrag: Bool,
             onHoldIndicationBegan: @escaping () -> Void,
             onHoldIndicationEnded: @escaping () -> Void,
             onMoveBegan: @escaping () -> Void,
+            onTap: @escaping () -> Void,
             onChanged: @escaping (CGPoint, CGPoint) -> Void,
             onEnded: @escaping (CGPoint, CGPoint) -> Void,
             onInteractionReset: @escaping () -> Void,
@@ -902,9 +935,11 @@ private struct ProviderWeeklyScheduleGridPlaneDragOverlay: UIViewRepresentable {
             cardContentHeight: CGFloat,
             useCardViewportForEdgeScroll: Bool
         ) {
+            self.allowsImmediateDrag = allowsImmediateDrag
             self.onHoldIndicationBegan = onHoldIndicationBegan
             self.onHoldIndicationEnded = onHoldIndicationEnded
             self.onMoveBegan = onMoveBegan
+            self.onTap = onTap
             self.onChanged = onChanged
             self.onEnded = onEnded
             self.onInteractionReset = onInteractionReset
@@ -1022,6 +1057,7 @@ private struct ProviderWeeklyScheduleGridPlaneDragOverlay: UIViewRepresentable {
         }
 
         @objc func handlePreparingLongPress(_ recognizer: UILongPressGestureRecognizer) {
+            guard !allowsImmediateDrag else { return }
             switch recognizer.state {
             case .began:
                 guard !isHoldIndicationActive else { return }
@@ -1039,6 +1075,7 @@ private struct ProviderWeeklyScheduleGridPlaneDragOverlay: UIViewRepresentable {
         }
 
         @objc func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
+            guard !allowsImmediateDrag else { return }
             switch recognizer.state {
             case .began:
                 guard !didBeginMoveSession else { return }
@@ -1055,6 +1092,12 @@ private struct ProviderWeeklyScheduleGridPlaneDragOverlay: UIViewRepresentable {
             }
         }
 
+        @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
+            guard recognizer.state == .ended else { return }
+            guard !allowsImmediateDrag, !didBeginMoveSession else { return }
+            onTap()
+        }
+
         @objc func handlePan(_ recognizer: UIPanGestureRecognizer) {
             if let host = recognizer.view {
                 configureScrollViewInteraction(for: host)
@@ -1062,8 +1105,10 @@ private struct ProviderWeeklyScheduleGridPlaneDragOverlay: UIViewRepresentable {
 
             switch recognizer.state {
             case .began:
+                guard canTrackPan else { return }
                 notifyDragChange(recognizer: recognizer)
             case .changed:
+                guard canTrackPan else { return }
                 notifyDragChange(recognizer: recognizer)
                 updateEdgeScroll(recognizer: recognizer)
             case .ended, .cancelled, .failed:
@@ -1418,6 +1463,12 @@ private struct ProviderWeeklyScheduleGridPlaneDragOverlay: UIViewRepresentable {
             }
             if gestureRecognizer === panRecognizer, otherGestureRecognizer === preparingLongPressRecognizer {
                 return true
+            }
+            if gestureRecognizer === tapRecognizer, otherGestureRecognizer === longPressRecognizer {
+                return false
+            }
+            if gestureRecognizer === longPressRecognizer, otherGestureRecognizer === tapRecognizer {
+                return false
             }
             return false
         }

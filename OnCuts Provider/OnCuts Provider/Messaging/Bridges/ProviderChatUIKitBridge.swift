@@ -127,25 +127,9 @@ struct ProviderBlockedUsersHost: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: ProviderBlockedUsersViewController, context: Context) {}
 }
 
-// MARK: - Chats hub segments
-
-enum ProviderChatsInboxSegment: String, CaseIterable, Identifiable {
-    case clients
-    case providers
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .clients: return "Clients"
-        case .providers: return "Providers"
-        }
-    }
-}
-
 // MARK: - Messages route
 
-/// Unified chats hub: client conversations + local provider roster.
+/// Client conversations inbox for service providers.
 struct ProviderMessagesInboxView: View {
     @Environment(ProviderSession.self) private var session
     @Environment(ProviderShellNavigator.self) private var shellNavigator
@@ -154,60 +138,29 @@ struct ProviderMessagesInboxView: View {
     @State private var supplementalConversations: [Int: ConversationRow] = [:]
     @State private var showingBlockedUsers = false
     @State private var inboxReloadToken = UUID()
-    @State private var selectedSegment: ProviderChatsInboxSegment = .clients
-
-    private var showsProvidersSegment: Bool {
-        session.hasProviderProfile || session.authUser?.hasAdminPrivileges == true
-    }
 
     var body: some View {
         @Bindable var navigator = shellNavigator
 
         NavigationStack(path: $navigator.messagesDetailPath) {
-            VStack(spacing: 0) {
-                if showsProvidersSegment {
-                    Picker("Chats", selection: $selectedSegment) {
-                        ForEach(ProviderChatsInboxSegment.allCases) { segment in
-                            Text(segment.title).tag(segment)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 10)
-                    .padding(.bottom, 8)
+            ProviderChatInboxScreen(
+                reloadToken: inboxReloadToken,
+                onConversationsUpdated: { rows in
+                    conversations = rows
                 }
-
-                Group {
-                    switch selectedSegment {
-                    case .clients:
-                        ProviderChatInboxScreen(
-                            reloadToken: inboxReloadToken,
-                            onConversationsUpdated: { rows in
-                                conversations = rows
-                            }
-                        )
-                    case .providers:
-                        ProviderBarberChatsRosterView { row in
-                            supplementalConversations[row.id] = row
-                            navigator.messagesDetailPath.append(row.id)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .providerNavigationStackDestinationBackdrop(style: .neutralGrey)
             .navigationTitle("Chats")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if selectedSegment == .clients {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            showingBlockedUsers = true
-                        } label: {
-                            Image(systemName: "person.crop.circle.badge.minus")
-                        }
-                        .accessibilityLabel("Blocked Users")
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingBlockedUsers = true
+                    } label: {
+                        Image(systemName: "person.crop.circle.badge.minus")
                     }
+                    .accessibilityLabel("Blocked Users")
                 }
             }
             .navigationDestination(for: Int.self) { conversationId in

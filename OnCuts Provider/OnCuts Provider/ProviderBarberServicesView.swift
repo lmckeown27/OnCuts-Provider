@@ -67,7 +67,7 @@ struct ProviderBarberServicesView: View {
         }
         .background(Color.clear)
         .providerNavigationStackDestinationBackdrop()
-        .navigationTitle("Services")
+        .navigationTitle("Services Offered")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .foregroundStyle(Color.lavaShellCream)

@@ -272,6 +272,14 @@ struct ProviderScheduleDashboardView: View {
                     .font(.provider(.subheadline, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
                     .frame(maxWidth: .infinity, alignment: .center)
+
+                if proposal.targetsPastTime {
+                    Text("You can't place this booking at a date and time that has already passed. Choose a future slot or tap Cancel.")
+                        .font(.provider(.footnote))
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
             } else if let bookingID = editingMoveBookingID,
                       let booking = scheduleBookings.first(where: { $0.id == bookingID }) {
                 Text("Moving \(booking.consumerDisplayName)")
@@ -449,13 +457,13 @@ struct ProviderScheduleDashboardView: View {
                 if let barberId = session.barberProfile?.id {
                     ProviderAvailabilityEditorPrefetch.begin(barberId: barberId)
                 }
-                shellNavigator.pushRoute(.availability)
+                shellNavigator.pushRoute(.weeklyScheduleEditor)
             }
             scheduleActionButton(title: "Block Time") {
                 prepareBlockSheetForSelectedWeek()
                 showingBlockTimeSheet = true
             }
-            scheduleActionButton(title: "Services") {
+            scheduleActionButton(title: "Services Offered") {
                 shellNavigator.pushRoute(.services)
             }
         }

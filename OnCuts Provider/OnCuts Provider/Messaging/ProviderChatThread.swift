@@ -8,6 +8,7 @@ struct ProviderChatThread: Identifiable, Hashable {
     let appointmentTime: String
     let appointmentDayLabel: String
     let appointmentDateLabel: String
+    let bookingStatusTitle: String
     let lastMessage: String
     let isToday: Bool
     let unreadCount: Int
@@ -18,6 +19,10 @@ struct ProviderChatThread: Identifiable, Hashable {
 
     var unreadBadgeLabel: String {
         unreadCount == 1 ? "1 New" : "\(unreadCount) New"
+    }
+
+    var titleLine: String {
+        "\(clientName): \(serviceName)"
     }
 }
 
@@ -39,6 +44,7 @@ extension ProviderChatThread {
             appointmentTime: schedule.time,
             appointmentDayLabel: schedule.day,
             appointmentDateLabel: schedule.date,
+            bookingStatusTitle: bookingStatusTitle(from: row),
             lastMessage: lastMessagePreview(from: row),
             isToday: schedule.isToday,
             unreadCount: max(0, row.unreadCount ?? 0)
@@ -68,6 +74,13 @@ extension ProviderChatThread {
             return name
         }
         return "Appointment"
+    }
+
+    private static func bookingStatusTitle(from row: ConversationRow) -> String {
+        if let status = row.booking?.status {
+            return ProviderBookingStatusDisplay.title(for: status)
+        }
+        return row.bookingId != nil ? "Pending" : "—"
     }
 
     private static func lastMessagePreview(from row: ConversationRow) -> String {

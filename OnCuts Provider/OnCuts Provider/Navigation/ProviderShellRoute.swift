@@ -10,6 +10,8 @@ enum ProviderShellRoute: Hashable {
     /// Weekly schedule, one-off time blocks, and Google Calendar wiring (in-app parity for the web
     /// `BarberPage` Availability modal + Google Calendar connect button).
     case availability
+    /// Weekly availability editor only (day toggles + intervals) — not the full Availability hub.
+    case weeklyScheduleEditor
     /// Stripe Connect: dashboard + onboarding (`GET/POST /barber/connect/*`, `GET /barber/payout/summary`).
     /// Parity with web `PaymentManagementModal` / Payout Settings.
     case payoutSettings

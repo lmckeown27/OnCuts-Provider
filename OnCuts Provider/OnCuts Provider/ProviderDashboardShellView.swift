@@ -438,6 +438,10 @@ struct ProviderDashboardShellView: View {
             ProviderAvailabilityEditorView()
                 .providerPushedDestinationChrome(for: route)
                 .providerShellBackToolbar()
+        case .weeklyScheduleEditor:
+            ProviderAvailabilityEditorView(presentation: .weeklyEditorOnly)
+                .providerPushedDestinationChrome(for: route)
+                .providerShellBackToolbar()
         case .payoutSettings:
             ProviderPayoutSettingsView()
                 .providerPushedDestinationChrome(for: route)

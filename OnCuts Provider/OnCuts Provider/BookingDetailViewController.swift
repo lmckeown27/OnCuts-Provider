@@ -356,7 +356,6 @@ final class BookingDetailViewController: UIViewController {
 
         [
             makeHeader(),
-            makeClientBanner(),
             makeOpenConversationSection(),
             makePendingRescheduleSection(),
             makeServicePricingGrid(),
@@ -379,17 +378,34 @@ final class BookingDetailViewController: UIViewController {
     // MARK: - Sections — Header (status capsule)
 
     private func makeHeader() -> UIView {
+        let nameLabel = UILabel()
+        nameLabel.text = current.consumerDisplayName
+        nameLabel.font = .provider(size: 22, weight: .semibold)
+        nameLabel.textColor = Token.primaryText
+        nameLabel.lineBreakMode = .byTruncatingTail
+        nameLabel.numberOfLines = 1
+        nameLabel.translatesAutoresizingMaskIntoConstraints = false
+
         let titleLabel = UILabel()
         titleLabel.text = "Booking Details"
         titleLabel.font = .provider(size: 22, weight: .semibold)
         titleLabel.textColor = Token.primaryText
-        titleLabel.textAlignment = .center
+        titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        titleLabel.setContentHuggingPriority(.required, for: .horizontal)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        nameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let titleRow = UIStackView(arrangedSubviews: [nameLabel, titleLabel])
+        titleRow.axis = .horizontal
+        titleRow.spacing = 8
+        titleRow.alignment = .firstBaseline
+        titleRow.translatesAutoresizingMaskIntoConstraints = false
 
         let capsule = makeStatusCapsule(forStatus: current.statusUpper)
         capsule.translatesAutoresizingMaskIntoConstraints = false
 
-        let stack = UIStackView(arrangedSubviews: [titleLabel, capsule])
+        let stack = UIStackView(arrangedSubviews: [titleRow, capsule])
         stack.axis = .vertical
         stack.spacing = 10
         stack.alignment = .center
@@ -455,29 +471,6 @@ final class BookingDetailViewController: UIViewController {
         return (UIColor.white.withAlphaComponent(0.16), Token.primaryText)
     }
 
-    // MARK: - Sections — Client banner
-
-    private func makeClientBanner() -> UIView {
-        let card = makeCard()
-
-        let nameLabel = UILabel()
-        nameLabel.text = current.consumerDisplayName
-        nameLabel.font = .provider(size: 22, weight: .semibold)
-        nameLabel.textColor = Token.primaryText
-        nameLabel.textAlignment = .center
-        nameLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        card.addSubview(nameLabel)
-
-        NSLayoutConstraint.activate([
-            nameLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
-            nameLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
-            nameLabel.topAnchor.constraint(equalTo: card.topAnchor, constant: 14),
-            nameLabel.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
-        ])
-        return card
-    }
-
     // MARK: - Sections — Conversation
 
     private func makeOpenConversationSection() -> UIView? {
@@ -485,13 +478,12 @@ final class BookingDetailViewController: UIViewController {
 
         let host = UIHostingController(
             rootView: MessageCustomerButtonView(
-                background: Color(uiColor: Token.accent.withAlphaComponent(0.22)),
                 action: { [weak self] in self?.openConversationTapped() }
             )
         )
         host.view.backgroundColor = .clear
         host.view.translatesAutoresizingMaskIntoConstraints = false
-        host.view.heightAnchor.constraint(greaterThanOrEqualToConstant: 50).isActive = true
+        host.view.heightAnchor.constraint(equalToConstant: 48).isActive = true
         messageCustomerControlView = host.view
         return host.view
     }
@@ -1512,23 +1504,18 @@ struct BookingDetailScreen: View {
 }
 
 private struct MessageCustomerButtonView: View {
-    let background: Color
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: "message")
-                    .font(.provider(.body, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCream)
-                ProviderBlackOutlinedText("Message Customer")
-                    .font(.provider(.body, weight: .semibold))
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .padding(.horizontal, 18)
-            .background(background, in: Capsule())
+            Image(systemName: "message.fill")
+                .font(.provider(.body, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .frame(width: 44, height: 44)
+                .background(Color.providerOlive, in: Circle())
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel("Message Customer")
     }
 }
