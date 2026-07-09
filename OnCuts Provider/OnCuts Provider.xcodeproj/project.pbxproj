@@ -455,7 +455,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "OnCutsProvider-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "OnCuts Provider";
+				INFOPLIST_KEY_CFBundleDisplayName = "OnCuts Operator";
 				INFOPLIST_KEY_CFBundleName = "OnCuts Provider";
 				INFOPLIST_KEY_NSCameraUsageDescription = "OnCuts Provider uses the camera so providers can take photos for their profile and client messages.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "OnCuts Provider uses Face ID to confirm your identity before deleting your account.";
@@ -474,7 +474,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 1.2.6;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.oncutsprovider.app;
 				PRODUCT_NAME = "OnCuts Provider";
 				REGISTER_APP_GROUPS = YES;
@@ -506,7 +506,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "OnCutsProvider-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "OnCuts Provider";
+				INFOPLIST_KEY_CFBundleDisplayName = "OnCuts Operator";
 				INFOPLIST_KEY_CFBundleName = "OnCuts Provider";
 				INFOPLIST_KEY_NSCameraUsageDescription = "OnCuts Provider uses the camera so providers can take photos for their profile and client messages.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "OnCuts Provider uses Face ID to confirm your identity before deleting your account.";
@@ -525,7 +525,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 1.2.6;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.oncutsprovider.app;
 				PRODUCT_NAME = "OnCuts Provider";
 				REGISTER_APP_GROUPS = YES;
