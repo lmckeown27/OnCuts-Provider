@@ -17,6 +17,10 @@
 			</array>
 		</dict>
 	</array>
+	<key>StripeApplePayMerchantCountryCode</key>
+	<string>US</string>
+	<key>StripeApplePayMerchantId</key>
+	<string>merchant.com.oncuts</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

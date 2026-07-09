@@ -7,10 +7,11 @@ enum ProviderAppBranding {
 
     static let marketingSiteHost = "pismoplatforms.com"
 
-    /// Platform bundle ID — frozen until Apple Developer / Firebase cutover.
-    static let bundleIdentifier = "Liam.Intera---Provider"
+    static let bundleIdentifier = "com.oncutsprovider.app"
 
-    static let loggerSubsystem = "com.oncuts.provider"
+    static let applePayMerchantIdentifier = "merchant.com.oncuts"
+
+    static let loggerSubsystem = "com.oncutsprovider.app"
 
     static var termsOfServiceURL: URL {
         URL(string: "https://\(marketingSiteHost)/terms")!
@@ -21,15 +22,15 @@ enum ProviderAppBranding {
     }
 
     enum UserDefaultsKey {
-        static let pushAPNsHexToken = "com.oncuts.provider.push.apnsHexToken"
-        static let pushLastRegisteredToken = "com.oncuts.provider.push.lastRegisteredToken"
-        static let pushLastRegisteredJWTFingerprint = "com.oncuts.provider.push.lastRegisteredJWTFingerprint"
-        static let pushLastRegisteredAt = "com.oncuts.provider.push.lastRegisteredAt"
-        static let pushLogoutSince = "com.oncuts.provider.push.logoutSince"
+        static let pushAPNsHexToken = "com.oncutsprovider.app.push.apnsHexToken"
+        static let pushLastRegisteredToken = "com.oncutsprovider.app.push.lastRegisteredToken"
+        static let pushLastRegisteredJWTFingerprint = "com.oncutsprovider.app.push.lastRegisteredJWTFingerprint"
+        static let pushLastRegisteredAt = "com.oncutsprovider.app.push.lastRegisteredAt"
+        static let pushLogoutSince = "com.oncutsprovider.app.push.logoutSince"
 
-        static let appleSignInSupplementEmail = "com.oncuts.provider.apple-sign-in.supplement.email"
-        static let appleSignInSupplementFirstName = "com.oncuts.provider.apple-sign-in.supplement.firstName"
-        static let appleSignInSupplementLastName = "com.oncuts.provider.apple-sign-in.supplement.lastName"
+        static let appleSignInSupplementEmail = "com.oncutsprovider.app.apple-sign-in.supplement.email"
+        static let appleSignInSupplementFirstName = "com.oncutsprovider.app.apple-sign-in.supplement.firstName"
+        static let appleSignInSupplementLastName = "com.oncutsprovider.app.apple-sign-in.supplement.lastName"
     }
 
     /// Wire payload names shared with the consumer app until backend routing is renamed.
