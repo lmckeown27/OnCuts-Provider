@@ -30,10 +30,11 @@ struct RootView: View {
 
     @ViewBuilder
     private var rootBackdrop: some View {
-        if session.isSignedIn, !session.isBootstrapping {
+        if session.isSignedIn, !session.isBootstrapping, !session.needsConsumerProviderEnrollment {
             OnCutsHubTabShellBackground()
                 .transition(.opacity)
         } else {
+            // Signed-out auth and the provider application funnel share the olive brand surface.
             Color.providerOlive
                 .ignoresSafeArea()
                 .transition(.opacity)

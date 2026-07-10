@@ -1,4 +1,5 @@
 import CoreLocation
+import OnCutsModule
 import SwiftUI
 
 #if os(iOS)
@@ -15,7 +16,7 @@ struct ProviderConsumerEnrollmentView: View {
     @State private var isSubmitting = false
     @State private var showSubmitSuccess = false
 
-    @State private var wizardStep = 1
+    @State private var wizardPage: ApplicationWizardPage = .profession
     @State private var campuses: [AdminCampusDTO] = []
     @State private var campusesLoading = false
 
@@ -26,17 +27,23 @@ struct ProviderConsumerEnrollmentView: View {
     @State private var showManualCampusSearch = false
     @State private var campusSearchText = ""
 
+    /// Provider kind tag from the platform vocabulary (`OnCutsModule.ServiceType`).
+    @State private var selectedProfession: ServiceType?
     @State private var phoneNumber = ""
     @State private var yearsExperience = ""
     @State private var needsTools = false
     @State private var toolsNeeded = ""
-    /// Mirrors the web wizard's "Barber license verification" step (Step 2 of 4): explicit yes/no
+    /// Mirrors the web wizard's "Barber license verification" step: explicit yes/no
     /// declaration (`nil` until the user picks) plus a required attestation checkbox. The backend
     /// rejects the submit if `hasLicense` is missing or non-boolean.
     @State private var licenseDeclared: Bool?
     @State private var licenseNumber = ""
     @State private var licenseAttestation = false
     @State private var selectedSpecialties: Set<String> = []
+    /// Live platform catalog names from `GET /admin/services` (active only).
+    @State private var specialtyOptions: [String] = []
+    @State private var specialtiesCatalogLoading = false
+    @State private var specialtiesCatalogError: String?
     @State private var selectedCampusId = ""
     @State private var whyBeBarber = ""
     @State private var availableHours = ""
@@ -44,13 +51,14 @@ struct ProviderConsumerEnrollmentView: View {
     @State private var socialMedia = ""
     @State private var additionalNotes = ""
 
-    private let totalWizardSteps = 4
-
     @State private var existingApplication: BarberApplicationSummary?
 
-    private let specialtyOptions = ProviderBarberApplicationOptions.serviceNames
     private let experienceOptions = ProviderBarberApplicationOptions.experienceLevels
     private let availabilityOptions = ProviderBarberApplicationOptions.availabilityLevels
+
+    /// Integrated Workflow content width — matches signed-out auth landing.
+    private let contentMaxWidth: CGFloat = 360
+    private let horizontalPadding: CGFloat = 24
 
     enum Phase {
         case loading
@@ -58,7 +66,27 @@ struct ProviderConsumerEnrollmentView: View {
         case wizard
     }
 
-    /// Lifecycle of the geo-driven campus picker on Step 3.
+    /// One input (or review) per page. Conditional pages are omitted from `visibleWizardPages`.
+    enum ApplicationWizardPage: Int, CaseIterable, Equatable {
+        case profession
+        case phone
+        case experience
+        case tools
+        case toolsNeeded
+        case specialties
+        case licenseDeclared
+        case licenseNumber
+        case attestation
+        case campus
+        case whyBeBarber
+        case availability
+        case social
+        case portfolio
+        case additionalNotes
+        case review
+    }
+
+    /// Lifecycle of the geo-driven campus picker.
     enum NearestCampusState: Equatable {
         case idle
         case locating
@@ -70,14 +98,57 @@ struct ProviderConsumerEnrollmentView: View {
 
     private static let nearestCampusSuggestionLimit = 5
 
+    /// Ordered pages for the current answers (skips toolsNeeded / licenseNumber when not needed).
+    private var visibleWizardPages: [ApplicationWizardPage] {
+        var pages: [ApplicationWizardPage] = [.profession, .phone, .experience, .tools]
+        if needsTools {
+            pages.append(.toolsNeeded)
+        }
+        pages.append(.specialties)
+        pages.append(.licenseDeclared)
+        if licenseDeclared == true {
+            pages.append(.licenseNumber)
+        }
+        pages.append(contentsOf: [
+            .attestation,
+            .campus,
+            .whyBeBarber,
+            .availability,
+            .social,
+            .portfolio,
+            .additionalNotes,
+            .review,
+        ])
+        return pages
+    }
+
+    /// Platform provider tags the applicant can assign (excludes the browse “All” filter).
+    private var professionOptions: [ServiceType] {
+        ServiceType.allCases.filter { $0 != .all }
+    }
+
+    private var wizardPageIndex: Int {
+        visibleWizardPages.firstIndex(of: wizardPage) ?? 0
+    }
+
+    private var wizardPageCount: Int {
+        visibleWizardPages.count
+    }
+
+    private var isFirstWizardPage: Bool {
+        wizardPageIndex <= 0
+    }
+
+    private var isLastWizardPage: Bool {
+        wizardPage == .review
+    }
+
     var body: some View {
         NavigationStack {
             Group {
                 switch phase {
                 case .loading:
-                    ProgressView("Checking your account…")
-                        .tint(.providerOlive)
-                        .foregroundStyle(Color.lavaShellCream)
+                    loadingView
                 case .existingApplication:
                     applicationStatusView
                 case .wizard:
@@ -91,15 +162,8 @@ struct ProviderConsumerEnrollmentView: View {
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Sign out") { Task { await session.signOut() } }
-                }
-                if phase == .wizard, wizardStep > 1 {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Back") {
-                            withAnimation { wizardStep -= 1 }
-                        }
-                    }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Leave Application") { Task { await session.signOut() } }
                 }
             }
             .task { await refreshApplication() }
@@ -111,124 +175,159 @@ struct ProviderConsumerEnrollmentView: View {
             }
         }
         .foregroundStyle(Color.lavaShellCream)
-        .tint(.providerOlive)
-        .providerLavaScreenChrome()
+        .tint(.providerBrandGold)
+        .providerAuthIntegratedScreenChrome()
+    }
+
+    // MARK: - Loading
+
+    private var loadingView: some View {
+        VStack(spacing: 16) {
+            Spacer(minLength: 0)
+            ProgressView("Checking your account…")
+                .tint(Color.providerBrandGold)
+                .foregroundStyle(Color.lavaShellCream)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Status (pending / approved / rejected)
 
     private var applicationStatusView: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if let existingApplication, let status = existingApplication.status?.lowercased() {
-                    let copy = ProviderBarberApplicationOptions.statusCopy(for: status)
+        GeometryReader { geo in
+            ScrollView {
+                VStack(spacing: 24) {
+                    Spacer(minLength: 0)
 
-                    VStack(alignment: .leading, spacing: 10) {
-                        Image(systemName: copy.symbol)
-                            .font(.provider(size: 34))
-                            .foregroundStyle(copy.tint)
-                        Text(copy.title)
-                            .font(.provider(.title2, weight: .semibold))
-                        Text(copy.description)
-                            .font(.provider(.body))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(18)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    if let existingApplication, let status = existingApplication.status?.lowercased() {
+                        let copy = ProviderBarberApplicationOptions.statusCopy(for: status)
 
-                    if let createdAt = existingApplication.createdAt, !createdAt.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Submitted on")
-                                .font(.provider(.caption, weight: .semibold))
+                        VStack(spacing: 14) {
+                            Image(systemName: copy.symbol)
+                                .font(.provider(size: 40))
+                                .foregroundStyle(copy.tint)
+                            Text(copy.title)
+                                .font(.provider(.title2, weight: .semibold))
+                                .multilineTextAlignment(.center)
+                            Text(copy.description)
+                                .font(.provider(.body))
+                                .foregroundStyle(Color.lavaShellCreamSecondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+
+                        if let createdAt = existingApplication.createdAt, !createdAt.isEmpty {
+                            VStack(spacing: 6) {
+                                Text("Submitted on")
+                                    .font(.provider(.caption, weight: .semibold))
+                                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                                Text(formattedSubmittedDate(createdAt))
+                                    .font(.provider(.body, weight: .medium))
+                            }
+                        }
+
+                        supportSection
+
+                        if status == "rejected" {
+                            Button {
+                                resetWizardForReapply()
+                            } label: {
+                                Text("Submit a new application")
+                                    .font(.provider(.headline, weight: .semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 16)
+                                    .foregroundStyle(Color.providerOnBrandGold)
+                                    .background(Color.providerBrandGold, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Text("Pull down to refresh for updates.")
+                                .font(.provider(.footnote))
                                 .foregroundStyle(Color.lavaShellCreamTertiary)
-                            Text(formattedSubmittedDate(createdAt))
-                                .font(.provider(.body, weight: .medium))
+                                .multilineTextAlignment(.center)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
 
-                    supportSection
-
-                    if status == "rejected" {
-                        Button {
-                            resetWizardForReapply()
-                        } label: {
-                            Text("Submit a new application")
-                                .font(.provider(.headline))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(Color.providerOlive, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                .foregroundStyle(Color.lavaShellCream)
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        Text("Pull down to refresh for updates.")
-                            .font(.provider(.footnote))
-                            .foregroundStyle(Color.lavaShellCreamTertiary)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    }
+                    Spacer(minLength: 0)
                 }
+                .frame(maxWidth: contentMaxWidth)
+                .frame(maxWidth: .infinity, minHeight: geo.size.height)
+                .padding(.horizontal, horizontalPadding)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 20)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .contentShape(Rectangle())
+            .scrollContentBackground(.hidden)
         }
-        .scrollContentBackground(.hidden)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var supportSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: 8) {
             Text("Questions about your application?")
                 .font(.provider(.footnote))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
+                .multilineTextAlignment(.center)
             Link(destination: URL(string: "mailto:campuscuthelp@gmail.com?subject=OnCuts%20Provider%20Application")!) {
                 Label("Contact OnCuts support", systemImage: "envelope")
                     .font(.provider(.footnote, weight: .medium))
+                    .foregroundStyle(Color.providerBrandGold)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
         .padding(.top, 4)
     }
 
     // MARK: - Wizard
 
     private var wizardContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                wizardHeader
+        GeometryReader { geo in
+            ScrollView {
+                VStack(spacing: 24) {
+                    Spacer(minLength: 0)
 
-                if let errorText {
-                    Text(errorText)
-                        .font(.provider(.footnote))
-                        .foregroundStyle(.red)
+                    wizardHeader
+
+                    if let errorText {
+                        Text(errorText)
+                            .font(.provider(.footnote))
+                            .foregroundStyle(.red)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                    }
+
+                    pageContent
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
 
-                switch wizardStep {
-                case 1: stepOneSections
-                case 2: stepTwoSections
-                case 3: stepThreeSections
-                default: reviewSection
-                }
+                    wizardFooter
 
-                wizardFooter
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: contentMaxWidth)
+                .frame(maxWidth: .infinity, minHeight: geo.size.height)
+                .padding(.horizontal, horizontalPadding)
+                .contentShape(Rectangle())
+                .onTapGesture { dismissKeyboard() }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 28)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .contentShape(Rectangle())
-            .onTapGesture { dismissKeyboard() }
+            .scrollContentBackground(.hidden)
+            .scrollDismissesKeyboard(.interactively)
         }
-        .scrollContentBackground(.hidden)
-        .scrollDismissesKeyboard(.interactively)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: needsTools) { _, needs in
+            if !needs, wizardPage == .toolsNeeded {
+                wizardPage = .specialties
+            }
+            if !needs {
+                toolsNeeded = ""
+            }
+        }
+        .onChange(of: licenseDeclared) { _, declared in
+            if declared != true, wizardPage == .licenseNumber {
+                wizardPage = .attestation
+            }
+            if declared != true {
+                licenseNumber = ""
+            }
+        }
     }
 
     private func dismissKeyboard() {
@@ -242,162 +341,224 @@ struct ProviderConsumerEnrollmentView: View {
         #endif
     }
 
-    @ViewBuilder
-    private func enrollmentSection<Content: View>(
-        _ title: String? = nil,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let title {
-                Text(title)
-                    .font(.provider(.subheadline, weight: .bold))
-                    .foregroundStyle(Color.lavaShellCream)
-            }
-            VStack(alignment: .leading, spacing: 12) {
-                content()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private func enrollmentCard<Content: View>(
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            content()
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.5)
-        )
-    }
-
-    private var sectionDivider: some View {
-        Rectangle()
-            .fill(Color.black.opacity(0.35))
-            .frame(maxWidth: .infinity)
-            .frame(height: 1)
-    }
-
-
     private var wizardHeader: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Apply to join OnCuts Provider as a barber")
+        VStack(spacing: 8) {
+            Text("Apply to be an OnCuts Operator")
                 .font(.provider(.title3, weight: .semibold))
-            Text("Step \(wizardStep) of \(totalWizardSteps)")
+                .multilineTextAlignment(.center)
+            Text("Step \(wizardPageIndex + 1) of \(wizardPageCount)")
                 .font(.provider(.footnote))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
-            ProgressView(value: Double(wizardStep), total: Double(totalWizardSteps))
-                .tint(.providerOlive)
+            ProgressView(
+                value: Double(wizardPageIndex + 1),
+                total: Double(max(wizardPageCount, 1))
+            )
+            .tint(Color.providerBrandGold)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 12)
+        .frame(maxWidth: .infinity)
     }
 
-    private var stepOneSections: some View {
-        enrollmentCard {
-            enrollmentSection("Contact") {
-                TextField(phoneNumberPlaceholder, text: $phoneNumber)
-                    .keyboardType(.phonePad)
-                    .textContentType(.telephoneNumber)
-                    .onChange(of: phoneNumber) { _, newValue in
-                        let formatted = PhoneNumberInputFormatter.format(
-                            newValue,
-                            regionCode: currentRegionCode
-                        )
-                        if formatted != newValue {
-                            phoneNumber = formatted
-                        }
+    @ViewBuilder
+    private var pageContent: some View {
+        switch wizardPage {
+        case .profession:
+            professionPage
+        case .phone:
+            phonePage
+        case .experience:
+            experiencePage
+        case .tools:
+            toolsPage
+        case .toolsNeeded:
+            toolsNeededPage
+        case .specialties:
+            specialtiesPage
+        case .licenseDeclared:
+            licenseDeclaredPage
+        case .licenseNumber:
+            licenseNumberPage
+        case .attestation:
+            attestationPage
+        case .campus:
+            campusPage
+        case .whyBeBarber:
+            whyBeBarberPage
+        case .availability:
+            availabilityPage
+        case .social:
+            socialPage
+        case .portfolio:
+            portfolioPage
+        case .additionalNotes:
+            additionalNotesPage
+        case .review:
+            reviewPage
+        }
+    }
+
+    // MARK: - Pages
+
+    private var professionPage: some View {
+        pageSection(
+            title: "Which profession do you wish to apply for?",
+            subtitle: "Choose the OnCuts Operator tag that best matches the services you’ll offer."
+        ) {
+            VStack(spacing: 10) {
+                ForEach(professionOptions) { profession in
+                    choiceButton(
+                        title: profession.toolbarTitle,
+                        isSelected: selectedProfession == profession
+                    ) {
+                        selectedProfession = profession
                     }
-            }
-
-            sectionDivider
-
-            enrollmentSection("Experience") {
-                Picker("Years of experience", selection: $yearsExperience) {
-                    Text("Select experience level").tag("")
-                    ForEach(experienceOptions, id: \.value) { option in
-                        Text(option.label).tag(option.value)
-                    }
-                }
-                .tint(yearsExperience.isEmpty ? Color.lavaShellCreamTertiary : Color.lavaShellCream)
-            }
-
-            sectionDivider
-
-            enrollmentSection("Tools") {
-                Text("Do you need barber tools?")
-                    .font(.provider(.subheadline, weight: .medium))
-                HStack(spacing: 12) {
-                    toolsChoiceButton(title: "Yes", isSelected: needsTools) {
-                        needsTools = true
-                    }
-                    toolsChoiceButton(title: "No", isSelected: !needsTools) {
-                        needsTools = false
-                        toolsNeeded = ""
-                    }
-                }
-                if needsTools {
-                    TextField("What tools do you need?", text: $toolsNeeded)
-                }
-            }
-
-            sectionDivider
-
-            enrollmentSection("Services you’ll offer") {
-                ForEach(specialtyOptions, id: \.self) { name in
-                    Toggle(name, isOn: Binding(
-                        get: { selectedSpecialties.contains(name) },
-                        set: { on in
-                            if on { selectedSpecialties.insert(name) } else { selectedSpecialties.remove(name) }
-                        }
-                    ))
                 }
             }
         }
     }
 
-    /// Step 2 — Barber license verification (mirrors the web `BarberApplicationModal` step 2).
-    /// Required yes/no declaration + license number when "yes" + attestation checkbox. No verify
-    /// API call here; the values are stored in state and sent on the final `POST /barber-applications`.
-    private var stepTwoSections: some View {
-        enrollmentCard {
-            enrollmentSection("Barber license") {
-                Text("Do you have a current barber or cosmetology license?")
-                    .font(.provider(.subheadline, weight: .medium))
-                HStack(spacing: 12) {
-                    toolsChoiceButton(title: "Yes", isSelected: licenseDeclared == true) {
-                        licenseDeclared = true
-                    }
-                    toolsChoiceButton(title: "No", isSelected: licenseDeclared == false) {
-                        licenseDeclared = false
-                        licenseNumber = ""
-                    }
-                }
-                if licenseDeclared == true {
-                    TextField("License number", text: $licenseNumber)
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled(true)
-                    Text("Include the issuing state or prefix if your license has one (e.g. CA-1234567).")
-                        .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
-                } else if licenseDeclared == false {
-                    Text("Some states require proof of licensure before barbering. The OnCuts team may still ask for documentation.")
-                        .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
+    private var phonePage: some View {
+        pageSection(title: "Phone number", subtitle: "How can we reach you about your application?") {
+            enrollmentTextField(
+                placeholder: phoneNumberPlaceholder,
+                text: $phoneNumber,
+                keyboard: .phonePad,
+                usesTelephoneContentType: true
+            )
+            .onChange(of: phoneNumber) { _, newValue in
+                let formatted = PhoneNumberInputFormatter.format(
+                    newValue,
+                    regionCode: currentRegionCode
+                )
+                if formatted != newValue {
+                    phoneNumber = formatted
                 }
             }
+        }
+    }
 
-            sectionDivider
-
-            enrollmentSection("Attestation") {
-                attestationCheckbox
+    private var experiencePage: some View {
+        pageSection(title: "Experience", subtitle: "How many years have you been barbering?") {
+            VStack(spacing: 10) {
+                ForEach(experienceOptions, id: \.value) { option in
+                    choiceButton(
+                        title: option.label,
+                        isSelected: yearsExperience == option.value
+                    ) {
+                        yearsExperience = option.value
+                    }
+                }
             }
+        }
+    }
+
+    private var toolsPage: some View {
+        pageSection(title: "Tools", subtitle: "Do you need barber tools?") {
+            HStack(spacing: 12) {
+                choiceButton(title: "Yes", isSelected: needsTools) {
+                    needsTools = true
+                }
+                choiceButton(title: "No", isSelected: !needsTools) {
+                    needsTools = false
+                    toolsNeeded = ""
+                }
+            }
+        }
+    }
+
+    private var toolsNeededPage: some View {
+        pageSection(title: "Tools needed", subtitle: "What tools do you need? (optional)") {
+            enrollmentTextField(placeholder: "e.g. clippers, shears, cape", text: $toolsNeeded)
+        }
+    }
+
+    private var specialtiesPage: some View {
+        pageSection(title: "Services you’ll offer", subtitle: "Select all that apply from the current OnCuts catalog.") {
+            if specialtiesCatalogLoading, specialtyOptions.isEmpty {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .tint(Color.providerBrandGold)
+                    Text("Loading services…")
+                        .font(.provider(.subheadline))
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                    Spacer(minLength: 0)
+                }
+            } else if let specialtiesCatalogError, specialtyOptions.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(specialtiesCatalogError)
+                        .font(.provider(.footnote))
+                        .foregroundStyle(.red)
+                    Button {
+                        Task { await loadSpecialtyCatalog(forceRefresh: true) }
+                    } label: {
+                        Text("Try again")
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .foregroundStyle(Color.providerOnBrandGold)
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 14)
+                            .background(Color.providerBrandGold, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else if specialtyOptions.isEmpty {
+                Text("No platform services are configured yet. An Admin can add services in the Admin dashboard.")
+                    .font(.provider(.footnote))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(specialtyOptions, id: \.self) { name in
+                        let isOn = selectedSpecialties.contains(name)
+                        choiceButton(title: name, isSelected: isOn) {
+                            if isOn {
+                                selectedSpecialties.remove(name)
+                            } else {
+                                selectedSpecialties.insert(name)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .task {
+            await loadSpecialtyCatalog()
+        }
+    }
+
+    private var licenseDeclaredPage: some View {
+        pageSection(
+            title: "Barber license",
+            subtitle: "Do you have a current barber or cosmetology license?"
+        ) {
+            HStack(spacing: 12) {
+                choiceButton(title: "Yes", isSelected: licenseDeclared == true) {
+                    licenseDeclared = true
+                }
+                choiceButton(title: "No", isSelected: licenseDeclared == false) {
+                    licenseDeclared = false
+                    licenseNumber = ""
+                }
+            }
+            if licenseDeclared == false {
+                Text("Some states require proof of licensure before barbering. The OnCuts team may still ask for documentation.")
+                    .font(.provider(.caption))
+                    .foregroundStyle(Color.lavaShellCreamTertiary)
+            }
+        }
+    }
+
+    private var licenseNumberPage: some View {
+        pageSection(
+            title: "License number",
+            subtitle: "Include the issuing state or prefix if your license has one (e.g. CA-1234567)."
+        ) {
+            enrollmentTextField(placeholder: "License number", text: $licenseNumber)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled(true)
+        }
+    }
+
+    private var attestationPage: some View {
+        pageSection(title: "Attestation", subtitle: "Please confirm before continuing.") {
+            attestationCheckbox
         }
     }
 
@@ -408,17 +569,123 @@ struct ProviderConsumerEnrollmentView: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: licenseAttestation ? "checkmark.square.fill" : "square")
                     .font(.provider(size: 22))
-                    .foregroundStyle(licenseAttestation ? Color.providerOlive : Color.lavaShellCreamTertiary)
+                    .foregroundStyle(licenseAttestation ? Color.providerBrandGold : Color.lavaShellCreamTertiary)
                 Text("I attest that the license information I've provided is accurate to the best of my knowledge. The OnCuts team may verify it before approval.")
                     .font(.provider(.footnote))
                     .foregroundStyle(Color.lavaShellCream)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    private var campusPage: some View {
+        pageSection(
+            title: "Campus (optional)",
+            subtitle: "Pick a nearby campus if you have one, or continue without one."
+        ) {
+            optionalCampusSkipRow
+            nearestCampusCard
+                .task { await detectNearestCampusIfNeeded() }
+        }
+    }
+
+    private var whyBeBarberPage: some View {
+        pageSection(title: "Why OnCuts Provider?", subtitle: "Tell us why you want to join as a barber.") {
+            enrollmentMultilineField(
+                placeholder: "Why do you want to join OnCuts Provider as a barber?",
+                text: $whyBeBarber,
+                lineLimit: 3 ... 8
+            )
+        }
+    }
+
+    private var availabilityPage: some View {
+        pageSection(title: "Availability", subtitle: "How many hours per week can you work?") {
+            VStack(spacing: 10) {
+                ForEach(availabilityOptions, id: \.value) { option in
+                    choiceButton(
+                        title: option.label,
+                        isSelected: availableHours == option.value
+                    ) {
+                        availableHours = option.value
+                    }
+                }
+            }
+        }
+    }
+
+    private var socialPage: some View {
+        pageSection(title: "Social", subtitle: "Instagram or social link (optional).") {
+            enrollmentTextField(
+                placeholder: "Instagram or social link",
+                text: $socialMedia,
+                keyboard: .URL
+            )
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled(true)
+        }
+    }
+
+    private var portfolioPage: some View {
+        pageSection(title: "Portfolio", subtitle: "Optional notes about your work.") {
+            enrollmentMultilineField(
+                placeholder: "Portfolio notes",
+                text: $portfolioDescription,
+                lineLimit: 2 ... 4
+            )
+        }
+    }
+
+    private var additionalNotesPage: some View {
+        pageSection(title: "Anything else?", subtitle: "Optional notes for the OnCuts team.") {
+            enrollmentMultilineField(
+                placeholder: "Anything else?",
+                text: $additionalNotes,
+                lineLimit: 2 ... 4
+            )
+        }
+    }
+
+    private var reviewPage: some View {
+        pageSection(title: "Review", subtitle: "Confirm your details, then submit.") {
+            VStack(alignment: .leading, spacing: 12) {
+                reviewRow("Applicant", applicantName)
+                reviewRow("Email", session.authUser?.email ?? "—")
+                reviewRow("Profession", selectedProfession?.toolbarTitle ?? "—")
+                reviewRow("Phone", phoneNumber.isEmpty ? "—" : phoneNumber)
+                reviewRow("Campus", selectedCampusName)
+                reviewRow("Experience", experienceLabel(yearsExperience))
+                reviewRow("Availability", availabilityLabel(availableHours))
+                reviewRow("Tools", needsTools ? (toolsNeeded.isEmpty ? "Needs tools" : "Needs: \(toolsNeeded)") : "Has own tools")
+                reviewRow("License", licenseReviewSummary)
+                reviewRow("Specialties", Array(selectedSpecialties).sorted().joined(separator: ", "))
+                reviewRow("Why OnCuts Provider?", whyBeBarber)
+                if !socialMedia.isEmpty { reviewRow("Social", socialMedia) }
+                if !portfolioDescription.isEmpty { reviewRow("Portfolio", portfolioDescription) }
+                if !additionalNotes.isEmpty { reviewRow("Notes", additionalNotes) }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+
+    private var licenseReviewSummary: String {
+        switch licenseDeclared {
+        case .some(true):
+            let trimmed = licenseNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "Licensed (no number provided)" : "Licensed · \(trimmed)"
+        case .some(false):
+            return "Not licensed"
+        case .none:
+            return "—"
+        }
     }
 
     // MARK: - Campus picker (optional; geo-suggested + manual fallback)
@@ -432,27 +699,31 @@ struct ProviderConsumerEnrollmentView: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: selectedCampusId.isEmpty ? "largecircle.fill.circle" : "circle")
                     .font(.provider(size: 22))
-                    .foregroundStyle(selectedCampusId.isEmpty ? Color.providerOlive : Color.lavaShellCreamTertiary)
+                    .foregroundStyle(selectedCampusId.isEmpty ? Color.providerBrandGold : Color.lavaShellCreamTertiary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("No campus yet")
                         .font(.provider(.body, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCream)
+                        .foregroundStyle(selectedCampusId.isEmpty ? Color.providerOnBrandGold : Color.lavaShellCream)
                     Text("You can still apply; a manager may assign your campus later.")
                         .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .foregroundStyle(
+                            selectedCampusId.isEmpty
+                                ? Color.providerOnBrandGold.opacity(0.75)
+                                : Color.lavaShellCreamTertiary
+                        )
                 }
                 Spacer(minLength: 0)
             }
-            .padding(10)
+            .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                (selectedCampusId.isEmpty ? Color.providerOlive.opacity(0.18) : Color.white.opacity(0.06)),
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                (selectedCampusId.isEmpty ? Color.providerBrandGold : Color.white.opacity(0.12)),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.bottom, 8)
+        .padding(.bottom, 4)
     }
 
     @ViewBuilder
@@ -471,7 +742,7 @@ struct ProviderConsumerEnrollmentView: View {
             HStack(alignment: .top, spacing: 12) {
                 ProgressView()
                     .controlSize(.small)
-                    .tint(Color.lavaShellCream)
+                    .tint(Color.providerBrandGold)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(loadingTitleForNearestCampus)
                         .font(.provider(.subheadline, weight: .medium))
@@ -481,7 +752,9 @@ struct ProviderConsumerEnrollmentView: View {
                 }
                 Spacer(minLength: 0)
             }
+            .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
         case .suggestions(let matches):
             VStack(alignment: .leading, spacing: 10) {
@@ -500,7 +773,7 @@ struct ProviderConsumerEnrollmentView: View {
                             .foregroundStyle(Color.lavaShellCream)
                         Text("Search for it")
                             .font(.provider(.footnote, weight: .semibold))
-                            .foregroundStyle(Color.lavaShellCream)
+                            .foregroundStyle(Color.providerBrandGold)
                             .underline()
                         Spacer(minLength: 0)
                     }
@@ -528,11 +801,11 @@ struct ProviderConsumerEnrollmentView: View {
                     } label: {
                         Text("Try again")
                             .font(.provider(.footnote, weight: .semibold))
-                            .foregroundStyle(Color.lavaShellCream)
+                            .foregroundStyle(Color.providerOnBrandGold)
                             .padding(.vertical, 8)
                             .padding(.horizontal, 14)
                             .background(
-                                Color.providerOlive.opacity(0.85),
+                                Color.providerBrandGold,
                                 in: RoundedRectangle(cornerRadius: 10, style: .continuous)
                             )
                     }
@@ -560,14 +833,16 @@ struct ProviderConsumerEnrollmentView: View {
                     } label: {
                         Text("Search manually")
                             .font(.provider(.footnote, weight: .semibold))
-                            .foregroundStyle(Color.providerOlive)
+                            .foregroundStyle(Color.providerBrandGold)
                             .padding(.vertical, 8)
                             .padding(.horizontal, 14)
                     }
                     .buttonStyle(.plain)
                 }
             }
+            .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
     }
 
@@ -579,34 +854,35 @@ struct ProviderConsumerEnrollmentView: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
                     .font(.provider(size: 22))
-                    .foregroundStyle(isSelected ? Color.providerOlive : Color.lavaShellCreamTertiary)
+                    .foregroundStyle(isSelected ? Color.providerOnBrandGold : Color.lavaShellCreamTertiary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(match.campus.displayName)
                         .font(.provider(.body, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCream)
+                        .foregroundStyle(isSelected ? Color.providerOnBrandGold : Color.lavaShellCream)
                     if let line = match.campus.locationLine {
                         Text(line)
                             .font(.provider(.caption))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                            .foregroundStyle(
+                                isSelected
+                                    ? Color.providerOnBrandGold.opacity(0.75)
+                                    : Color.lavaShellCreamSecondary
+                            )
                     }
                     Text(formattedDistance(match.distance))
                         .font(.provider(.caption2))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .foregroundStyle(
+                            isSelected
+                                ? Color.providerOnBrandGold.opacity(0.65)
+                                : Color.lavaShellCreamTertiary
+                        )
                 }
                 Spacer(minLength: 0)
             }
-            .padding(10)
+            .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                (isSelected ? Color.providerOlive.opacity(0.18) : Color.white.opacity(0.06)),
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(
-                        isSelected ? Color.providerOlive.opacity(0.7) : Color.white.opacity(0.10),
-                        lineWidth: isSelected ? 1.5 : 0.5
-                    )
+                (isSelected ? Color.providerBrandGold : Color.white.opacity(0.12)),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
             .contentShape(Rectangle())
         }
@@ -627,7 +903,11 @@ struct ProviderConsumerEnrollmentView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
                         .font(.provider(size: 17, weight: .medium))
-                        .foregroundStyle(campusSearchText.isEmpty ? Color.lavaShellCreamTertiary : Color.providerOlive)
+                        .foregroundStyle(
+                            campusSearchText.isEmpty
+                                ? Color.lavaShellCreamTertiary
+                                : Color.providerBrandGold
+                        )
                     TextField(
                         "",
                         text: $campusSearchText,
@@ -652,21 +932,23 @@ struct ProviderConsumerEnrollmentView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .background(Color.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .strokeBorder(
                             campusSearchText.isEmpty
-                                ? Color.lavaShellCream.opacity(0.35)
-                                : Color.providerOlive.opacity(0.85),
-                            lineWidth: campusSearchText.isEmpty ? 1 : 1.5
+                                ? Color.white.opacity(0.22)
+                                : Color.providerBrandGold.opacity(0.85),
+                            lineWidth: campusSearchText.isEmpty ? 0.8 : 1.5
                         )
                 )
             }
 
             if campusesLoading {
                 HStack {
-                    ProgressView().controlSize(.small)
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(Color.providerBrandGold)
                     Text("Loading campuses…")
                         .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
@@ -691,7 +973,7 @@ struct ProviderConsumerEnrollmentView: View {
                 } label: {
                     Label("Back to nearby campuses", systemImage: "location.fill")
                         .font(.provider(.footnote, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCream)
+                        .foregroundStyle(Color.providerBrandGold)
                         .underline()
                 }
                 .buttonStyle(.plain)
@@ -709,31 +991,28 @@ struct ProviderConsumerEnrollmentView: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
                     .font(.provider(size: 22))
-                    .foregroundStyle(isSelected ? Color.providerOlive : Color.lavaShellCreamTertiary)
+                    .foregroundStyle(isSelected ? Color.providerOnBrandGold : Color.lavaShellCreamTertiary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(campus.displayName)
                         .font(.provider(.body, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCream)
+                        .foregroundStyle(isSelected ? Color.providerOnBrandGold : Color.lavaShellCream)
                     if let line = campus.locationLine {
                         Text(line)
                             .font(.provider(.caption))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                            .foregroundStyle(
+                                isSelected
+                                    ? Color.providerOnBrandGold.opacity(0.75)
+                                    : Color.lavaShellCreamSecondary
+                            )
                     }
                 }
                 Spacer(minLength: 0)
             }
-            .padding(10)
+            .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                (isSelected ? Color.providerOlive.opacity(0.18) : Color.white.opacity(0.06)),
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(
-                        isSelected ? Color.providerOlive.opacity(0.7) : Color.white.opacity(0.10),
-                        lineWidth: isSelected ? 1.5 : 0.5
-                    )
+                (isSelected ? Color.providerBrandGold : Color.white.opacity(0.12)),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
             .contentShape(Rectangle())
         }
@@ -845,150 +1124,194 @@ struct ProviderConsumerEnrollmentView: View {
         #endif
     }
 
-    /// Step 3 — Optional campus + about you. Geo suggestions help applicants who know their school;
-    /// providers can skip campus and continue the application.
-    private var stepThreeSections: some View {
-        enrollmentCard {
-            enrollmentSection("Campus (optional)") {
-                optionalCampusSkipRow
-                nearestCampusCard
-                    .task { await detectNearestCampusIfNeeded() }
-            }
-
-            sectionDivider
-
-            enrollmentSection("About you") {
-                TextField(
-                    "",
-                    text: $whyBeBarber,
-                    prompt: Text("Why do you want to join OnCuts Provider as a barber?")
-                        .foregroundStyle(Color.lavaShellCreamTertiary),
-                    axis: .vertical
-                )
-                .lineLimit(3 ... 8)
-                .paragraphFieldStyle()
-            }
-
-            sectionDivider
-
-            enrollmentSection("Availability") {
-                Picker("Hours per week", selection: $availableHours) {
-                    Text("Select availability").tag("")
-                    ForEach(availabilityOptions, id: \.value) { option in
-                        Text(option.label).tag(option.value)
-                    }
-                }
-                .tint(availableHours.isEmpty ? Color.lavaShellCreamTertiary : Color.lavaShellCream)
-            }
-
-            sectionDivider
-
-            enrollmentSection("Social") {
-                TextField(
-                    "",
-                    text: $socialMedia,
-                    prompt: Text("Instagram or social link (optional)")
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
-                )
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled(true)
-                .keyboardType(.URL)
-                .paragraphFieldStyle()
-            }
-
-            sectionDivider
-
-            enrollmentSection("More details (optional)") {
-                TextField(
-                    "",
-                    text: $portfolioDescription,
-                    prompt: Text("Portfolio notes")
-                        .foregroundStyle(Color.lavaShellCreamTertiary),
-                    axis: .vertical
-                )
-                .lineLimit(2 ... 4)
-                .paragraphFieldStyle()
-
-                TextField(
-                    "",
-                    text: $additionalNotes,
-                    prompt: Text("Anything else?")
-                        .foregroundStyle(Color.lavaShellCreamTertiary),
-                    axis: .vertical
-                )
-                .lineLimit(2 ... 4)
-                .paragraphFieldStyle()
-            }
-        }
-    }
-
-    private var reviewSection: some View {
-        enrollmentCard {
-            enrollmentSection("Review") {
-                reviewRow("Applicant", applicantName)
-                reviewRow("Email", session.authUser?.email ?? "—")
-                reviewRow("Phone", phoneNumber.isEmpty ? "—" : phoneNumber)
-                reviewRow("Campus", selectedCampusName)
-                reviewRow("Experience", experienceLabel(yearsExperience))
-                reviewRow("Availability", availabilityLabel(availableHours))
-                reviewRow("Tools", needsTools ? (toolsNeeded.isEmpty ? "Needs tools" : "Needs: \(toolsNeeded)") : "Has own tools")
-                reviewRow("License", licenseReviewSummary)
-                reviewRow("Specialties", Array(selectedSpecialties).sorted().joined(separator: ", "))
-                reviewRow("Why OnCuts Provider?", whyBeBarber)
-                if !socialMedia.isEmpty { reviewRow("Social", socialMedia) }
-            }
-        }
-    }
-
-    private var licenseReviewSummary: String {
-        switch licenseDeclared {
-        case .some(true):
-            let trimmed = licenseNumber.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? "Licensed (no number provided)" : "Licensed · \(trimmed)"
-        case .some(false):
-            return "Not licensed"
-        case .none:
-            return "—"
-        }
-    }
+    // MARK: - Footer / navigation
 
     private var wizardFooter: some View {
-        Group {
-            if wizardStep < totalWizardSteps {
-                Button {
-                    withAnimation { wizardStep += 1 }
-                } label: {
-                    Text("Continue")
-                        .font(.provider(.headline))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.providerOlive.opacity(canProceedCurrentStep ? 1 : 0.45), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .foregroundStyle(Color.lavaShellCream)
-                }
-                .buttonStyle(.plain)
-                .disabled(!canProceedCurrentStep)
-            } else {
+        VStack(spacing: 12) {
+            if isLastWizardPage {
                 Button {
                     Task { await submit() }
                 } label: {
                     Group {
                         if isSubmitting {
                             ProgressView()
-                                .tint(Color.lavaShellCream)
+                                .tint(Color.providerOnBrandGold)
                         } else {
                             Text("Submit application")
-                                .font(.provider(.headline))
+                                .font(.provider(.headline, weight: .semibold))
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.providerOlive.opacity((isSubmitting || !canSubmit) ? 0.45 : 1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .foregroundStyle(Color.lavaShellCream)
+                    .padding(.vertical, 16)
+                    .foregroundStyle(Color.providerOnBrandGold)
+                    .background(
+                        Color.providerBrandGold.opacity((isSubmitting || !canSubmit) ? 0.45 : 1),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
                 }
                 .buttonStyle(.plain)
                 .disabled(isSubmitting || !canSubmit)
+            } else {
+                Button {
+                    goToNextPage()
+                } label: {
+                    Text("Continue")
+                        .font(.provider(.headline, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .foregroundStyle(Color.providerOnBrandGold)
+                        .background(
+                            Color.providerBrandGold.opacity(canProceedCurrentPage ? 1 : 0.45),
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(!canProceedCurrentPage)
+            }
+
+            if !isFirstWizardPage {
+                Button {
+                    goToPreviousPage()
+                } label: {
+                    Text("Back")
+                        .font(.provider(.subheadline, weight: .semibold))
+                        .foregroundStyle(Color.lavaShellCream)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.plain)
+                .disabled(isSubmitting)
             }
         }
+    }
+
+    private func goToNextPage() {
+        let pages = visibleWizardPages
+        guard let idx = pages.firstIndex(of: wizardPage), idx + 1 < pages.count else { return }
+        withAnimation { wizardPage = pages[idx + 1] }
+    }
+
+    private func goToPreviousPage() {
+        let pages = visibleWizardPages
+        guard let idx = pages.firstIndex(of: wizardPage), idx > 0 else { return }
+        withAnimation { wizardPage = pages[idx - 1] }
+    }
+
+    // MARK: - Shared chrome
+
+    @ViewBuilder
+    private func pageSection<Content: View>(
+        title: String,
+        subtitle: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.provider(.title3, weight: .semibold))
+                    .foregroundStyle(Color.lavaShellCream)
+                Text(subtitle)
+                    .font(.provider(.subheadline))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+            }
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private enum EnrollmentKeyboard {
+        case `default`
+        case phonePad
+        case URL
+    }
+
+    @ViewBuilder
+    private func enrollmentTextField(
+        placeholder: String,
+        text: Binding<String>,
+        keyboard: EnrollmentKeyboard = .default,
+        usesTelephoneContentType: Bool = false
+    ) -> some View {
+        let base = TextField(placeholder, text: text)
+            .font(.provider(.body))
+            .foregroundStyle(Color.lavaShellCream)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.white.opacity(0.12))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.22), lineWidth: 0.8)
+            )
+
+        #if os(iOS)
+        base
+            .keyboardType({
+                switch keyboard {
+                case .default: return .default
+                case .phonePad: return .phonePad
+                case .URL: return .URL
+                }
+            }())
+            .textContentType(usesTelephoneContentType ? .telephoneNumber : nil)
+        #else
+        base
+        #endif
+    }
+
+    private func enrollmentMultilineField(
+        placeholder: String,
+        text: Binding<String>,
+        lineLimit: ClosedRange<Int>
+    ) -> some View {
+        TextField(
+            "",
+            text: text,
+            prompt: Text(placeholder).foregroundStyle(Color.lavaShellCreamTertiary),
+            axis: .vertical
+        )
+        .lineLimit(lineLimit)
+        .font(.provider(.body))
+        .foregroundStyle(Color.lavaShellCream)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.12))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.22), lineWidth: 0.8)
+        )
+    }
+
+    private func choiceButton(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.provider(.subheadline, weight: .semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    isSelected ? Color.providerBrandGold : Color.white.opacity(0.12),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
+                .foregroundStyle(isSelected ? Color.providerOnBrandGold : Color.lavaShellCream)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func reviewRow(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.provider(.caption, weight: .semibold))
+                .foregroundStyle(Color.lavaShellCreamTertiary)
+            Text(value)
+                .font(.provider(.body))
+        }
+        .padding(.vertical, 2)
     }
 
     // MARK: - Helpers
@@ -1017,61 +1340,52 @@ struct ProviderConsumerEnrollmentView: View {
         return campuses.first(where: { $0.id == selectedCampusId })?.displayName ?? selectedCampusId
     }
 
-    private var canProceedCurrentStep: Bool {
-        switch wizardStep {
-        case 1:
+    private var canProceedCurrentPage: Bool {
+        switch wizardPage {
+        case .profession:
+            return selectedProfession != nil
+        case .phone:
             return !phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && !yearsExperience.isEmpty
-                && !selectedSpecialties.isEmpty
-        case 2:
-            // Mirrors web BarberApplicationModal step 2 gate: explicit yes/no + attestation, plus
-            // a non-empty license number (≥ 2 chars) when the applicant says they are licensed.
-            guard let declared = licenseDeclared, licenseAttestation else { return false }
-            if declared {
-                return licenseNumber.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2
-            }
+        case .experience:
+            return !yearsExperience.isEmpty
+        case .tools:
             return true
-        case 3:
+        case .toolsNeeded:
+            return true
+        case .specialties:
+            return !specialtyOptions.isEmpty && !selectedSpecialties.isEmpty
+        case .licenseDeclared:
+            return licenseDeclared != nil
+        case .licenseNumber:
+            return licenseNumber.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2
+        case .attestation:
+            return licenseAttestation
+        case .campus:
+            return true
+        case .whyBeBarber:
             return !whyBeBarber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && !availableHours.isEmpty
-        default:
+        case .availability:
+            return !availableHours.isEmpty
+        case .social, .portfolio, .additionalNotes:
             return true
+        case .review:
+            return canSubmit
         }
     }
 
-    private var canSubmit: Bool { canProceedCurrentStep && wizardStep == totalWizardSteps }
-
-    private func toolsChoiceButton(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.provider(.subheadline, weight: .semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(
-                    isSelected ? Color.providerOlive.opacity(0.55) : Color.white.opacity(0.08),
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(
-                            isSelected ? Color.providerOlive.opacity(0.85) : Color.white.opacity(0.14),
-                            lineWidth: 1
-                        )
-                )
-                .foregroundStyle(Color.lavaShellCream)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func reviewRow(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.provider(.caption, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCreamTertiary)
-            Text(value)
-                .font(.provider(.body))
-        }
-        .padding(.vertical, 2)
+    private var canSubmit: Bool {
+        selectedProfession != nil
+            && !phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !yearsExperience.isEmpty
+            && !selectedSpecialties.isEmpty
+            && licenseDeclared != nil
+            && licenseAttestation
+            && (
+                licenseDeclared != true
+                    || licenseNumber.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2
+            )
+            && !whyBeBarber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !availableHours.isEmpty
     }
 
     private func experienceLabel(_ value: String) -> String {
@@ -1093,9 +1407,40 @@ struct ProviderConsumerEnrollmentView: View {
 
     private func resetWizardForReapply() {
         existingApplication = nil
-        wizardStep = 1
+        wizardPage = .profession
+        selectedProfession = nil
         errorText = nil
         phase = .wizard
+    }
+
+    private func loadSpecialtyCatalog(forceRefresh: Bool = false) async {
+        if !forceRefresh, !specialtyOptions.isEmpty, !specialtiesCatalogLoading { return }
+        specialtiesCatalogLoading = true
+        specialtiesCatalogError = nil
+        defer { specialtiesCatalogLoading = false }
+        do {
+            let catalog = try await ProviderBarberServicesService.fetchServiceCatalog()
+            let names = catalog
+                .map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            specialtyOptions = names
+            // Drop any stale selections that are no longer in the live catalog.
+            selectedSpecialties = Set(selectedSpecialties.filter { selected in
+                names.contains { $0.caseInsensitiveCompare(selected) == .orderedSame }
+            })
+            if selectedSpecialties.isEmpty,
+               let haircut = names.first(where: { $0.caseInsensitiveCompare("Haircut") == .orderedSame }) {
+                selectedSpecialties = [haircut]
+            }
+        } catch {
+            specialtiesCatalogError =
+                (error as? LocalizedError)?.errorDescription
+                ?? error.localizedDescription
+            if specialtyOptions.isEmpty {
+                // Last-resort offline fallback so applicants aren't blocked if the catalog call fails.
+                specialtyOptions = ProviderBarberApplicationOptions.serviceNames
+            }
+        }
     }
 
     private func loadCampusesIfNeeded() async {
@@ -1117,10 +1462,8 @@ struct ProviderConsumerEnrollmentView: View {
             existingApplication = row
             guard let row, let status = row.status?.lowercased(), !status.isEmpty else {
                 await loadCampusesIfNeeded()
-                if selectedSpecialties.isEmpty {
-                    selectedSpecialties = ["Haircut"]
-                }
-                wizardStep = 1
+                await loadSpecialtyCatalog()
+                wizardPage = .profession
                 phase = .wizard
                 return
             }
@@ -1132,11 +1475,13 @@ struct ProviderConsumerEnrollmentView: View {
                 phase = .existingApplication
             } else {
                 await loadCampusesIfNeeded()
+                await loadSpecialtyCatalog()
                 phase = .wizard
             }
         } catch {
             errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             await loadCampusesIfNeeded()
+            await loadSpecialtyCatalog()
             phase = .wizard
         }
     }
@@ -1147,9 +1492,17 @@ struct ProviderConsumerEnrollmentView: View {
         defer { isSubmitting = false }
 
         // The backend requires `hasLicense` to be an explicit boolean. We never reach submit
-        // without the user having answered Step 2, but guard anyway.
+        // without the user having answered the license pages, but guard anyway.
         let declared = licenseDeclared ?? false
         let trimmedLicense = licenseNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let notes = additionalNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let professionTitle = selectedProfession?.toolbarTitle
+        let notesWithProfession: String = {
+            guard let professionTitle, !professionTitle.isEmpty else { return notes }
+            if notes.isEmpty { return "Profession: \(professionTitle)" }
+            return "Profession: \(professionTitle)\n\n\(notes)"
+        }()
 
         var body: [String: Any] = [
             "phoneNumber": PhoneNumberInputFormatter.normalized(
@@ -1164,8 +1517,12 @@ struct ProviderConsumerEnrollmentView: View {
             "whyBeBarber": whyBeBarber.trimmingCharacters(in: .whitespacesAndNewlines),
             "portfolioDescription": portfolioDescription.trimmingCharacters(in: .whitespacesAndNewlines),
             "socialMedia": socialMedia.trimmingCharacters(in: .whitespacesAndNewlines),
-            "additionalNotes": additionalNotes.trimmingCharacters(in: .whitespacesAndNewlines),
+            "additionalNotes": notesWithProfession,
         ]
+        if let selectedProfession {
+            body["profession"] = selectedProfession.rawValue
+            body["professionLabel"] = selectedProfession.toolbarTitle
+        }
         let campusTrimmed = selectedCampusId.trimmingCharacters(in: .whitespacesAndNewlines)
         if !campusTrimmed.isEmpty {
             body["campusId"] = campusTrimmed
@@ -1198,9 +1555,8 @@ struct ProviderConsumerEnrollmentView: View {
                 )
                 phase = .existingApplication
             } else if lower.contains("haslicense") || lower.contains("license") {
-                // Backend rejected the license declaration — jump the user back to Step 2 so they
-                // can correct the answer or license number rather than leaving them on Review.
-                withAnimation { wizardStep = 2 }
+                // Backend rejected the license declaration — jump back so they can correct it.
+                withAnimation { wizardPage = .licenseDeclared }
                 errorText = message
             } else {
                 errorText = message
@@ -1287,35 +1643,6 @@ enum ProviderBarberApplicationOptions {
                 tint: Color.lavaShellCreamSecondary
             )
         }
-    }
-}
-
-// MARK: - Input chrome
-
-/// Bordered, padded chrome around free-text inputs (single- or multi-line) so they read as
-/// proper, submittable text boxes against the unified card backdrop instead of looking like
-/// plain labels.
-private struct ParagraphFieldStyle: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .foregroundStyle(Color.lavaShellCream)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                Color.providerElevatedSurface,
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.providerElevatedSurfaceStroke, lineWidth: 1)
-            )
-    }
-}
-
-extension View {
-    fileprivate func paragraphFieldStyle() -> some View {
-        modifier(ParagraphFieldStyle())
     }
 }
 
@@ -1417,7 +1744,8 @@ enum PhoneNumberInputFormatter {
 
         switch limited.count {
         case 0: return ""
-        case 1 ... 3: return "(\(area)"
+        case 1 ... 2: return "(\(area)"
+        case 3: return "(\(area))"
         case 4 ... 6: return "(\(area)) \(mid)"
         default: return "(\(area)) \(mid)-\(end)"
         }

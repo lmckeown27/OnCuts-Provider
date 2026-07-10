@@ -788,7 +788,7 @@ struct AuthEntryView: View {
         email = normalized
 
         if showsReturningPasswordField || showsBecomeOperatorPrompt {
-            await signIn()
+            await signIn(routeToProviderEnrollment: showsBecomeOperatorPrompt)
             return
         }
 
@@ -837,13 +837,17 @@ struct AuthEntryView: View {
         }
     }
 
-    private func signIn() async {
+    private func signIn(routeToProviderEnrollment: Bool = false) async {
         dismissKeyboard()
         isBusy = true
         errorText = nil
         defer { isBusy = false }
         do {
-            try await session.signIn(email: email.trimmingCharacters(in: .whitespaces), password: password)
+            try await session.signIn(
+                email: email.trimmingCharacters(in: .whitespaces),
+                password: password,
+                routeToProviderEnrollment: routeToProviderEnrollment
+            )
         } catch {
             errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
@@ -862,6 +866,7 @@ struct AuthEntryView: View {
                     "Add an account password when you can (web or in-app) so you can sign in without Google if needed."
             }
         } catch {
+            if isOAuthUserCancellation(error) { return }
             GoogleSignInAppSupport.signOutSDK()
             errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
@@ -870,7 +875,7 @@ struct AuthEntryView: View {
     private func handleAppleSignIn(_ result: Result<ASAuthorization, Error>) async {
         switch result {
         case .failure(let error):
-            if let authErr = error as? ASAuthorizationError, authErr.code == .canceled { return }
+            if isOAuthUserCancellation(error) { return }
             errorText = error.localizedDescription
         case .success(let authorization):
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
@@ -912,6 +917,30 @@ struct AuthEntryView: View {
                 errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }
         }
+    }
+
+    /// User dismissed Apple / Google without completing — not an error to surface on the landing.
+    private func isOAuthUserCancellation(_ error: Error) -> Bool {
+        if let authErr = error as? ASAuthorizationError, authErr.code == .canceled {
+            return true
+        }
+        let ns = error as NSError
+        if ns.domain == ASAuthorizationError.errorDomain,
+           ns.code == ASAuthorizationError.canceled.rawValue {
+            return true
+        }
+        #if os(iOS) || os(visionOS) || os(macOS)
+        // Google Sign-In: `GIDSignInErrorCode.canceled` == -5, domain `com.google.GIDSignIn`.
+        if ns.domain == "com.google.GIDSignIn", ns.code == -5 {
+            return true
+        }
+        #endif
+        let message = ((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            .lowercased()
+        return message.contains("canceled the sign-in")
+            || message.contains("cancelled the sign-in")
+            || message.contains("the user canceled")
+            || message.contains("the user cancelled")
     }
 
     private func registerSendCode() async {

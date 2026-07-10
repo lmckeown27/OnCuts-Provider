@@ -24,16 +24,29 @@ final class ProviderSession {
         return joined.isEmpty ? "Barber" : joined
     }
 
-    var hasProviderProfile: Bool { barberProfile != nil }
+    var hasProviderProfile: Bool {
+        guard let barberProfile else { return false }
+        // Demoted / hidden operators keep a `barbers` row with `isActive = false`. They must not
+        // unlock the operator shell — route them through the application funnel instead.
+        return barberProfile.isActive != false
+    }
 
-    /// Signed-in account without a `barbers` row — show the provider application funnel
+    /// Signed-in account without an active `barbers` row — show the provider application funnel
     /// (mirrors web redirecting non-barbers away from `BarberPage` toward application).
+    /// Also forced after the landing **Become an Operator?** path for consumer accounts.
     var needsConsumerProviderEnrollment: Bool {
-        guard isSignedIn, !hasProviderProfile else { return false }
+        guard isSignedIn else { return false }
         if authUser?.hasAdminPrivileges == true { return false }
+        if hasProviderProfile { return false }
+        if pendingProviderEnrollment { return true }
+        if authUser?.isConsumerAccount == true { return true }
         if authUser?.isBarberRole == true { return false }
         return true
     }
+
+    /// Set when the user signs in via **Become an Operator?** so RootView opens enrollment
+    /// instead of the operator shell, even before role/profile edge cases settle.
+    private(set) var pendingProviderEnrollment = false
 
     func bootstrap() async {
         isBootstrapping = true
@@ -42,6 +55,7 @@ final class ProviderSession {
             signedIn = false
             authUser = nil
             barberProfile = nil
+            pendingProviderEnrollment = false
         } else {
             do {
                 let me = try await ProviderAuthService.fetchAuthMe()
@@ -55,6 +69,7 @@ final class ProviderSession {
                 signedIn = false
                 authUser = nil
                 barberProfile = nil
+                pendingProviderEnrollment = false
             }
         }
         withAnimation(ProviderRootTransition.animation) {
@@ -63,8 +78,9 @@ final class ProviderSession {
         }
     }
 
-    func signIn(email: String, password: String) async throws {
+    func signIn(email: String, password: String, routeToProviderEnrollment: Bool = false) async throws {
         lastError = nil
+        pendingProviderEnrollment = routeToProviderEnrollment
         let session = try await ProviderAuthService.login(email: email, password: password)
         ProviderAuthService.persistSession(session)
         try await refreshProfileAfterSignIn()
@@ -95,18 +111,30 @@ final class ProviderSession {
 
     /// `GET /barbers/me`, then public `GET /barbers/user/:id` to auto-provision a row when the DB role allows.
     private func syncBarberProfileFromServer() async {
-        barberProfile = try? await ProviderAuthService.fetchBarberMe()
+        barberProfile = Self.activeProviderProfile(try? await ProviderAuthService.fetchBarberMe())
         if barberProfile == nil, let id = authUser?.id {
             await ProviderBarberBootstrap.trySyncBarberRow(userId: id)
-            barberProfile = try? await ProviderAuthService.fetchBarberMe()
+            barberProfile = Self.activeProviderProfile(try? await ProviderAuthService.fetchBarberMe())
         }
+        if hasProviderProfile {
+            pendingProviderEnrollment = false
+        }
+    }
+
+    private static func activeProviderProfile(_ profile: BarberMeProfile?) -> BarberMeProfile? {
+        guard let profile else { return nil }
+        guard profile.isActive != false else { return nil }
+        return profile
     }
 
     /// Pull-to-refresh from enrollment after approval.
     func retryProviderProfileSync() async {
         guard let id = authUser?.id else { return }
         await ProviderBarberBootstrap.trySyncBarberRow(userId: id)
-        barberProfile = try? await ProviderAuthService.fetchBarberMe()
+        barberProfile = Self.activeProviderProfile(try? await ProviderAuthService.fetchBarberMe())
+        if hasProviderProfile {
+            pendingProviderEnrollment = false
+        }
     }
 
     func refreshBarberProfileOnly() async {
@@ -134,6 +162,7 @@ final class ProviderSession {
             isSignedIn = false
             authUser = nil
             barberProfile = nil
+            pendingProviderEnrollment = false
             authPresentationEpoch &+= 1
         }
     }
@@ -156,6 +185,7 @@ final class ProviderSession {
             isSignedIn = false
             authUser = nil
             barberProfile = nil
+            pendingProviderEnrollment = false
             authPresentationEpoch &+= 1
         }
     }
