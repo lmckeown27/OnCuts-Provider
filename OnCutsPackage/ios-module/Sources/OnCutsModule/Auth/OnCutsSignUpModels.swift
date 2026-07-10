@@ -133,6 +133,17 @@ public struct OnCutsRegisterSentResult: Sendable {
     }
 }
 
+/// Outcome of `GET /auth/check-email` — whether the email exists and whether it is an Operator account.
+public struct OnCutsEmailAccountStatus: Sendable, Equatable {
+    public let exists: Bool
+    public let isOperator: Bool
+
+    public init(exists: Bool, isOperator: Bool) {
+        self.exists = exists
+        self.isOperator = isOperator
+    }
+}
+
 // MARK: - Phone-first signup (SMS before password)
 
 /// Outcome of `POST /auth/signup/send-phone-code`.

@@ -3,6 +3,10 @@ import SwiftUI
 extension Color {
     /// Brand olive for fills, borders, and tints (`#5A7268`). For **text**, use ``Color/lavaShellCream`` or ``View/foregroundStyleProviderOliveGreen(opacity:)``.
     static let providerOlive = Color(red: 90 / 255, green: 114 / 255, blue: 104 / 255)
+    /// Premium gold accent for auth CTAs and highlights (`#D4AF37`).
+    static let providerBrandGold = Color(red: 212 / 255, green: 175 / 255, blue: 55 / 255)
+    /// Legible label on ``providerBrandGold`` fills.
+    static let providerOnBrandGold = Color(red: 26 / 255, green: 28 / 255, blue: 38 / 255)
     /// Lighter sage green for secondary booking actions (e.g. Message) — same family as ``providerOlive``, lower contrast fill.
     static let providerOliveLight = Color(red: 168 / 255, green: 215 / 255, blue: 188 / 255)
 

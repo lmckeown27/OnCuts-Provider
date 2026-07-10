@@ -1,11 +1,14 @@
 import OnCutsModule
 import Foundation
 import Observation
+import SwiftUI
 
 @Observable @MainActor
 final class ProviderSession {
     private(set) var isBootstrapping = true
     private(set) var isSignedIn = false
+    /// Bumped on sign-out so `AuthEntryView` remounts with a clean navigation stack.
+    private(set) var authPresentationEpoch = 0
     private(set) var authUser: AuthMeUser?
     private(set) var barberProfile: BarberMeProfile?
     private(set) var lastError: String?
@@ -34,27 +37,29 @@ final class ProviderSession {
 
     func bootstrap() async {
         isBootstrapping = true
-        defer { isBootstrapping = false }
-        guard OnCutsAuthTokenStore.loadAccessToken() != nil else {
-            isSignedIn = false
+        let signedIn: Bool
+        if OnCutsAuthTokenStore.loadAccessToken() == nil {
+            signedIn = false
             authUser = nil
             barberProfile = nil
-            return
+        } else {
+            do {
+                let me = try await ProviderAuthService.fetchAuthMe()
+                authUser = me
+                await ProviderAuthService.syncAccessTokenForElevatedPrivileges(me)
+                await syncBarberProfileFromServer()
+                signedIn = true
+                await ProviderPushDeviceRegistration.refreshAfterSignIn()
+            } catch {
+                ProviderAuthService.clearSession()
+                signedIn = false
+                authUser = nil
+                barberProfile = nil
+            }
         }
-        do {
-            let me = try await ProviderAuthService.fetchAuthMe()
-            authUser = me
-            await ProviderAuthService.syncAccessTokenForElevatedPrivileges(me)
-            await syncBarberProfileFromServer()
-            isSignedIn = true
-            // Cold launch with a stored JWT — refresh the device-registration record so the
-            // backend can route APNs at this account on day-one of every session.
-            await ProviderPushDeviceRegistration.refreshAfterSignIn()
-        } catch {
-            ProviderAuthService.clearSession()
-            isSignedIn = false
-            authUser = nil
-            barberProfile = nil
+        withAnimation(ProviderRootTransition.animation) {
+            isSignedIn = signedIn
+            isBootstrapping = false
         }
     }
 
@@ -63,7 +68,9 @@ final class ProviderSession {
         let session = try await ProviderAuthService.login(email: email, password: password)
         ProviderAuthService.persistSession(session)
         try await refreshProfileAfterSignIn()
-        isSignedIn = true
+        withAnimation(ProviderRootTransition.animation) {
+            isSignedIn = true
+        }
         await ProviderPushDeviceRegistration.refreshAfterSignIn()
     }
 
@@ -72,7 +79,9 @@ final class ProviderSession {
         lastError = nil
         ProviderAuthService.persistSession(verified)
         try await refreshProfileAfterSignIn()
-        isSignedIn = true
+        withAnimation(ProviderRootTransition.animation) {
+            isSignedIn = true
+        }
         await ProviderPushDeviceRegistration.refreshAfterSignIn()
     }
 
@@ -121,9 +130,12 @@ final class ProviderSession {
         #if os(iOS)
         GoogleSignInAppSupport.signOutSDK()
         #endif
-        isSignedIn = false
-        authUser = nil
-        barberProfile = nil
+        withAnimation(ProviderRootTransition.animation) {
+            isSignedIn = false
+            authUser = nil
+            barberProfile = nil
+            authPresentationEpoch &+= 1
+        }
     }
 
     func signOut() async {
@@ -137,9 +149,15 @@ final class ProviderSession {
         // have a booking with a colliding UUID — astronomically unlikely but trivial to
         // foreclose).
         ProviderAwaitingPaymentTracker.shared.clearAll()
-        isSignedIn = false
-        authUser = nil
-        barberProfile = nil
+        #if os(iOS)
+        GoogleSignInAppSupport.signOutSDK()
+        #endif
+        withAnimation(ProviderRootTransition.animation) {
+            isSignedIn = false
+            authUser = nil
+            barberProfile = nil
+            authPresentationEpoch &+= 1
+        }
     }
 
     func clearLastError() { lastError = nil }

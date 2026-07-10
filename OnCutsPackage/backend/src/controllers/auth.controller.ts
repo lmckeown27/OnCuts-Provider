@@ -814,6 +814,7 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
 
 /**
  * GET /api/v1/auth/check-email?email=… — whether a user row exists (sign-in handshake).
+ * Provider app: `isOperator` is true when the account has an active barber profile or BARBER/ADMIN role.
  */
 export const checkEmailExists = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -823,12 +824,30 @@ export const checkEmailExists = async (req: Request, res: Response, next: NextFu
     }
     const normalized = raw.toLowerCase();
     const result = await pool.query(
-      'SELECT 1 FROM users WHERE LOWER(TRIM(email)) = $1 LIMIT 1',
+      `SELECT u.role,
+              EXISTS(
+                SELECT 1 FROM barbers b
+                WHERE b."userId" = u.id AND b."isActive" = true
+              ) AS has_active_barber
+       FROM users u
+       WHERE LOWER(TRIM(u.email)) = $1
+       LIMIT 1`,
       [normalized]
     );
+    if (result.rows.length === 0) {
+      res.json({
+        success: true,
+        data: { exists: false, isOperator: false },
+      });
+      return;
+    }
+    const row = result.rows[0];
+    const role = String(row.role || '').toUpperCase();
+    const isOperator =
+      row.has_active_barber === true || role === 'BARBER' || role === 'ADMIN';
     res.json({
       success: true,
-      data: { exists: result.rows.length > 0 },
+      data: { exists: true, isOperator },
     });
   } catch (error) {
     next(error);

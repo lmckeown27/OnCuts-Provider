@@ -2,14 +2,20 @@ import AuthenticationServices
 import OnCutsModule
 import SwiftUI
 
-/// Landing: **Sign in manually** (pushed email/password), Apple & Google as side-by-side pills, **Create account** for barber registration.
+/// Integrated Workflow auth — email-first landing, returning sign-in, and barber registration.
 struct AuthEntryView: View {
     @Environment(ProviderSession.self) private var session
-    @Environment(\.colorScheme) private var colorScheme
     @State private var authPath = NavigationPath()
 
     @State private var email = ""
+    @State private var emailFieldInvalid = false
+    @State private var showsReturningPasswordField = false
+    @State private var showsCreateAccountPrompt = false
+    @State private var showsBecomeOperatorPrompt = false
+    @State private var landingResolvedEmail: String?
+    @FocusState private var landingFocusedField: LandingField?
     @State private var password = ""
+    @State private var isLandingPasswordVisible = false
     @State private var confirmPassword = ""
     @State private var firstName = ""
     @State private var lastName = ""
@@ -55,8 +61,17 @@ struct AuthEntryView: View {
     @State private var oAuthPasswordNotice: String?
 
     private enum AuthDestination: Hashable {
-        case manualSignIn
         case createAccount
+    }
+
+    private enum LandingField: Hashable {
+        case email
+        case password
+    }
+
+    private enum AuthLandingInputKind {
+        case email
+        case password
     }
 
     private enum CreateStep {
@@ -73,38 +88,52 @@ struct AuthEntryView: View {
         case verificationCode
     }
 
-    /// Keeps sign-in controls compact and centered on all screen sizes.
-    private let authControlMaxWidth: CGFloat = 300
+    /// Integrated Workflow content width — 24pt side padding applied at the stack level.
+    private let authContentMaxWidth: CGFloat = 360
+    private let authHorizontalPadding: CGFloat = 24
+    private let authIconSize: CGFloat = 120
+
+    private var showsLandingEmailResolutionPrompt: Bool {
+        showsCreateAccountPrompt || showsBecomeOperatorPrompt
+    }
+
+    private var showsLandingPasswordField: Bool {
+        showsReturningPasswordField || showsBecomeOperatorPrompt
+    }
+
+    private var landingResolutionMessage: String? {
+        if showsCreateAccountPrompt {
+            return "No account found for this email."
+        }
+        if showsBecomeOperatorPrompt {
+            return "This account is not an Operator"
+        }
+        return nil
+    }
+
+    private var landingPrimaryActionDisabled: Bool {
+        if isBusy { return true }
+        if showsLandingPasswordField, password.isEmpty { return true }
+        return false
+    }
 
     var body: some View {
         NavigationStack(path: $authPath) {
-            authLandingScroll
+            integratedAuthLanding
                 .navigationTitle("")
                 .navigationBarTitleDisplayMode(.inline)
-                .foregroundStyle(Color.lavaShellCream)
-                .tint(.providerOlive)
-                .providerLavaScreenChrome()
+                .providerAuthIntegratedScreenChrome()
                 .navigationDestination(for: AuthDestination.self) { dest in
                     switch dest {
-                    case .manualSignIn:
-                        manualSignInPage
                     case .createAccount:
                         createAccountPage
                     }
                 }
                 .onChange(of: authPath.count) { _, newCount in
                     if newCount == 0 {
-                        createStep = .collectDetails
-                        verificationCode = ""
-                        firstName = ""
-                        lastName = ""
-                        confirmPassword = ""
-                        acceptedTerms = false
-                        presentedLegalDocument = nil
-                        createAccountFocusedField = nil
-                        selectedCampusId = ""
-                        campusSearchText = ""
-                        showCampusPicker = false
+                        resetCreateAccountFlow()
+                        emailFieldInvalid = false
+                        errorText = nil
                     }
                 }
                 .alert("Account security", isPresented: Binding(
@@ -116,119 +145,265 @@ struct AuthEntryView: View {
                     Text(oAuthPasswordNotice ?? "")
                 }
         }
+        .contentShape(Rectangle())
+        .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
     }
 
-    // MARK: - Landing
+    // MARK: - Integrated landing
 
-    private var authLandingScroll: some View {
+    private var integratedAuthLanding: some View {
         GeometryReader { geo in
             ScrollView {
-                VStack(alignment: .center, spacing: 20) {
+                VStack(spacing: 24) {
                     Spacer(minLength: 0)
 
-                    Button {
-                        errorText = nil
-                        password = ""
-                        authPath.append(AuthDestination.manualSignIn)
-                    } label: {
-                        VStack(alignment: .center, spacing: 6) {
-                            Text("Sign in manually")
-                                .font(.provider(.headline))
-                                .multilineTextAlignment(.center)
-                            Text("Use your email and password")
-                                .font(.provider(.caption))
-                                .foregroundStyle(Color.lavaShellCreamSecondary)
-                                .multilineTextAlignment(.center)
+                    VStack(spacing: 12) {
+                        Image("OnCutsProviderAppIcon")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: authIconSize, height: authIconSize)
+                            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                            .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
+                            .accessibilityHidden(true)
+
+                        Text("OnCuts Operator")
+                            .font(.provider(.largeTitle, weight: .bold))
+                            .foregroundStyle(Color.providerBrandGold)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        authLandingTextField(
+                            placeholder: "Email",
+                            text: $email,
+                            isInvalid: emailFieldInvalid,
+                            kind: .email,
+                            reservedTrailingSpace: showsLandingEmailResolutionPrompt ? 28 : 0
+                        )
+                        .focused($landingFocusedField, equals: LandingField.email)
+                        .overlay(alignment: .trailing) {
+                            if showsLandingEmailResolutionPrompt {
+                                Button {
+                                    clearLandingEmail()
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                                        .frame(width: 24, height: 24)
+                                        .background(Color.white.opacity(0.14), in: Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.trailing, 12)
+                                .accessibilityLabel("Clear email")
+                                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                            }
                         }
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 16)
-                        .frame(maxWidth: .infinity)
-                        .background { authSecondaryButtonBackground(cornerRadius: 16) }
-                    }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: authControlMaxWidth)
+                        .onChange(of: email) { _, newValue in
+                            let normalized = ProviderAuthEmailValidation.normalized(newValue)
+                            if let resolved = landingResolvedEmail, normalized != resolved {
+                                resetLandingEmailResolution()
+                            }
+                            if emailFieldInvalid, ProviderAuthEmailValidation.isValid(newValue) {
+                                emailFieldInvalid = false
+                            }
+                        }
 
-                    oauthPillRow
-                        .frame(maxWidth: authControlMaxWidth)
+                        if showsLandingPasswordField {
+                            authLandingTextField(
+                                placeholder: "Password",
+                                text: $password,
+                                isInvalid: false,
+                                kind: .password,
+                                isPasswordVisible: $isLandingPasswordVisible
+                            )
+                            .focused($landingFocusedField, equals: LandingField.password)
+                            .transition(ProviderRootTransition.passwordFieldPresentation)
+                        }
+
+                        if emailFieldInvalid {
+                            Text("Enter a valid email address.")
+                                .font(.provider(.caption))
+                                .foregroundStyle(.red)
+                        }
+                    }
+                    .animation(ProviderRootTransition.passwordFieldReveal, value: showsLandingPasswordField)
+                    .animation(ProviderRootTransition.passwordFieldReveal, value: showsLandingEmailResolutionPrompt)
+
+                    if let landingResolutionMessage {
+                        Text(landingResolutionMessage)
+                            .font(.provider(.caption))
+                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .transition(ProviderRootTransition.passwordFieldPresentation)
+                            .animation(ProviderRootTransition.passwordFieldReveal, value: showsLandingEmailResolutionPrompt)
+                    }
 
                     Button {
-                        errorText = nil
-                        authPath.append(AuthDestination.createAccount)
+                        Task { await continueWithEmail() }
                     } label: {
-                        Text("Create account")
-                            .font(.provider(.headline))
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background { authSecondaryButtonBackground(cornerRadius: 16) }
+                        Group {
+                            if isBusy {
+                                ProgressView()
+                                    .tint(Color.providerOnBrandGold)
+                            } else {
+                                Text(landingPrimaryButtonTitle)
+                                    .font(.provider(.headline, weight: .semibold))
+                                    .contentTransition(.interpolate)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .foregroundStyle(Color.providerOnBrandGold)
+                        .background(Color.providerBrandGold, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
                     .buttonStyle(.plain)
-                    .frame(maxWidth: authControlMaxWidth)
+                    .disabled(landingPrimaryActionDisabled)
+                    .animation(ProviderRootTransition.passwordFieldReveal, value: showsLandingPasswordField)
+                    .animation(ProviderRootTransition.passwordFieldReveal, value: showsLandingEmailResolutionPrompt)
 
-                    if authPath.isEmpty, let errorText {
+                    if let errorText, authPath.isEmpty {
                         Text(errorText)
                             .font(.provider(.footnote))
                             .foregroundStyle(.red)
                             .multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity, alignment: .center)
                     }
+
+                    authSocialDivider
+
+                    integratedOAuthPillRow
 
                     Spacer(minLength: 0)
                 }
+                .frame(maxWidth: authContentMaxWidth)
                 .frame(maxWidth: .infinity, minHeight: geo.size.height)
-                .padding(.horizontal, 20)
+                .padding(.horizontal, authHorizontalPadding)
+                .contentShape(Rectangle())
             }
             .scrollContentBackground(.hidden)
+            .scrollDismissesKeyboard(.interactively)
         }
     }
 
     @ViewBuilder
-    private var oauthPillRow: some View {
+    private func authLandingTextField(
+        placeholder: String,
+        text: Binding<String>,
+        isInvalid: Bool,
+        kind: AuthLandingInputKind,
+        reservedTrailingSpace: CGFloat = 0,
+        isPasswordVisible: Binding<Bool>? = nil
+    ) -> some View {
+        let showsPasswordToggle = kind == .password && isPasswordVisible != nil
+        let trailingInset = reservedTrailingSpace + (showsPasswordToggle ? 36 : 0)
+
+        Group {
+            switch kind {
+            case .email:
+                TextField(placeholder, text: text)
+                    .textContentType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                    .keyboardType(.emailAddress)
+                    #endif
+            case .password:
+                if isPasswordVisible?.wrappedValue == true {
+                    TextField(placeholder, text: text)
+                        .textContentType(.password)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } else {
+                    SecureField(placeholder, text: text)
+                        .textContentType(.password)
+                }
+            }
+        }
+        .font(.provider(.body))
+        .padding(.leading, 16)
+        .padding(.trailing, 16 + trailingInset)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.12))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(
+                    isInvalid ? Color.red : Color.white.opacity(0.22),
+                    lineWidth: isInvalid ? 1.5 : 0.8
+                )
+        )
+        .overlay(alignment: .trailing) {
+            if showsPasswordToggle, let isPasswordVisible {
+                Button {
+                    isPasswordVisible.wrappedValue.toggle()
+                } label: {
+                    Image(systemName: isPasswordVisible.wrappedValue ? "eye.slash" : "eye")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 12)
+                .accessibilityLabel(isPasswordVisible.wrappedValue ? "Hide password" : "Show password")
+            }
+        }
+        .foregroundStyle(Color.lavaShellCream)
+    }
+
+    private var authSocialDivider: some View {
+        HStack(spacing: 12) {
+            Rectangle()
+                .fill(Color.lavaShellCream.opacity(0.28))
+                .frame(height: 1)
+            Text("Or")
+                .font(.provider(.caption))
+                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+            Rectangle()
+                .fill(Color.lavaShellCream.opacity(0.28))
+                .frame(height: 1)
+        }
+    }
+
+    @ViewBuilder
+    private var integratedOAuthPillRow: some View {
         #if os(iOS) || os(visionOS) || os(macOS)
         if GoogleSignInAppSupport.isConfigured {
             HStack(spacing: 12) {
-                appleSignInPill
-                    .frame(maxWidth: .infinity)
-                googleSignInPill
-                    .frame(maxWidth: .infinity)
+                integratedApplePill
+                integratedGooglePill
             }
         } else {
-            appleSignInPill
+            integratedApplePill
         }
         #else
-        appleSignInPill
+        integratedApplePill
         #endif
     }
 
-    private var appleSignInPill: some View {
+    private var integratedApplePill: some View {
         Button {
             startAppleIDSignIn()
         } label: {
-            HStack(spacing: 0) {
-                Spacer(minLength: 0)
-                HStack(spacing: 4) {
-                    Text("Continue with")
-                        .font(.provider(size: 11, weight: .semibold))
-                    Image(systemName: "apple.logo")
-                        .font(.provider(size: 15, weight: .semibold))
-                    if isBusy {
-                        ProgressView()
-                            .tint(.white)
-                            .scaleEffect(0.85)
-                    }
+            HStack(spacing: 6) {
+                Image(systemName: "apple.logo")
+                    .font(.provider(size: 16, weight: .semibold))
+                Text("Apple")
+                    .font(.provider(.subheadline, weight: .semibold))
+                if isBusy {
+                    ProgressView()
+                        .tint(.white)
+                        .scaleEffect(0.85)
                 }
-                .lineLimit(1)
-                .minimumScaleFactor(0.68)
-                Spacer(minLength: 0)
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .padding(.horizontal, 6)
-            .frame(minHeight: 50)
+            .padding(.vertical, 14)
             .background(Color.black, in: Capsule())
             .overlay(
                 Capsule()
-                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)
@@ -237,77 +412,29 @@ struct AuthEntryView: View {
     }
 
     #if os(iOS) || os(visionOS) || os(macOS)
-    @ViewBuilder
-    private var googleSignInPill: some View {
+    private var integratedGooglePill: some View {
         Button {
             Task { await signInWithGoogle() }
         } label: {
-            HStack(spacing: 0) {
-                Spacer(minLength: 0)
-                HStack(spacing: 5) {
-                    Text("Continue with")
-                        .font(.provider(size: 11, weight: .semibold))
-                        .foregroundStyle(Color(white: 0.22))
-                    OnCutsGoogleGMark(size: 20)
-                    if isBusy {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    }
+            HStack(spacing: 6) {
+                OnCutsGoogleGMark(size: 18)
+                Text("Google")
+                    .font(.provider(.subheadline, weight: .semibold))
+                    .foregroundStyle(Color(white: 0.18))
+                if isBusy {
+                    ProgressView()
+                        .scaleEffect(0.8)
                 }
-                .lineLimit(1)
-                .minimumScaleFactor(0.68)
-                Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity)
-            .padding(.horizontal, 6)
-            .frame(minHeight: 50)
-            .background(Color.white, in: Capsule())
-            .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+            .padding(.vertical, 14)
+            .background(Color.white.opacity(0.94), in: Capsule())
         }
         .buttonStyle(.plain)
         .disabled(isBusy)
         .accessibilityLabel("Continue with Google")
     }
     #endif
-
-    // MARK: - Manual sign-in (pushed)
-
-    private var manualSignInPage: some View {
-        Form {
-            Section {
-                TextField("Email", text: $email)
-                    .textContentType(.username)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.emailAddress)
-                SecureField("Password", text: $password)
-                    .textContentType(.password)
-            }
-            Section {
-                Button {
-                    Task { await signIn() }
-                } label: {
-                    if isBusy { ProgressView() }
-                    else { Text("Sign in") }
-                }
-                .disabled(isBusy || email.isEmpty || password.isEmpty)
-            }
-            if let errorText {
-                Section {
-                    Text(errorText)
-                        .foregroundStyle(.red)
-                        .font(.provider(.footnote))
-                }
-            }
-        }
-        .providerLavaIntegratedFormSurface()
-        .foregroundStyle(Color.lavaShellCream)
-        .tint(.providerOlive)
-        .navigationTitle("Email sign-in")
-        .navigationBarTitleDisplayMode(.inline)
-        .foregroundStyle(Color.lavaShellCream)
-        .tint(.providerOlive)
-        .providerLavaScreenChrome()
-    }
 
     // MARK: - Create account (pushed)
 
@@ -334,8 +461,8 @@ struct AuthEntryView: View {
         .navigationTitle("Create account")
         .navigationBarTitleDisplayMode(.inline)
         .foregroundStyle(Color.lavaShellCream)
-        .tint(.providerOlive)
-        .providerLavaScreenChrome()
+        .tint(.providerBrandGold)
+        .providerAuthIntegratedScreenChrome()
         .task(id: createStep) {
             if createStep == .collectDetails {
                 await loadCreateAccountCampusesIfNeeded()
@@ -596,7 +723,122 @@ struct AuthEntryView: View {
         }
     }
 
+    private func clearLandingEmail() {
+        withAnimation(ProviderRootTransition.passwordFieldReveal) {
+            email = ""
+            emailFieldInvalid = false
+            showsReturningPasswordField = false
+            showsCreateAccountPrompt = false
+            showsBecomeOperatorPrompt = false
+            landingResolvedEmail = nil
+            password = ""
+            isLandingPasswordVisible = false
+            landingFocusedField = LandingField.email
+        }
+    }
+
+    private var landingPrimaryButtonTitle: String {
+        if showsReturningPasswordField { return "Sign in" }
+        if showsCreateAccountPrompt { return "Create Account?" }
+        if showsBecomeOperatorPrompt { return "Become an Operator?" }
+        return "Continue"
+    }
+
+    private func resetLandingEmailResolution(animated: Bool = true) {
+        let updates = {
+            showsReturningPasswordField = false
+            showsCreateAccountPrompt = false
+            showsBecomeOperatorPrompt = false
+            landingResolvedEmail = nil
+            password = ""
+            isLandingPasswordVisible = false
+            landingFocusedField = nil
+        }
+        if animated {
+            withAnimation(ProviderRootTransition.passwordFieldReveal) {
+                updates()
+            }
+        } else {
+            updates()
+        }
+    }
+
+    private func resetCreateAccountFlow() {
+        createStep = .collectDetails
+        verificationCode = ""
+        firstName = ""
+        lastName = ""
+        confirmPassword = ""
+        acceptedTerms = false
+        presentedLegalDocument = nil
+        createAccountFocusedField = nil
+        selectedCampusId = ""
+        campusSearchText = ""
+        showCampusPicker = false
+    }
+
+    private func continueWithEmail() async {
+        errorText = nil
+        guard ProviderAuthEmailValidation.isValid(email) else {
+            emailFieldInvalid = true
+            return
+        }
+        emailFieldInvalid = false
+        let normalized = ProviderAuthEmailValidation.normalized(email)
+        email = normalized
+
+        if showsReturningPasswordField || showsBecomeOperatorPrompt {
+            await signIn()
+            return
+        }
+
+        if showsCreateAccountPrompt {
+            dismissKeyboard()
+            authPath.append(AuthDestination.createAccount)
+            return
+        }
+
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let status = try await OnCutsAuthService.checkAccountStatus(
+                email: normalized,
+                apiV1BaseTrimmed: AppConfiguration.apiV1BaseTrimmed
+            )
+            errorText = nil
+            if status.exists {
+                password = ""
+                isLandingPasswordVisible = false
+                withAnimation(ProviderRootTransition.passwordFieldReveal) {
+                    landingResolvedEmail = normalized
+                    showsCreateAccountPrompt = false
+                    showsBecomeOperatorPrompt = false
+                    if status.isOperator {
+                        showsReturningPasswordField = true
+                    } else {
+                        showsReturningPasswordField = false
+                        showsBecomeOperatorPrompt = true
+                    }
+                }
+                landingFocusedField = LandingField.password
+            } else {
+                withAnimation(ProviderRootTransition.passwordFieldReveal) {
+                    showsReturningPasswordField = false
+                    showsBecomeOperatorPrompt = false
+                    password = ""
+                    isLandingPasswordVisible = false
+                    landingFocusedField = nil
+                    landingResolvedEmail = normalized
+                    showsCreateAccountPrompt = true
+                }
+            }
+        } catch {
+            errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
     private func signIn() async {
+        dismissKeyboard()
         isBusy = true
         errorText = nil
         defer { isBusy = false }
@@ -732,6 +974,7 @@ struct AuthEntryView: View {
     }
 
     private func dismissKeyboard() {
+        landingFocusedField = nil
         createAccountFocusedField = nil
         #if os(iOS)
         UIApplication.shared.sendAction(
@@ -741,20 +984,5 @@ struct AuthEntryView: View {
             for: nil
         )
         #endif
-    }
-
-    @ViewBuilder
-    private func authSecondaryButtonBackground(cornerRadius: CGFloat) -> some View {
-        if colorScheme == .dark {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(.ultraThinMaterial)
-        } else {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(Color.providerScheduleCardFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.providerScheduleCardStroke, lineWidth: 0.6)
-                )
-        }
     }
 }

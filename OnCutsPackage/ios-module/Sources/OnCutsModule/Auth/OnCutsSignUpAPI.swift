@@ -170,6 +170,14 @@ public enum OnCutsSignUpAPI {
 
     /// `GET /auth/check-email?email=` — returns whether a user exists.
     public static func checkEmailExists(apiV1BaseTrimmed: String, email: String) async throws -> Bool {
+        try await checkEmailAccountStatus(apiV1BaseTrimmed: apiV1BaseTrimmed, email: email).exists
+    }
+
+    /// `GET /auth/check-email?email=` — whether the email exists and whether it belongs to an Operator.
+    public static func checkEmailAccountStatus(
+        apiV1BaseTrimmed: String,
+        email: String
+    ) async throws -> OnCutsEmailAccountStatus {
         let base = apiV1BaseTrimmed.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         var components = URLComponents(string: base + "/auth/check-email")
         components?.queryItems = [
@@ -189,7 +197,8 @@ public enum OnCutsSignUpAPI {
         else {
             throw OnCutsSignUpAPIError.decodingFailed
         }
-        return exists
+        let isOperator = envelope.data?.isOperator ?? exists
+        return OnCutsEmailAccountStatus(exists: exists, isOperator: isOperator)
     }
 
     /// `POST /auth/signup/send-phone-code` — SMS OTP without password (phone-first flow).
@@ -396,6 +405,7 @@ public enum OnCutsSignUpAPI {
         let data: CheckData?
         struct CheckData: Decodable {
             let exists: Bool?
+            let isOperator: Bool?
         }
     }
 

@@ -119,7 +119,18 @@ public enum OnCutsAuthService {
 
     /// Whether a user already exists (`GET /auth/check-email?email=`).
     public static func checkAccount(email: String, apiV1BaseTrimmed: String) async throws -> Bool {
-        try await OnCutsSignUpAPI.checkEmailExists(apiV1BaseTrimmed: apiV1BaseTrimmed, email: email)
+        try await checkAccountStatus(email: email, apiV1BaseTrimmed: apiV1BaseTrimmed).exists
+    }
+
+    /// Whether a user exists and whether they are an Operator (`GET /auth/check-email?email=`).
+    public static func checkAccountStatus(
+        email: String,
+        apiV1BaseTrimmed: String
+    ) async throws -> OnCutsEmailAccountStatus {
+        try await OnCutsSignUpAPI.checkEmailAccountStatus(
+            apiV1BaseTrimmed: apiV1BaseTrimmed,
+            email: email
+        )
     }
 
     /// Password sign-in (`POST /auth/login`).
