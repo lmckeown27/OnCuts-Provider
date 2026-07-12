@@ -1,8 +1,13 @@
 import SwiftUI
 
+#if os(iOS)
+import UIKit
+#endif
+
 /// Payments Onboarding Guide — web `StripeHubModal` parity.
-/// Education + static Express field help; Connect “done” comes only from live Stripe flags.
+/// Education + a left Checklist drawer (chevron); Connect “done” comes only from live Stripe flags.
 struct ProviderPaymentsOnboardingGuideView: View {
+    @Environment(ProviderSession.self) private var session
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
@@ -20,8 +25,13 @@ struct ProviderPaymentsOnboardingGuideView: View {
     @State private var errorAlert: String?
     @State private var expandedChecklistID: String?
     @State private var showConnectedToast = false
+    @State private var isChecklistOpen = false
 
     private let contentMaxWidth: CGFloat = 400
+    private let checklistDrawerWidth: CGFloat = 300
+    /// Stripe-brand purple for the primary Connect CTA.
+    private static let stripePurple = Color(red: 99 / 255, green: 91 / 255, blue: 255 / 255)
+    private static let stripeAboutURL = URL(string: "https://en.wikipedia.org/wiki/Stripe,_Inc.")!
 
     private var status: BarberConnectStatusDTO? { gate.status }
     private var isConnected: Bool { BarberStripeConnectStatus.isFullyConnected(status) }
@@ -30,12 +40,11 @@ struct ProviderPaymentsOnboardingGuideView: View {
     var body: some View {
         Group {
             if embedded {
-                guideScrollContent
+                embeddedChrome
                     .foregroundStyle(Color.lavaShellCream)
             } else {
                 NavigationStack {
-                    guideScrollContent
-                        .navigationTitle("Payments Onboarding Guide")
+                    guideCanvas
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar { guideToolbar }
                         .foregroundStyle(Color.lavaShellCream)
@@ -62,228 +71,311 @@ struct ProviderPaymentsOnboardingGuideView: View {
         }
     }
 
+    private var embeddedChrome: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                checklistToggleButton
+                Spacer(minLength: 0)
+                signOutButton
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+
+            guideCanvas
+        }
+    }
+
     @ToolbarContentBuilder
     private var guideToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            checklistToggleButton
+                .fixedSize(horizontal: true, vertical: false)
+        }
         if !blocking {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Close") { dismiss() }
                     .foregroundStyle(Color.lavaShellCream)
             }
         }
-        ToolbarItem(placement: .topBarLeading) {
-            if gate.isLoading {
-                ProgressView()
-                    .tint(Color.providerBrandGold)
-            } else {
-                Button {
-                    Task { await refreshFromStripe() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .disabled(connectBusy)
-                .accessibilityLabel("Refresh Stripe status")
+        ToolbarItem(placement: .topBarTrailing) {
+            signOutButton
+        }
+    }
+
+    private var signOutButton: some View {
+        Button("Sign Out") {
+            Task { await session.signOut() }
+        }
+        .font(.provider(.subheadline, weight: .semibold))
+        .foregroundStyle(Color.lavaShellCream)
+        .accessibilityLabel("Sign out")
+    }
+
+    private var checklistToggleButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                isChecklistOpen.toggle()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: isChecklistOpen ? "chevron.left" : "chevron.right")
+                    .font(.provider(.body, weight: .bold))
+                Text("Checklist")
+                    .font(.provider(.body, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(Color.lavaShellCream)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .frame(minWidth: 120, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isChecklistOpen ? "Close checklist" : "Open checklist")
+    }
+
+    private var guideCanvas: some View {
+        ZStack(alignment: .leading) {
+            mainScroll
+                .allowsHitTesting(!isChecklistOpen)
+
+            if isChecklistOpen {
+                Color.black.opacity(0.45)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            isChecklistOpen = false
+                        }
+                    }
+                    .transition(.opacity)
+
+                checklistDrawer
+                    .frame(width: checklistDrawerWidth)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+                    .zIndex(1)
             }
         }
     }
 
-    private var guideScrollContent: some View {
-        let content = VStack(alignment: .leading, spacing: 20) {
-            if embedded {
-                HStack {
-                    Text("Payments Onboarding Guide")
-                        .font(.provider(.title2, weight: .semibold))
-                    Spacer(minLength: 0)
-                    if gate.isLoading {
+    private var mainScroll: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                if gate.isLoading && !gate.hasLoadedOnce {
+                    HStack(spacing: 10) {
                         ProgressView()
                             .tint(Color.providerBrandGold)
-                    } else {
-                        Button {
-                            Task { await refreshFromStripe() }
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .foregroundStyle(Color.providerBrandGold)
-                        }
-                        .disabled(connectBusy)
+                        Text("Checking Stripe Connect…")
+                            .font(.provider(.subheadline))
+                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                } else {
+                    welcomeCopy
+                    if let bannerMessage {
+                        Text(bannerMessage)
+                            .font(.provider(.footnote))
+                            .foregroundStyle(Color.orange.opacity(0.95))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if showConnectedToast {
+                        Text("You’re fully connected. Payouts and card charges are enabled.")
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .foregroundStyle(Color.green)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    primaryCTA
+                    if !isConnected {
+                        whySeeingGuideBanner
+                    }
+                    if !blocking, !isConnected {
+                        secondaryRecheckButton
                     }
                 }
             }
-
-            if gate.isLoading && !gate.hasLoadedOnce {
-                HStack(spacing: 10) {
-                    ProgressView()
-                        .tint(Color.providerBrandGold)
-                    Text("Checking Stripe Connect…")
-                        .font(.provider(.subheadline))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
-            } else {
-                educationCard
-                statusBanner
-                if let bannerMessage {
-                    Text(bannerMessage)
-                        .font(.provider(.footnote))
-                        .foregroundStyle(Color.orange.opacity(0.95))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if showConnectedToast {
-                    Text("You’re fully connected. Payouts and card charges are enabled.")
-                        .font(.provider(.subheadline, weight: .semibold))
-                        .foregroundStyle(Color.green)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                checklistSection
-                primaryCTA
-                if !blocking, !isConnected {
-                    secondaryRecheckButton
-                }
-            }
+            .padding(embedded ? 16 : 20)
+            .frame(maxWidth: contentMaxWidth)
+            .frame(maxWidth: .infinity)
+            .padding(.bottom, embedded ? 8 : 28)
         }
-        .padding(embedded ? 16 : 20)
-        .frame(maxWidth: contentMaxWidth)
-        .frame(maxWidth: .infinity)
-        .padding(.bottom, embedded ? 8 : 28)
-
-        return Group {
-            if embedded {
-                content
-            } else {
-                ScrollView {
-                    content
-                }
-                .scrollIndicators(.hidden)
-                .scrollDismissesKeyboard(.interactively)
-                .background(Color.clear)
-            }
-        }
+        .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.interactively)
+        .background(Color.clear)
     }
 
-    // MARK: - Sections
+    // MARK: - Copy
 
-    private var educationCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Get paid through Stripe Connect")
-                .font(.provider(.title3, weight: .semibold))
-            Text(
-                "OnCuts uses Stripe Express so clients can pay by card and your earnings deposit to your bank. Finish the Stripe form once — we’ll unlock your dashboard when charges and payouts are enabled."
+    private var whySeeingGuideBanner: some View {
+        Text("You're seeing this because you still need to connect with Stripe to enable safe and secure payments.")
+            .font(.provider(.subheadline, weight: .semibold))
+            .foregroundStyle(Color.lavaShellCream)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                    )
             )
-            .font(.provider(.subheadline))
+    }
+
+    private var welcomeCopy: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Welcome to OnCuts Operator!")
+                .font(.provider(.title3, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+
+            (
+                Text("OnCuts relies on a third-party payment processing system. This third-party is Stripe, which you can read more about ")
+                + Text("here").underline().foregroundColor(.blue)
+                + Text(".")
+            )
+            .font(.provider(.body))
             .foregroundStyle(Color.lavaShellCreamSecondary)
             .fixedSize(horizontal: false, vertical: true)
+            .contentShape(Rectangle())
+            .onTapGesture { openURL(Self.stripeAboutURL) }
+            .accessibilityAddTraits(.isLink)
+            .accessibilityHint("Opens Stripe’s Wikipedia page")
+
+            Text("When a client pays you, the transaction is handled by Stripe. Stripe securely moves funds from your customers to your bank account.")
+                .font(.provider(.body))
+                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Stripe will ask for personal details (date of birth, address, bank account, and more). Interact with the button below to connect payouts with OnCuts.")
+                .font(.provider(.body))
+                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Stuck on a step? Open Checklist in the top left corner.")
+                .font(.provider(.body, weight: .semibold))
+                .foregroundStyle(Color.lavaShellCream)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    private var statusBanner: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Circle()
-                .fill(bannerTint)
-                .frame(width: 10, height: 10)
-                .padding(.top, 5)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(bannerTitle)
-                    .font(.provider(.subheadline, weight: .bold))
-                Text(bannerSubtitle)
-                    .font(.provider(.caption))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(bannerTint.opacity(0.16))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(bannerTint.opacity(0.45), lineWidth: 1)
-                )
-        )
-    }
+    // MARK: - Checklist drawer
 
-    private var bannerTint: Color {
-        if isConnected { return .green }
-        if needsReconnect { return .orange }
-        return Color.providerBrandGold
-    }
-
-    private var bannerTitle: String {
-        if isConnected { return "Stripe Connect active" }
-        if needsReconnect { return "Reconnect required" }
-        if status?.hasAccount == true { return "Finish Stripe setup" }
-        return "Stripe Connect incomplete"
-    }
-
-    private var bannerSubtitle: String {
-        if isConnected {
-            return "Charges and payouts are enabled. You can open Stripe Express anytime to manage your bank and tax details."
-        }
-        if needsReconnect {
-            return "Your previous Connect account isn’t valid on this Stripe platform. Reconnect to create a fresh Express account."
-        }
-        if status?.hasAccount == true {
-            return "Your Express account exists, but Stripe still needs details before charges and payouts can turn on."
-        }
-        if gate.lastError != nil {
-            return "We couldn’t verify your status. Try again, or continue with Stripe to start setup."
-        }
-        return "Create your Express account and complete Stripe’s required fields to accept payments."
-    }
-
-    private var checklistSection: some View {
+    private var checklistDrawer: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Checklist")
-                .font(.provider(.headline, weight: .semibold))
+            HStack {
+                Text("Checklist")
+                    .font(.provider(.headline, weight: .semibold))
+                Spacer(minLength: 0)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        isChecklistOpen = false
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.provider(.body, weight: .semibold))
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .padding(8)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close checklist")
+            }
+
             Text("Static guidance for fields Stripe often asks for. Expanding an item does not verify or mark anything complete.")
                 .font(.provider(.caption))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            VStack(spacing: 8) {
-                ForEach(Self.checklistItems) { item in
-                    checklistRow(item)
+            ScrollView {
+                VStack(spacing: 8) {
+                    ForEach(Self.checklistItems) { item in
+                        checklistRow(item)
+                    }
                 }
+                .padding(.bottom, 24)
             }
+            .scrollIndicators(.hidden)
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color.providerOlive)
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(Color.white.opacity(0.12))
+                .frame(width: 1)
+        }
+        .ignoresSafeArea(edges: .bottom)
     }
 
     private func checklistRow(_ item: ChecklistItem) -> some View {
         let expanded = expandedChecklistID == item.id
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 0) {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     expandedChecklistID = expanded ? nil : item.id
                 }
             } label: {
                 HStack(spacing: 10) {
-                    Image(systemName: "circle")
-                        .foregroundStyle(Color.lavaShellCream.opacity(0.35))
                     Text(item.title)
                         .font(.provider(.subheadline, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCream)
                         .multilineTextAlignment(.leading)
-                    Spacer(minLength: 0)
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.down")
                         .font(.provider(.caption, weight: .semibold))
                         .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
             if expanded {
-                Text(item.detail)
-                    .font(.provider(.caption))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 28)
+                VStack(alignment: .leading, spacing: 0) {
+                    Divider()
+                        .overlay(Color.white.opacity(0.12))
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(item.detail)
+                            .font(.provider(.subheadline))
+                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                        if item.isCopyable {
+                            Button {
+                                #if os(iOS)
+                                UIPasteboard.general.string = item.detail
+                                #endif
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.provider(.caption, weight: .semibold))
+                                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                                    .padding(6)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Copy text to clipboard")
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                }
             }
         }
-        .padding(12)
         .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
+        )
     }
+
+    // MARK: - CTA
 
     private var primaryCTA: some View {
         Button {
@@ -292,19 +384,17 @@ struct ProviderPaymentsOnboardingGuideView: View {
             HStack(spacing: 10) {
                 if connectBusy {
                     ProgressView()
-                        .tint(Color.providerOnBrandGold)
+                        .tint(Color.white)
                 }
                 Text(connectBusy ? "Opening…" : primaryCTATitle)
                     .font(.provider(.headline, weight: .semibold))
-                Spacer(minLength: 0)
-                Image(systemName: "arrow.up.right")
-                    .font(.provider(.body, weight: .bold))
+                    .multilineTextAlignment(.center)
             }
-            .foregroundStyle(Color.providerOnBrandGold)
+            .foregroundStyle(Color.white)
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, 16)
             .padding(.vertical, 16)
-            .frame(maxWidth: .infinity)
-            .background(Color.providerBrandGold, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(Self.stripePurple, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(connectBusy || platformCTADisabled)
@@ -376,59 +466,62 @@ struct ProviderPaymentsOnboardingGuideView: View {
         }
     }
 
-    // MARK: - Static checklist (guidance only)
+    // MARK: - Static checklist (guidance only — web StripeHubModal parity)
 
     private struct ChecklistItem: Identifiable {
         let id: String
         let title: String
         let detail: String
+        var isCopyable: Bool = false
     }
 
     private static let checklistItems: [ChecklistItem] = [
         ChecklistItem(
             id: "dob",
             title: "Date of birth",
-            detail: "Enter your legal date of birth exactly as it appears on your ID."
+            detail: "Your legal date of birth exactly as it appears on your government ID (MM / DD / YYYY)."
         ),
         ChecklistItem(
             id: "address",
             title: "Home address",
-            detail: "Use your residential address. A PO box usually isn’t accepted for identity verification."
+            detail: "Your current residential street address, city, state, and ZIP. Use the address on your ID or bank statements."
         ),
         ChecklistItem(
             id: "phone",
             title: "Phone number",
-            detail: "A mobile number Stripe can use for verification codes and account security."
+            detail: "A US mobile number you can receive SMS on. Use the same number you use for OnCuts Provider if possible."
         ),
         ChecklistItem(
             id: "ssn",
-            title: "Last 4 of SSN",
-            detail: "US operators typically provide the last four digits of their Social Security Number."
+            title: "Last four digits of SSN",
+            detail: "The last 4 digits of your Social Security number as the account representative. Stripe will never ask for your full SSN."
         ),
         ChecklistItem(
             id: "industry",
             title: "Industry",
-            detail: "Choose personal services / barber or beauty as appropriate for the work you offer on OnCuts."
+            detail: "Other personal services",
+            isCopyable: true
         ),
         ChecklistItem(
             id: "website",
-            title: "Website",
-            detail: "If Stripe asks for a business website, use oncuts.com."
+            title: "Business website",
+            detail: "https://oncuts.com",
+            isCopyable: true
         ),
         ChecklistItem(
             id: "bank",
-            title: "Bank account",
-            detail: "Link the checking account where you want payouts deposited."
+            title: "Bank account (external account)",
+            detail: "Select your bank institution in Stripe (Chase, Wells Fargo, etc) and connect the account where you want payouts deposited."
         ),
         ChecklistItem(
             id: "link",
-            title: "Stripe Link (optional)",
-            detail: "You can save details with Link to speed up future Stripe forms."
+            title: "Continue with Link",
+            detail: "Not now"
         ),
         ChecklistItem(
             id: "tos",
-            title: "Terms of Service",
-            detail: "Accept Stripe’s Connected Account Agreement to finish onboarding."
+            title: "Accept terms of service",
+            detail: "Read and accept the Stripe Connected Account Agreement. Payments and payouts stay blocked until you accept."
         ),
     ]
 }
