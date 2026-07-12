@@ -73,14 +73,15 @@ struct ProviderPaymentsOnboardingGuideView: View {
 
     private var embeddedChrome: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                checklistToggleButton
-                Spacer(minLength: 0)
-                signOutButton
+            if !isConnected {
+                HStack(spacing: 12) {
+                    checklistToggleButton
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
 
             guideCanvas
         }
