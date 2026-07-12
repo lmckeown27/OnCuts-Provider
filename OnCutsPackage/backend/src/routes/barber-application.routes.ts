@@ -4,7 +4,8 @@ import {
   submitGuestApplication,
   getMyApplication,
   getAllApplications,
-  updateApplicationStatus
+  updateApplicationStatus,
+  listProviderTypes,
 } from '../controllers/barber-application.controller';
 import { authenticate, requireCampusManager } from '../middleware/auth.middleware';
 
@@ -16,6 +17,13 @@ const router = Router();
  * @access  Public
  */
 router.post('/guest', submitGuestApplication);
+
+/**
+ * @route   GET /api/v1/barber-applications/provider-types
+ * @desc    Supported operator professions (`provider_type` + display label) for the apply funnel
+ * @access  Private (authenticated — used by the Provider app enrollment wizard)
+ */
+router.get('/provider-types', authenticate, listProviderTypes);
 
 /**
  * @route   POST /api/v1/barber-applications

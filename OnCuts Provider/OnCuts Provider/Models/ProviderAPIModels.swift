@@ -118,6 +118,8 @@ struct AdminServiceCatalogItem: Decodable, Identifiable, Hashable {
     /// Allowed barber duration floor / ceiling (minutes) — set by Campus Manager / Admin.
     let minDurationMinutes: Int?
     let maxDurationMinutes: Int?
+    /// Operator profession this service belongs to (`barber` / `beauty`), when the API provides it.
+    let providerType: String?
 }
 
 // MARK: - Barber profile by user (`GET /barbers/user/:userId`) — services & pricing editor

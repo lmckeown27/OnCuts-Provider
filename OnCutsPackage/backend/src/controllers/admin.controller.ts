@@ -537,23 +537,48 @@ export const getServices = async (req: AuthRequest, res: Response, next: NextFun
     
     // Only allow includeInactive for admins
     const includeInactive = isAdmin && req.query.includeInactive === 'true';
-    
+    const providerTypeRaw =
+      typeof req.query.providerType === 'string' ? req.query.providerType.trim().toLowerCase() : '';
+    const providerType = providerTypeRaw && /^[a-z0-9_-]+$/.test(providerTypeRaw) ? providerTypeRaw : '';
+
+    // Production may already have `provider_type`; older local DBs may not.
+    const columnCheck = await pool.query(
+      `SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'services'
+         AND column_name = 'provider_type'
+       LIMIT 1`
+    );
+    const hasProviderType = columnCheck.rows.length > 0;
+
+    const selectProviderType = hasProviderType ? ', provider_type' : ', NULL::text AS provider_type';
     let query = `
       SELECT id, slug, name, description, 
              default_base_price_cents, 
              default_min_price_cents, 
              default_max_price_cents,
              is_active, created_at, updated_at
+             ${selectProviderType}
       FROM services
     `;
-    
+
+    const params: string[] = [];
+    const where: string[] = [];
     if (!includeInactive) {
-      query += ' WHERE is_active = true';
+      where.push('is_active = true');
+    }
+    if (hasProviderType && providerType) {
+      params.push(providerType);
+      where.push(`LOWER(provider_type) = $${params.length}`);
+    }
+    if (where.length > 0) {
+      query += ` WHERE ${where.join(' AND ')}`;
     }
     
     query += ' ORDER BY name ASC';
     
-    const result = await pool.query(query);
+    const result = await pool.query(query, params);
 
     res.json({
       success: true,
@@ -566,6 +591,7 @@ export const getServices = async (req: AuthRequest, res: Response, next: NextFun
         minPriceCents: row.default_min_price_cents,
         maxPriceCents: row.default_max_price_cents,
         isActive: row.is_active,
+        providerType: row.provider_type ?? null,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       })),

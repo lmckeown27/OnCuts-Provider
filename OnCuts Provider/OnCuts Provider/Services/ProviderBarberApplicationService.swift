@@ -6,6 +6,24 @@ struct BarberApplicationMyEnvelope: Decodable {
     let message: String?
 }
 
+/// One supported operator profession from `GET /barber-applications/provider-types`.
+struct ProviderTypeOption: Decodable, Identifiable, Hashable {
+    let providerType: String
+    let label: String
+
+    var id: String { providerType }
+
+    init(providerType: String, label: String) {
+        self.providerType = providerType
+        self.label = label
+    }
+}
+
+private struct ProviderTypesEnvelope: Decodable {
+    let success: Bool?
+    let data: [ProviderTypeOption]?
+}
+
 struct BarberApplicationSummary: Decodable {
     let id: String?
     let status: String?
@@ -64,6 +82,21 @@ struct BarberApplicationsListResult {
 
 @MainActor
 enum ProviderBarberApplicationService {
+    /// Supported apply-funnel professions (`provider_type` + display label).
+    static func fetchProviderTypes() async throws -> [ProviderTypeOption] {
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "barber-applications/provider-types"
+        )
+        let dec = JSONDecoder()
+        dec.keyDecodingStrategy = .convertFromSnakeCase
+        let env = try dec.decode(ProviderTypesEnvelope.self, from: data)
+        let rows = env.data ?? []
+        return rows.filter {
+            !$0.providerType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !$0.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
     static func fetchMyApplication() async throws -> BarberApplicationSummary? {
         let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "barber-applications/my-application")
         let dec = JSONDecoder()

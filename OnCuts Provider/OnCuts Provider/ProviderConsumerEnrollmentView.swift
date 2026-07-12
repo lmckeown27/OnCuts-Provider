@@ -1,5 +1,4 @@
 import CoreLocation
-import OnCutsModule
 import SwiftUI
 
 #if os(iOS)
@@ -27,11 +26,14 @@ struct ProviderConsumerEnrollmentView: View {
     @State private var showManualCampusSearch = false
     @State private var campusSearchText = ""
 
-    /// Provider kind tag from the platform vocabulary (`OnCutsModule.ServiceType`).
-    @State private var selectedProfession: ServiceType?
+    /// Selected `provider_type` from `GET /barber-applications/provider-types`.
+    @State private var selectedProfession: ProviderTypeOption?
+    @State private var professionOptions: [ProviderTypeOption] = []
+    @State private var professionsLoading = false
+    @State private var professionsError: String?
     @State private var phoneNumber = ""
     @State private var yearsExperience = ""
-    @State private var needsTools = false
+    @State private var needsTools: Bool?
     @State private var toolsNeeded = ""
     /// Mirrors the web wizard's "Barber license verification" step: explicit yes/no
     /// declaration (`nil` until the user picks) plus a required attestation checkbox. The backend
@@ -101,38 +103,122 @@ struct ProviderConsumerEnrollmentView: View {
     /// Ordered pages for the current answers (skips toolsNeeded / licenseNumber when not needed).
     private var visibleWizardPages: [ApplicationWizardPage] {
         var pages: [ApplicationWizardPage] = [.profession, .phone, .experience, .tools]
-        if needsTools {
+        if needsTools == true {
             pages.append(.toolsNeeded)
         }
         pages.append(.specialties)
-        pages.append(.licenseDeclared)
-        if licenseDeclared == true {
-            pages.append(.licenseNumber)
-        }
+        // Professional / Barber license steps temporarily disabled.
+        // pages.append(.licenseDeclared)
+        // if licenseDeclared == true {
+        //     pages.append(.licenseNumber)
+        // }
         pages.append(contentsOf: [
-            .attestation,
-            .campus,
-            .whyBeBarber,
-            .availability,
+            // .attestation, // tied to license verification — re-enable with license steps
+            // .campus, // campus step temporarily disabled
+            // .whyBeBarber, // Why OnCuts step temporarily disabled
+            // .availability, // Availability step temporarily disabled
             .social,
-            .portfolio,
-            .additionalNotes,
+            // .portfolio, // portfolio step temporarily disabled
+            // .additionalNotes, // Anything else step temporarily disabled
             .review,
         ])
         return pages
-    }
-
-    /// Platform provider tags the applicant can assign (excludes the browse “All” filter).
-    private var professionOptions: [ServiceType] {
-        ServiceType.allCases.filter { $0 != .all }
     }
 
     private var wizardPageIndex: Int {
         visibleWizardPages.firstIndex(of: wizardPage) ?? 0
     }
 
+    /// Application form steps only — profession selection and review are not numbered steps.
+    private var numberedWizardPages: [ApplicationWizardPage] {
+        visibleWizardPages.filter { $0 != .profession && $0 != .review }
+    }
+
+    private var numberedWizardPageIndex: Int {
+        numberedWizardPages.firstIndex(of: wizardPage) ?? 0
+    }
+
     private var wizardPageCount: Int {
-        visibleWizardPages.count
+        numberedWizardPages.count
+    }
+
+    private var wizardStepLabel: String {
+        wizardPage == .review
+            ? "Review"
+            : "Step \(numberedWizardPageIndex + 1) of \(wizardPageCount)"
+    }
+
+    private var wizardProgressValue: Double {
+        wizardPage == .review
+            ? Double(max(wizardPageCount, 1))
+            : Double(numberedWizardPageIndex + 1)
+    }
+
+    private var selectedProfessionKey: String {
+        (selectedProfession?.providerType ?? "barber")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
+    private var isBeautyPath: Bool {
+        selectedProfessionKey == "beauty"
+    }
+
+    private var professionLabel: String {
+        selectedProfession?.label
+            ?? (isBeautyPath ? "Beauty" : "Barber")
+    }
+
+    private var experiencePageTitle: String { "Experience" }
+
+    private var experiencePageSubtitle: String {
+        isBeautyPath
+            ? "How many years of beauty experience do you have?"
+            : "How many years have you been barbering?"
+    }
+
+    private var toolsPageSubtitle: String {
+        isBeautyPath
+            ? "Do you need beauty tools or kits?"
+            : "Do you need barber tools?"
+    }
+
+    private var toolsNeededPlaceholder: String {
+        isBeautyPath
+            ? "e.g. brushes, products, station kit"
+            : "e.g. clippers, shears, cape"
+    }
+
+    private var licensePageTitle: String {
+        isBeautyPath ? "Professional license" : "Barber license"
+    }
+
+    private var licensePageSubtitle: String {
+        isBeautyPath
+            ? "Do you have a current cosmetology or beauty license?"
+            : "Do you have a current barber or cosmetology license?"
+    }
+
+    private var licenseNotDeclaredHint: String {
+        isBeautyPath
+            ? "Some states require proof of licensure before offering beauty services. The OnCuts team may still ask for documentation."
+            : "Some states require proof of licensure before barbering. The OnCuts team may still ask for documentation."
+    }
+
+    private var whyJoinPageSubtitle: String {
+        "Tell us why you want to join as a \(professionLabel.lowercased()) operator."
+    }
+
+    private var whyJoinPlaceholder: String {
+        "Why do you want to join OnCuts as a \(professionLabel.lowercased())?"
+    }
+
+    private var servicesPageSubtitle: String {
+        "Select all \(professionLabel.lowercased()) services you offer."
+    }
+
+    private var applicationSubmittedMessage: String {
+        "Your OnCuts \(professionLabel) application has been submitted. The OnCuts team will be in touch with you shortly."
     }
 
     private var isFirstWizardPage: Bool {
@@ -171,7 +257,7 @@ struct ProviderConsumerEnrollmentView: View {
             .alert("Application submitted", isPresented: $showSubmitSuccess) {
                 Button("Got it", role: .cancel) {}
             } message: {
-                Text("Your OnCuts Provider application has been submitted. The OnCuts team will be in touch with you shortly.")
+                Text(applicationSubmittedMessage)
             }
         }
         .foregroundStyle(Color.lavaShellCream)
@@ -285,7 +371,9 @@ struct ProviderConsumerEnrollmentView: View {
                 VStack(spacing: 24) {
                     Spacer(minLength: 0)
 
-                    wizardHeader
+                    if wizardPage != .profession {
+                        wizardHeader
+                    }
 
                     if let errorText {
                         Text(errorText)
@@ -296,7 +384,10 @@ struct ProviderConsumerEnrollmentView: View {
                     }
 
                     pageContent
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(
+                            maxWidth: .infinity,
+                            alignment: wizardPage == .profession ? .center : .leading
+                        )
 
                     wizardFooter
 
@@ -313,10 +404,10 @@ struct ProviderConsumerEnrollmentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: needsTools) { _, needs in
-            if !needs, wizardPage == .toolsNeeded {
+            if needs != true, wizardPage == .toolsNeeded {
                 wizardPage = .specialties
             }
-            if !needs {
+            if needs != true {
                 toolsNeeded = ""
             }
         }
@@ -346,11 +437,11 @@ struct ProviderConsumerEnrollmentView: View {
             Text("Apply to be an OnCuts Operator")
                 .font(.provider(.title3, weight: .semibold))
                 .multilineTextAlignment(.center)
-            Text("Step \(wizardPageIndex + 1) of \(wizardPageCount)")
+            Text(wizardStepLabel)
                 .font(.provider(.footnote))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
             ProgressView(
-                value: Double(wizardPageIndex + 1),
+                value: wizardProgressValue,
                 total: Double(max(wizardPageCount, 1))
             )
             .tint(Color.providerBrandGold)
@@ -399,20 +490,58 @@ struct ProviderConsumerEnrollmentView: View {
     // MARK: - Pages
 
     private var professionPage: some View {
-        pageSection(
-            title: "Which profession do you wish to apply for?",
-            subtitle: "Choose the OnCuts Operator tag that best matches the services you’ll offer."
-        ) {
-            VStack(spacing: 10) {
-                ForEach(professionOptions) { profession in
-                    choiceButton(
-                        title: profession.toolbarTitle,
-                        isSelected: selectedProfession == profession
-                    ) {
-                        selectedProfession = profession
+        VStack(spacing: 20) {
+            Text("Which profession do you wish to apply for?")
+                .font(.provider(.title3, weight: .semibold))
+                .foregroundStyle(Color.lavaShellCream)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+
+            if professionsLoading, professionOptions.isEmpty {
+                ProgressView()
+                    .tint(Color.providerBrandGold)
+            } else if let professionsError, professionOptions.isEmpty {
+                VStack(spacing: 12) {
+                    Text(professionsError)
+                        .font(.provider(.footnote))
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                    Button {
+                        Task { await loadProfessionOptions(forceRefresh: true) }
+                    } label: {
+                        Text("Try again")
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .foregroundStyle(Color.providerOnBrandGold)
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 14)
+                            .background(Color.providerBrandGold, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else if professionOptions.isEmpty {
+                Text("No professions available.")
+                    .font(.provider(.footnote))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+            } else {
+                HStack(spacing: 12) {
+                    ForEach(professionOptions) { profession in
+                        choiceButton(
+                            title: profession.label,
+                            isSelected: selectedProfession?.providerType == profession.providerType
+                        ) {
+                            guard selectedProfession?.providerType != profession.providerType else { return }
+                            selectedProfession = profession
+                            selectedSpecialties = []
+                            specialtyOptions = []
+                            specialtiesCatalogError = nil
+                        }
                     }
                 }
             }
+        }
+        .frame(maxWidth: .infinity)
+        .task {
+            await loadProfessionOptions()
         }
     }
 
@@ -424,9 +553,10 @@ struct ProviderConsumerEnrollmentView: View {
                 keyboard: .phonePad,
                 usesTelephoneContentType: true
             )
-            .onChange(of: phoneNumber) { _, newValue in
+            .onChange(of: phoneNumber) { oldValue, newValue in
                 let formatted = PhoneNumberInputFormatter.format(
                     newValue,
+                    previous: oldValue,
                     regionCode: currentRegionCode
                 )
                 if formatted != newValue {
@@ -437,7 +567,7 @@ struct ProviderConsumerEnrollmentView: View {
     }
 
     private var experiencePage: some View {
-        pageSection(title: "Experience", subtitle: "How many years have you been barbering?") {
+        pageSection(title: experiencePageTitle, subtitle: experiencePageSubtitle) {
             VStack(spacing: 10) {
                 ForEach(experienceOptions, id: \.value) { option in
                     choiceButton(
@@ -452,12 +582,12 @@ struct ProviderConsumerEnrollmentView: View {
     }
 
     private var toolsPage: some View {
-        pageSection(title: "Tools", subtitle: "Do you need barber tools?") {
+        pageSection(title: "Tools", subtitle: toolsPageSubtitle) {
             HStack(spacing: 12) {
-                choiceButton(title: "Yes", isSelected: needsTools) {
+                choiceButton(title: "Yes", isSelected: needsTools == true) {
                     needsTools = true
                 }
-                choiceButton(title: "No", isSelected: !needsTools) {
+                choiceButton(title: "No", isSelected: needsTools == false) {
                     needsTools = false
                     toolsNeeded = ""
                 }
@@ -467,12 +597,12 @@ struct ProviderConsumerEnrollmentView: View {
 
     private var toolsNeededPage: some View {
         pageSection(title: "Tools needed", subtitle: "What tools do you need? (optional)") {
-            enrollmentTextField(placeholder: "e.g. clippers, shears, cape", text: $toolsNeeded)
+            enrollmentTextField(placeholder: toolsNeededPlaceholder, text: $toolsNeeded)
         }
     }
 
     private var specialtiesPage: some View {
-        pageSection(title: "Services you’ll offer", subtitle: "Select all that apply from the current OnCuts catalog.") {
+        pageSection(title: "Services you’ll offer", subtitle: servicesPageSubtitle) {
             if specialtiesCatalogLoading, specialtyOptions.isEmpty {
                 HStack(spacing: 10) {
                     ProgressView()
@@ -500,7 +630,7 @@ struct ProviderConsumerEnrollmentView: View {
                     .buttonStyle(.plain)
                 }
             } else if specialtyOptions.isEmpty {
-                Text("No platform services are configured yet. An Admin can add services in the Admin dashboard.")
+                Text("No \(professionLabel.lowercased()) services are configured yet. An Admin can add them in the Admin dashboard.")
                     .font(.provider(.footnote))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             } else {
@@ -518,15 +648,15 @@ struct ProviderConsumerEnrollmentView: View {
                 }
             }
         }
-        .task {
-            await loadSpecialtyCatalog()
+        .task(id: selectedProfessionKey) {
+            await loadSpecialtyCatalog(forceRefresh: true)
         }
     }
 
     private var licenseDeclaredPage: some View {
         pageSection(
-            title: "Barber license",
-            subtitle: "Do you have a current barber or cosmetology license?"
+            title: licensePageTitle,
+            subtitle: licensePageSubtitle
         ) {
             HStack(spacing: 12) {
                 choiceButton(title: "Yes", isSelected: licenseDeclared == true) {
@@ -538,7 +668,7 @@ struct ProviderConsumerEnrollmentView: View {
                 }
             }
             if licenseDeclared == false {
-                Text("Some states require proof of licensure before barbering. The OnCuts team may still ask for documentation.")
+                Text(licenseNotDeclaredHint)
                     .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamTertiary)
             }
@@ -596,9 +726,9 @@ struct ProviderConsumerEnrollmentView: View {
     }
 
     private var whyBeBarberPage: some View {
-        pageSection(title: "Why OnCuts Provider?", subtitle: "Tell us why you want to join as a barber.") {
+        pageSection(title: "Why OnCuts?", subtitle: whyJoinPageSubtitle) {
             enrollmentMultilineField(
-                placeholder: "Why do you want to join OnCuts Provider as a barber?",
+                placeholder: whyJoinPlaceholder,
                 text: $whyBeBarber,
                 lineLimit: 3 ... 8
             )
@@ -621,7 +751,7 @@ struct ProviderConsumerEnrollmentView: View {
     }
 
     private var socialPage: some View {
-        pageSection(title: "Social", subtitle: "Instagram or social link (optional).") {
+        pageSection(title: "Social (optional)", subtitle: "Instagram or social link.") {
             enrollmentTextField(
                 placeholder: "Instagram or social link",
                 text: $socialMedia,
@@ -657,18 +787,30 @@ struct ProviderConsumerEnrollmentView: View {
             VStack(alignment: .leading, spacing: 12) {
                 reviewRow("Applicant", applicantName)
                 reviewRow("Email", session.authUser?.email ?? "—")
-                reviewRow("Profession", selectedProfession?.toolbarTitle ?? "—")
+                reviewRow("Profession", selectedProfession?.label ?? "—")
                 reviewRow("Phone", phoneNumber.isEmpty ? "—" : phoneNumber)
-                reviewRow("Campus", selectedCampusName)
+                // reviewRow("Campus", selectedCampusName) // campus step temporarily disabled
                 reviewRow("Experience", experienceLabel(yearsExperience))
-                reviewRow("Availability", availabilityLabel(availableHours))
-                reviewRow("Tools", needsTools ? (toolsNeeded.isEmpty ? "Needs tools" : "Needs: \(toolsNeeded)") : "Has own tools")
-                reviewRow("License", licenseReviewSummary)
+                // reviewRow("Availability", availabilityLabel(availableHours)) // Availability step temporarily disabled
+                reviewRow(
+                    "Tools",
+                    {
+                        switch needsTools {
+                        case .some(true):
+                            return toolsNeeded.isEmpty ? "Needs tools" : "Needs: \(toolsNeeded)"
+                        case .some(false):
+                            return "Has own tools"
+                        case .none:
+                            return "—"
+                        }
+                    }()
+                )
+                // reviewRow("License", licenseReviewSummary) // license steps temporarily disabled
                 reviewRow("Specialties", Array(selectedSpecialties).sorted().joined(separator: ", "))
-                reviewRow("Why OnCuts Provider?", whyBeBarber)
+                // reviewRow("Why OnCuts?", whyBeBarber) // Why OnCuts step temporarily disabled
                 if !socialMedia.isEmpty { reviewRow("Social", socialMedia) }
-                if !portfolioDescription.isEmpty { reviewRow("Portfolio", portfolioDescription) }
-                if !additionalNotes.isEmpty { reviewRow("Notes", additionalNotes) }
+                // if !portfolioDescription.isEmpty { reviewRow("Portfolio", portfolioDescription) }
+                // if !additionalNotes.isEmpty { reviewRow("Notes", additionalNotes) }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1343,13 +1485,13 @@ struct ProviderConsumerEnrollmentView: View {
     private var canProceedCurrentPage: Bool {
         switch wizardPage {
         case .profession:
-            return selectedProfession != nil
+            return selectedProfession != nil && !professionOptions.isEmpty
         case .phone:
             return !phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .experience:
             return !yearsExperience.isEmpty
         case .tools:
-            return true
+            return needsTools != nil
         case .toolsNeeded:
             return true
         case .specialties:
@@ -1377,15 +1519,19 @@ struct ProviderConsumerEnrollmentView: View {
         selectedProfession != nil
             && !phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !yearsExperience.isEmpty
+            && needsTools != nil
             && !selectedSpecialties.isEmpty
-            && licenseDeclared != nil
-            && licenseAttestation
-            && (
-                licenseDeclared != true
-                    || licenseNumber.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2
-            )
-            && !whyBeBarber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !availableHours.isEmpty
+            // License steps temporarily disabled — re-enable with licenseDeclared / attestation pages.
+            // && licenseDeclared != nil
+            // && licenseAttestation
+            // && (
+            //     licenseDeclared != true
+            //         || licenseNumber.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2
+            // )
+            // Why OnCuts step temporarily disabled.
+            // && !whyBeBarber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            // Availability step temporarily disabled.
+            // && !availableHours.isEmpty
     }
 
     private func experienceLabel(_ value: String) -> String {
@@ -1413,34 +1559,69 @@ struct ProviderConsumerEnrollmentView: View {
         phase = .wizard
     }
 
+    private func loadProfessionOptions(forceRefresh: Bool = false) async {
+        if !forceRefresh, !professionOptions.isEmpty, !professionsLoading { return }
+        professionsLoading = true
+        professionsError = nil
+        defer { professionsLoading = false }
+        do {
+            let rows = try await ProviderBarberApplicationService.fetchProviderTypes()
+            professionOptions = rows
+            if let selected = selectedProfession,
+               !rows.contains(where: { $0.providerType == selected.providerType }) {
+                selectedProfession = nil
+            }
+        } catch {
+            professionsError =
+                (error as? LocalizedError)?.errorDescription
+                ?? error.localizedDescription
+            if professionOptions.isEmpty {
+                // Match production-supported provider_type values if the endpoint is unreachable.
+                professionOptions = [
+                    ProviderTypeOption(providerType: "barber", label: "Barber"),
+                    ProviderTypeOption(providerType: "beauty", label: "Beauty"),
+                ]
+            }
+        }
+    }
+
     private func loadSpecialtyCatalog(forceRefresh: Bool = false) async {
         if !forceRefresh, !specialtyOptions.isEmpty, !specialtiesCatalogLoading { return }
         specialtiesCatalogLoading = true
         specialtiesCatalogError = nil
         defer { specialtiesCatalogLoading = false }
+        let providerType = selectedProfessionKey
         do {
-            let catalog = try await ProviderBarberServicesService.fetchServiceCatalog()
+            let catalog = try await ProviderBarberServicesService.fetchServiceCatalog(
+                providerType: providerType
+            )
             let names = catalog
                 .map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
-            specialtyOptions = names
-            // Drop any stale selections that are no longer in the live catalog.
-            selectedSpecialties = Set(selectedSpecialties.filter { selected in
-                names.contains { $0.caseInsensitiveCompare(selected) == .orderedSame }
-            })
-            if selectedSpecialties.isEmpty,
-               let haircut = names.first(where: { $0.caseInsensitiveCompare("Haircut") == .orderedSame }) {
-                selectedSpecialties = [haircut]
-            }
+            applySpecialtyOptions(names.isEmpty ? fallbackSpecialtyNames(for: providerType) : names)
         } catch {
             specialtiesCatalogError =
                 (error as? LocalizedError)?.errorDescription
                 ?? error.localizedDescription
             if specialtyOptions.isEmpty {
                 // Last-resort offline fallback so applicants aren't blocked if the catalog call fails.
-                specialtyOptions = ProviderBarberApplicationOptions.serviceNames
+                applySpecialtyOptions(fallbackSpecialtyNames(for: providerType))
             }
         }
+    }
+
+    private func fallbackSpecialtyNames(for providerType: String) -> [String] {
+        providerType == "beauty"
+            ? ProviderBarberApplicationOptions.beautyServiceNames
+            : ProviderBarberApplicationOptions.barberServiceNames
+    }
+
+    private func applySpecialtyOptions(_ names: [String]) {
+        specialtyOptions = names
+        // Drop any stale selections that are no longer in the live catalog.
+        selectedSpecialties = Set(selectedSpecialties.filter { selected in
+            names.contains { $0.caseInsensitiveCompare(selected) == .orderedSame }
+        })
     }
 
     private func loadCampusesIfNeeded() async {
@@ -1462,6 +1643,7 @@ struct ProviderConsumerEnrollmentView: View {
             existingApplication = row
             guard let row, let status = row.status?.lowercased(), !status.isEmpty else {
                 await loadCampusesIfNeeded()
+                await loadProfessionOptions()
                 await loadSpecialtyCatalog()
                 wizardPage = .profession
                 phase = .wizard
@@ -1475,12 +1657,14 @@ struct ProviderConsumerEnrollmentView: View {
                 phase = .existingApplication
             } else {
                 await loadCampusesIfNeeded()
+                await loadProfessionOptions()
                 await loadSpecialtyCatalog()
                 phase = .wizard
             }
         } catch {
             errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             await loadCampusesIfNeeded()
+            await loadProfessionOptions()
             await loadSpecialtyCatalog()
             phase = .wizard
         }
@@ -1497,7 +1681,7 @@ struct ProviderConsumerEnrollmentView: View {
         let trimmedLicense = licenseNumber.trimmingCharacters(in: .whitespacesAndNewlines)
 
         let notes = additionalNotes.trimmingCharacters(in: .whitespacesAndNewlines)
-        let professionTitle = selectedProfession?.toolbarTitle
+        let professionTitle = selectedProfession?.label
         let notesWithProfession: String = {
             guard let professionTitle, !professionTitle.isEmpty else { return notes }
             if notes.isEmpty { return "Profession: \(professionTitle)" }
@@ -1512,16 +1696,23 @@ struct ProviderConsumerEnrollmentView: View {
             "yearsExperience": yearsExperience,
             "hasLicense": declared,
             "specialties": Array(selectedSpecialties).sorted(),
-            "hasOwnTools": !needsTools,
-            "availableHours": availableHours,
-            "whyBeBarber": whyBeBarber.trimmingCharacters(in: .whitespacesAndNewlines),
+            "hasOwnTools": needsTools != true,
+            // Backend still requires availableHours; step is hidden so send a placeholder when empty.
+            "availableHours": availableHours.isEmpty ? "Not provided" : availableHours,
+            // Backend still requires whyBeBarber; step is hidden so send a placeholder when empty.
+            "whyBeBarber": {
+                let trimmed = whyBeBarber.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? "Not provided" : trimmed
+            }(),
             "portfolioDescription": portfolioDescription.trimmingCharacters(in: .whitespacesAndNewlines),
             "socialMedia": socialMedia.trimmingCharacters(in: .whitespacesAndNewlines),
             "additionalNotes": notesWithProfession,
         ]
         if let selectedProfession {
-            body["profession"] = selectedProfession.rawValue
-            body["professionLabel"] = selectedProfession.toolbarTitle
+            body["providerType"] = selectedProfession.providerType
+            body["providerTypeLabel"] = selectedProfession.label
+            body["profession"] = selectedProfession.providerType
+            body["professionLabel"] = selectedProfession.label
         }
         let campusTrimmed = selectedCampusId.trimmingCharacters(in: .whitespacesAndNewlines)
         if !campusTrimmed.isEmpty {
@@ -1533,7 +1724,7 @@ struct ProviderConsumerEnrollmentView: View {
             // Web parity: send explicit null so the row clears any stale value when reapplying.
             body["licenseNumber"] = NSNull()
         }
-        if needsTools, !toolsNeeded.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if needsTools == true, !toolsNeeded.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             body["toolsNeeded"] = toolsNeeded.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         do {
@@ -1578,11 +1769,20 @@ enum ProviderBarberApplicationOptions {
         let tint: Color
     }
 
-    static let serviceNames: [String] = [
+    static let barberServiceNames: [String] = [
         "Buzz Cut", "Line Up", "Beard Trim", "Haircut", "Taper", "Hot Shave", "Kids Cut",
         "Fade", "Haircut & Fade", "Mullet", "Design/Art", "Afro Textures", "Women's Cut",
         "Color Treatment", "Perm",
     ]
+
+    /// Offline / empty-catalog fallback when applying on the Beauty path.
+    /// Keep in sync with `services.provider_type = 'beauty'` in production.
+    static let beautyServiceNames: [String] = [
+        "Braids", "Lashes", "Makeup", "Nails", "Tanning",
+    ]
+
+    /// Backward-compatible alias used by older call sites.
+    static var serviceNames: [String] { barberServiceNames }
 
     static let experienceLevels: [LabeledValue] = [
         LabeledValue(value: "less-than-1", label: "Less than 1 year"),
@@ -1624,7 +1824,7 @@ enum ProviderBarberApplicationOptions {
         case "approved":
             return StatusCopy(
                 title: "Application approved",
-                description: "Congratulations! Your application was approved. Pull to refresh — we’ll sync your barber profile automatically.",
+                description: "Congratulations! Your application was approved. Pull to refresh — we’ll sync your operator profile automatically.",
                 symbol: "checkmark.seal.fill",
                 tint: .green
             )
@@ -1680,10 +1880,22 @@ enum PhoneNumberInputFormatter {
     }
 
     /// Live-format the user's typed value into a human-friendly phone string for the given region.
-    static func format(_ raw: String, regionCode: String) -> String {
+    /// - Parameter previous: Prior field value (from `onChange`); used so backspacing over
+    ///   formatting characters like `)` still deletes into the area-code digits.
+    static func format(_ raw: String, previous: String? = nil, regionCode: String) -> String {
         let region = regionCode.uppercased()
         let startsWithPlus = raw.trimmingCharacters(in: .whitespaces).hasPrefix("+")
-        let digits = raw.filter(\.isNumber)
+        var digits = raw.filter(\.isNumber)
+
+        // Backspace over punctuation (e.g. deleting `)` from `(555)`) does not change the digit
+        // count, so without this the formatter would immediately re-insert the punctuation.
+        if let previous {
+            let prevDigits = previous.filter(\.isNumber)
+            if raw.count < previous.count, digits.count == prevDigits.count, !digits.isEmpty {
+                digits = String(digits.dropLast())
+            }
+        }
+
         guard !digits.isEmpty else { return "" }
 
         if startsWithPlus {
@@ -1744,6 +1956,8 @@ enum PhoneNumberInputFormatter {
 
         switch limited.count {
         case 0: return ""
+        // Keep the area code open while editing the first two digits so backspace can move
+        // through `(555)` → `(55` → `(5` without the closing paren snapping back.
         case 1 ... 2: return "(\(area)"
         case 3: return "(\(area))"
         case 4 ... 6: return "(\(area)) \(mid)"

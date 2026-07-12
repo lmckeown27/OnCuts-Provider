@@ -50,7 +50,33 @@ interface BarberApplicationBody {
   portfolioDescription?: string;
   socialMedia?: string;
   additionalNotes?: string;
+  /** Platform operator profession key (`barbers.provider_type`), e.g. `barber` / `beauty`. */
+  providerType?: string;
+  providerTypeLabel?: string;
 }
+
+/**
+ * Supported operator professions for the Provider app apply funnel.
+ * Keep in sync with `barbers.provider_type` values the platform recognizes.
+ *
+ * GET /api/v1/barber-applications/provider-types
+ */
+export const listProviderTypes = async (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    // Canonical apply-funnel list (not merely DISTINCT of existing barbers rows).
+    const supported: Array<{ providerType: string; label: string }> = [
+      { providerType: 'barber', label: 'Barber' },
+      { providerType: 'beauty', label: 'Beauty' },
+    ];
+
+    res.json({
+      success: true,
+      data: supported,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 /**
  * Submit a new barber application
