@@ -8,7 +8,9 @@ struct ProviderDashboardShellView: View {
     @Environment(ProviderSession.self) private var session
     @Environment(ProviderShellNavigationAppearance.self) private var shellNavigationAppearance
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @State private var navigator = ProviderShellNavigator()
+    @State private var stripeOnboardingGate = ProviderStripeOnboardingGate()
     @State private var showingRequestsInbox = false
     @State private var showingBusinessAnalytics = false
     @State private var bookingsInboxPresentationID = UUID()
@@ -23,6 +25,11 @@ struct ProviderDashboardShellView: View {
 
     private var bookingsTrayAttentionCount: Int {
         pendingRequestCount + pendingRescheduleRequestCount
+    }
+
+    /// Present only after a background status check confirms Connect is incomplete.
+    private var showsPaymentsOnboardingGate: Bool {
+        session.hasProviderProfile && stripeOnboardingGate.shouldPresentGuide
     }
 
     var body: some View {
@@ -114,9 +121,32 @@ struct ProviderDashboardShellView: View {
             ProviderBusinessAnalyticsView()
                 .presentationDragIndicator(.visible)
         }
+        .fullScreenCover(isPresented: Binding(
+            get: { showsPaymentsOnboardingGate },
+            set: { _ in
+                // Dismiss only when Connect flags pass (`shouldPresentGuide` becomes false).
+            }
+        )) {
+            ProviderPaymentsOnboardingGuideView(
+                blocking: true,
+                gate: stripeOnboardingGate
+            )
+        }
         .task {
             ProviderLocationPermissionBroker.shared.requestWhenInUseIfNeeded()
             await refreshHeaderCounts()
+            // Background Connect check — guide presents only if status comes back incomplete.
+            if session.hasProviderProfile {
+                await stripeOnboardingGate.refresh()
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, session.hasProviderProfile else { return }
+            Task { await stripeOnboardingGate.refresh() }
+        }
+        .onChange(of: session.hasProviderProfile) { _, hasProfile in
+            guard hasProfile else { return }
+            Task { await stripeOnboardingGate.refresh() }
         }
         // Push router → in-app routing. Three observer cases:
         //   1. `onCutsOpenMessagingConversation` → push Messages and focus the conversation in
