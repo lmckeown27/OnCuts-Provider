@@ -243,13 +243,15 @@ struct ProviderConsumerEnrollmentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.clear)
-            .contentShape(Rectangle())
-            .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Leave Application") { Task { await session.signOut() } }
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { dismissKeyboard() }
                 }
             }
             .task { await refreshApplication() }
@@ -370,9 +372,14 @@ struct ProviderConsumerEnrollmentView: View {
             ScrollView {
                 VStack(spacing: 24) {
                     Spacer(minLength: 0)
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture { dismissKeyboard() }
 
                     if wizardPage != .profession {
                         wizardHeader
+                            .contentShape(Rectangle())
+                            .onTapGesture { dismissKeyboard() }
                     }
 
                     if let errorText {
@@ -392,12 +399,13 @@ struct ProviderConsumerEnrollmentView: View {
                     wizardFooter
 
                     Spacer(minLength: 0)
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture { dismissKeyboard() }
                 }
                 .frame(maxWidth: contentMaxWidth)
                 .frame(maxWidth: .infinity, minHeight: geo.size.height)
                 .padding(.horizontal, horizontalPadding)
-                .contentShape(Rectangle())
-                .onTapGesture { dismissKeyboard() }
             }
             .scrollContentBackground(.hidden)
             .scrollDismissesKeyboard(.interactively)

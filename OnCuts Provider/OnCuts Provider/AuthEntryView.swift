@@ -9,6 +9,7 @@ struct AuthEntryView: View {
 
     @State private var email = ""
     @State private var emailFieldInvalid = false
+    @State private var emailIsSchoolEmail = false
     @State private var showsReturningPasswordField = false
     @State private var showsCreateAccountPrompt = false
     @State private var showsBecomeOperatorPrompt = false
@@ -133,6 +134,7 @@ struct AuthEntryView: View {
                     if newCount == 0 {
                         resetCreateAccountFlow()
                         emailFieldInvalid = false
+                        emailIsSchoolEmail = false
                         errorText = nil
                     }
                 }
@@ -145,8 +147,8 @@ struct AuthEntryView: View {
                     Text(oAuthPasswordNotice ?? "")
                 }
         }
-        .contentShape(Rectangle())
-        .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
+        .tint(.providerBrandGold)
+        .foregroundStyle(Color.lavaShellCream)
     }
 
     // MARK: - Integrated landing
@@ -156,6 +158,9 @@ struct AuthEntryView: View {
             ScrollView {
                 VStack(spacing: 24) {
                     Spacer(minLength: 0)
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture { dismissKeyboard() }
 
                     VStack(spacing: 12) {
                         Image("OnCutsProviderAppIcon")
@@ -170,12 +175,15 @@ struct AuthEntryView: View {
                             .font(.provider(.largeTitle, weight: .bold))
                             .foregroundStyle(Color.providerBrandGold)
                     }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                    .onTapGesture { dismissKeyboard() }
 
                     VStack(alignment: .leading, spacing: 8) {
                         authLandingTextField(
                             placeholder: "Email",
                             text: $email,
-                            isInvalid: emailFieldInvalid,
+                            isInvalid: emailFieldInvalid || emailIsSchoolEmail,
                             kind: .email,
                             reservedTrailingSpace: showsLandingEmailResolutionPrompt ? 28 : 0
                         )
@@ -202,7 +210,12 @@ struct AuthEntryView: View {
                             if let resolved = landingResolvedEmail, normalized != resolved {
                                 resetLandingEmailResolution()
                             }
-                            if emailFieldInvalid, ProviderAuthEmailValidation.isValid(newValue) {
+                            if emailIsSchoolEmail, !ProviderAuthEmailValidation.isSchoolEmail(newValue) {
+                                emailIsSchoolEmail = false
+                            }
+                            if emailFieldInvalid,
+                               ProviderAuthEmailValidation.isValid(newValue),
+                               !ProviderAuthEmailValidation.isSchoolEmail(newValue) {
                                 emailFieldInvalid = false
                             }
                         }
@@ -219,7 +232,11 @@ struct AuthEntryView: View {
                             .transition(ProviderRootTransition.passwordFieldPresentation)
                         }
 
-                        if emailFieldInvalid {
+                        if emailIsSchoolEmail {
+                            Text("We'd rather you not sign up with your school email :)")
+                                .font(.provider(.caption))
+                                .foregroundStyle(.red)
+                        } else if emailFieldInvalid {
                             Text("Enter a valid email address.")
                                 .font(.provider(.caption))
                                 .foregroundStyle(.red)
@@ -268,18 +285,28 @@ struct AuthEntryView: View {
                     }
 
                     authSocialDivider
+                        .contentShape(Rectangle())
+                        .onTapGesture { dismissKeyboard() }
 
                     integratedOAuthPillRow
 
                     Spacer(minLength: 0)
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture { dismissKeyboard() }
                 }
                 .frame(maxWidth: authContentMaxWidth)
                 .frame(maxWidth: .infinity, minHeight: geo.size.height)
                 .padding(.horizontal, authHorizontalPadding)
-                .contentShape(Rectangle())
             }
             .scrollContentBackground(.hidden)
             .scrollDismissesKeyboard(.interactively)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { dismissKeyboard() }
+                }
+            }
         }
     }
 
@@ -348,6 +375,7 @@ struct AuthEntryView: View {
             }
         }
         .foregroundStyle(Color.lavaShellCream)
+        .tint(Color.providerBrandGold)
     }
 
     private var authSocialDivider: some View {
@@ -727,6 +755,7 @@ struct AuthEntryView: View {
         withAnimation(ProviderRootTransition.passwordFieldReveal) {
             email = ""
             emailFieldInvalid = false
+            emailIsSchoolEmail = false
             showsReturningPasswordField = false
             showsCreateAccountPrompt = false
             showsBecomeOperatorPrompt = false
@@ -781,9 +810,16 @@ struct AuthEntryView: View {
         errorText = nil
         guard ProviderAuthEmailValidation.isValid(email) else {
             emailFieldInvalid = true
+            emailIsSchoolEmail = false
+            return
+        }
+        if ProviderAuthEmailValidation.isSchoolEmail(email) {
+            emailIsSchoolEmail = true
+            emailFieldInvalid = false
             return
         }
         emailFieldInvalid = false
+        emailIsSchoolEmail = false
         let normalized = ProviderAuthEmailValidation.normalized(email)
         email = normalized
 
@@ -947,6 +983,10 @@ struct AuthEntryView: View {
         isBusy = true
         errorText = nil
         defer { isBusy = false }
+        if ProviderAuthEmailValidation.isSchoolEmail(email) {
+            errorText = "We'd rather you not sign up with your school email :)"
+            return
+        }
         do {
             let req = OnCutsRegisterRequest(
                 email: email.trimmingCharacters(in: .whitespacesAndNewlines),

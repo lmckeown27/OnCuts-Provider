@@ -10,6 +10,14 @@ enum ProviderAuthEmailValidation {
         return trimmed.range(of: pattern, options: .regularExpression) != nil
     }
 
+    /// Reject institutional `.edu` addresses on Operator auth.
+    static func isSchoolEmail(_ raw: String) -> Bool {
+        let normalized = Self.normalized(raw)
+        guard let at = normalized.lastIndex(of: "@") else { return false }
+        let domain = normalized[normalized.index(after: at)...]
+        return domain == "edu" || domain.hasSuffix(".edu")
+    }
+
     static func normalized(_ raw: String) -> String {
         raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
