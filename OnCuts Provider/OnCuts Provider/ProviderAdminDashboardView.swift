@@ -6,8 +6,9 @@ import SwiftUI
 /// Tabs mirror the daily-driver flows of the web `AdminDashboard.tsx`:
 ///   * **Performance** — platform totals, **time-series chart** (daily / weekly / monthly / yearly), plus
 ///     **campus search** (typeahead) to scope or clear to aggregate headline revenue / bookings / payout metrics.
-///   * **Barbers** — every barber (optionally scoped by campus) with Stripe status badges; tap → push the
-///     admin barber-detail screen (bookings + visibility toggle).
+///   * **Barbers** — **Current** providers with Visible/Hidden, Stripe, and (All Campuses)
+///     Location filters. Campus scope uses pin proximity (~8km). Row location shows
+///     `serviceLocationLabel` (never nearest campus name). **Applications** — approve / reject.
 ///   * **Users** — every platform user (optionally scoped by campus) with simple in-memory search; tap →
 ///     push the admin user-detail screen (consumer bookings).
 ///   * **Services** — platform service catalog (price / duration bounds, activate / deactivate).
@@ -49,6 +50,54 @@ struct ProviderAdminDashboardView: View {
         }
     }
 
+    /// Sub-selectors inside the Barbers tab (web: Barbers vs Applications peers).
+    enum BarbersSubTab: String, CaseIterable, Identifiable {
+        case current = "Current"
+        case applications = "Applications"
+        var id: String { rawValue }
+    }
+
+    enum BarberVisibilityFilter: String, CaseIterable, Identifiable {
+        case visible
+        case hidden
+        var id: String { rawValue }
+        var segmentTitle: String {
+            switch self {
+            case .visible: "Visible"
+            case .hidden: "Hidden"
+            }
+        }
+    }
+
+    enum BarberStripeFilter: String, CaseIterable, Identifiable {
+        case all
+        case setup
+        case notSetup
+        var id: String { rawValue }
+        var segmentTitle: String {
+            switch self {
+            case .all: "All"
+            case .setup: "Stripe"
+            case .notSetup: "No Stripe"
+            }
+        }
+    }
+
+    /// All Universities only — Near campus = pin has a nearest campus within ~8km.
+    enum BarberLocationFilter: String, CaseIterable, Identifiable {
+        case all
+        case nearCampus
+        case unassigned
+        var id: String { rawValue }
+        var segmentTitle: String {
+            switch self {
+            case .all: "All"
+            case .nearCampus: "Near campus"
+            case .unassigned: "Unassigned"
+            }
+        }
+    }
+
     /// Reports status chip on the Safety tab. `all` is the only value that omits the `status`
     /// query parameter when calling `/admin/moderation/reports`. Web defaults to `open`.
     enum ReportsStatusFilter: String, CaseIterable, Identifiable {
@@ -79,11 +128,22 @@ struct ProviderAdminDashboardView: View {
     }
 
     @State private var tab: Tab = .performance
+    @State private var barbersSubTab: BarbersSubTab = .current
+    @State private var barberVisibilityFilter: BarberVisibilityFilter = .visible
+    @State private var barberStripeFilter: BarberStripeFilter = .all
+    @State private var barberLocationFilter: BarberLocationFilter = .all
     @State private var campuses: [AdminCampusDTO] = []
     @State private var selectedCampusId: String? = nil
     @State private var stats: AdminPlatformStatsDTO?
     @State private var performance: AdminCampusPerformanceDTO?
     @State private var barbers: [AdminBarberDTO] = []
+    @State private var barberApplications: [BarberApplicationListRowDTO] = []
+    @State private var selectedBarberApplication: BarberApplicationListRowDTO?
+    @State private var isLoadingApplications = false
+    @State private var applicationsError: String?
+    @State private var busyApplicationId: String?
+    /// When set, the detail action row is in the inline "Are you sure?" Yes/No state for that kind.
+    @State private var applicationInlineConfirmKind: PendingBarberApplicationAction.Kind?
     @State private var users: [AdminPlatformUserDTO] = []
     @State private var userSearch: String = ""
     @State private var usersVisibleCount = 25
@@ -124,6 +184,21 @@ struct ProviderAdminDashboardView: View {
         let id: UUID = UUID()
         let report: AdminModerationReportDTO
         let action: AdminModerationResolveAction
+    }
+
+    private struct PendingBarberApplicationAction: Identifiable, Equatable {
+        enum Kind: String, Equatable {
+            case approve
+            case reject
+        }
+
+        let id: UUID = UUID()
+        let application: BarberApplicationListRowDTO
+        let kind: Kind
+
+        var status: BarberApplicationStatus {
+            kind == .approve ? .approved : .rejected
+        }
     }
 
     var body: some View {
@@ -376,6 +451,7 @@ struct ProviderAdminDashboardView: View {
         Menu {
             Button {
                 selectedCampusId = nil
+                barberLocationFilter = .all
                 Task { await loadScopedData() }
             } label: {
                 HStack {
@@ -392,6 +468,7 @@ struct ProviderAdminDashboardView: View {
                 ForEach(sortedCampuses) { campus in
                     Button {
                         selectedCampusId = campus.id
+                        barberLocationFilter = .all
                         Task { await loadScopedData() }
                     } label: {
                         HStack {
@@ -1113,102 +1190,464 @@ struct ProviderAdminDashboardView: View {
 
     // MARK: - Barbers tab
 
-    private struct BarberCampusGroup: Identifiable {
-        let id: String
-        let title: String
-        let barbers: [AdminBarberDTO]
-    }
+    private var filteredCurrentBarbers: [AdminBarberDTO] {
+        barbers.filter { barber in
+            let active = barber.isActive != false
+            switch barberVisibilityFilter {
+            case .visible where !active: return false
+            case .hidden where active: return false
+            default: break
+            }
 
-    private var barberCampusGroups: [BarberCampusGroup] {
-        var buckets: [String: [AdminBarberDTO]] = [:]
-        for barber in barbers {
-            let key = barber.campusId ?? "__unassigned__"
-            buckets[key, default: []].append(barber)
-        }
+            switch barberStripeFilter {
+            case .all: break
+            case .setup where barberVisibilityFilter == .visible && barber.hasStripeSetup != true: return false
+            case .notSetup where barberVisibilityFilter == .visible && barber.hasStripeSetup == true: return false
+            default: break
+            }
 
-        return buckets.map { campusId, members in
-            BarberCampusGroup(
-                id: campusId,
-                title: barberCampusSectionTitle(forCampusId: campusId, sample: members.first),
-                barbers: members.sorted {
-                    $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+            // Location filters only apply under All Universities (campus list is already proximity-scoped).
+            if selectedCampusId == nil {
+                switch barberLocationFilter {
+                case .all: break
+                case .nearCampus where !barber.isNearCampusBucket: return false
+                case .unassigned where !barber.isLocationUnassigned: return false
+                default: break
                 }
-            )
+            }
+
+            return true
         }
         .sorted {
-            if $0.id == "__unassigned__" { return false }
-            if $1.id == "__unassigned__" { return true }
-            return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
         }
-    }
-
-    private func barberCampusSectionTitle(forCampusId campusId: String, sample: AdminBarberDTO?) -> String {
-        if campusId == "__unassigned__" { return "Unassigned campus" }
-        if let campus = campuses.first(where: { $0.id == campusId }) {
-            return campus.displayName
-        }
-        if let name = sample?.campusName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
-            return name
-        }
-        return "Campus"
     }
 
     private var barbersTabSubtitle: String {
-        if selectedCampusId != nil {
-            return "\(barbers.count) loaded."
+        switch barbersSubTab {
+        case .current:
+            let shown = filteredCurrentBarbers.count
+            return "\(shown) shown · \(barbers.count) loaded."
+        case .applications:
+            if isLoadingApplications, barberApplications.isEmpty {
+                return "Loading applications…"
+            }
+            let n = barberApplications.count
+            return n == 1 ? "1 application needs review." : "\(n) applications need review."
         }
-        let groupCount = barberCampusGroups.count
-        if groupCount <= 1 {
-            return "\(barbers.count) loaded."
+    }
+
+    private var currentBarbersEmptyMessage: String {
+        if isLoading, barbers.isEmpty {
+            return "Loading barbers…"
         }
-        return "\(barbers.count) providers across \(groupCount) campuses."
+        if barbers.isEmpty {
+            if selectedCampusId != nil {
+                return "No operators with a public pin near this campus."
+            }
+            return "No barbers found for this scope."
+        }
+        return "No barbers match these filters."
     }
 
     private var barbersTab: some View {
         sectionCard(title: "Barbers", subtitle: barbersTabSubtitle) {
-            VStack(spacing: 10) {
-                if barbers.isEmpty {
-                    Text(isLoading ? "Loading barbers…" : "No barbers found for this scope.")
-                        .font(.provider(.footnote))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
-                } else if selectedCampusId != nil {
-                    ForEach(barbers) { barber in
-                        barberRow(barber, showCampusLabel: false)
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("Barbers section", selection: $barbersSubTab) {
+                    ForEach(BarbersSubTab.allCases) { sub in
+                        Text(sub.rawValue).tag(sub)
                     }
-                } else {
-                    ForEach(barberCampusGroups) { group in
-                        barberCampusSection(group)
-                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: barbersSubTab) { _, _ in
+                    selectedBarberApplication = nil
+                    applicationInlineConfirmKind = nil
+                }
+
+                switch barbersSubTab {
+                case .current:
+                    currentBarbersList
+                case .applications:
+                    barberApplicationsList
                 }
             }
         }
     }
 
-    private func barberCampusSection(_ group: BarberCampusGroup) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(group.title)
-                    .font(.provider(.subheadline, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCream)
-                Text("\(group.barbers.count) provider\(group.barbers.count == 1 ? "" : "s")")
-                    .font(.provider(.caption2))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.providerElevatedSurface)
-            )
+    @ViewBuilder
+    private var currentBarbersList: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            currentBarbersFilterControls
 
-            ForEach(group.barbers) { barber in
-                barberRow(barber, showCampusLabel: false)
+            if filteredCurrentBarbers.isEmpty {
+                Text(currentBarbersEmptyMessage)
+                    .font(.provider(.footnote))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+            } else {
+                ForEach(filteredCurrentBarbers) { barber in
+                    barberRow(barber)
+                }
             }
         }
     }
 
-    private func barberRow(_ barber: AdminBarberDTO, showCampusLabel: Bool = true) -> some View {
+    @ViewBuilder
+    private var currentBarbersFilterControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("Visibility", selection: $barberVisibilityFilter) {
+                ForEach(BarberVisibilityFilter.allCases) { filter in
+                    Text(filter.segmentTitle).tag(filter)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if barberVisibilityFilter == .visible {
+                Picker("Stripe", selection: $barberStripeFilter) {
+                    ForEach(BarberStripeFilter.allCases) { filter in
+                        Text(filter.segmentTitle).tag(filter)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
+            if selectedCampusId == nil {
+                Picker("Location", selection: $barberLocationFilter) {
+                    ForEach(BarberLocationFilter.allCases) { filter in
+                        Text(filter.segmentTitle).tag(filter)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var barberApplicationsList: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let applicationsError, !applicationsError.isEmpty {
+                Text(applicationsError)
+                    .font(.provider(.caption))
+                    .foregroundStyle(.red)
+            }
+
+            if let selected = selectedBarberApplication {
+                barberApplicationDetail(selected)
+            } else if isLoadingApplications, barberApplications.isEmpty {
+                loadingRow("Loading applications…")
+            } else if barberApplications.isEmpty {
+                Text("No applications need review for this scope.")
+                    .font(.provider(.footnote))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+            } else {
+                ForEach(barberApplications) { application in
+                    barberApplicationRow(application)
+                }
+            }
+        }
+    }
+
+    private func barberApplicationRow(_ application: BarberApplicationListRowDTO) -> some View {
+        let isBusy = busyApplicationId == application.id
+        return Button {
+            applicationInlineConfirmKind = nil
+            selectedBarberApplication = application
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(application.displayName)
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .foregroundStyle(Color.lavaShellCream)
+                        if application.origin == .guest {
+                            tag(text: "Guest", tint: Color.orange.opacity(0.55))
+                        }
+                        Spacer(minLength: 0)
+                        tag(
+                            text: application.statusEnum?.displayLabel ?? application.status.capitalized,
+                            tint: applicationStatusTint(application)
+                        )
+                    }
+                    Text(application.email ?? "No email")
+                        .font(.provider(.caption))
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .lineLimit(1)
+                    HStack(spacing: 8) {
+                        if let campus = application.campusName, !campus.isEmpty {
+                            Text(campus)
+                        }
+                        if let years = application.yearsExperience, !years.isEmpty {
+                            Text("·")
+                            Text("\(years) yrs")
+                        }
+                        if let when = application.createdAt {
+                            Text("·")
+                            Text(relativeShort(when))
+                        }
+                    }
+                    .font(.provider(.caption2))
+                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.provider(.caption))
+                    .foregroundStyle(Color.lavaShellCreamTertiary)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.providerElevatedSurface)
+            )
+            .opacity(isBusy ? 0.55 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(isBusy)
+    }
+
+    private func barberApplicationDetail(_ application: BarberApplicationListRowDTO) -> some View {
+        let isBusy = busyApplicationId == application.id
+        return VStack(alignment: .leading, spacing: 12) {
+            Button {
+                selectedBarberApplication = nil
+                applicationInlineConfirmKind = nil
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                    Text("Back to Applications")
+                }
+                .font(.provider(.subheadline, weight: .semibold))
+                .foregroundStyle(Color.lavaShellCream)
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Text(application.displayName)
+                        .font(.provider(.title3, weight: .semibold))
+                        .foregroundStyle(Color.lavaShellCream)
+                    if application.origin == .guest {
+                        tag(text: "Guest", tint: Color.orange.opacity(0.55))
+                    }
+                    Spacer(minLength: 0)
+                    tag(
+                        text: application.statusEnum?.displayLabel ?? application.status.capitalized,
+                        tint: applicationStatusTint(application)
+                    )
+                }
+                Text(application.email ?? "No email")
+                    .font(.provider(.caption))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                applicationDetailGrid(application)
+                if let specialties = application.specialties, !specialties.isEmpty {
+                    applicationDetailBlock(title: "Specialties", value: specialties.joined(separator: ", "))
+                }
+                applicationDetailBlock(
+                    title: "Profession",
+                    value: application.submittedProfessionLabel ?? "—"
+                )
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.providerElevatedSurface)
+            )
+
+            if application.statusEnum == .pending {
+                applicationDecisionButtons(application, isBusy: isBusy)
+            }
+
+            if isBusy {
+                loadingRow("Updating application…")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func applicationDecisionButtons(
+        _ application: BarberApplicationListRowDTO,
+        isBusy: Bool
+    ) -> some View {
+        VStack(spacing: 8) {
+            if applicationInlineConfirmKind != nil {
+                Text("Are you sure?")
+                    .font(.provider(.subheadline, weight: .semibold))
+                    .foregroundStyle(Color.lavaShellCream)
+                    .frame(maxWidth: .infinity)
+            }
+
+            HStack(spacing: 10) {
+                switch applicationInlineConfirmKind {
+                case nil:
+                    Button {
+                        applicationInlineConfirmKind = .approve
+                    } label: {
+                        Text("Approve")
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.providerOlive)
+                    .disabled(isBusy)
+
+                    Button {
+                        applicationInlineConfirmKind = .reject
+                    } label: {
+                        Text("Reject")
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                    .disabled(isBusy)
+
+                case .approve:
+                    // Pressed Approve → that slot becomes No; other slot becomes Yes.
+                    Button {
+                        applicationInlineConfirmKind = nil
+                    } label: {
+                        Text("No")
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isBusy)
+
+                    Button {
+                        let pending = PendingBarberApplicationAction(application: application, kind: .approve)
+                        applicationInlineConfirmKind = nil
+                        Task { await applyBarberApplicationAction(pending) }
+                    } label: {
+                        Text("Yes")
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.providerOlive)
+                    .disabled(isBusy)
+
+                case .reject:
+                    // Pressed Reject → that slot becomes No; other slot becomes Yes.
+                    Button {
+                        let pending = PendingBarberApplicationAction(application: application, kind: .reject)
+                        applicationInlineConfirmKind = nil
+                        Task { await applyBarberApplicationAction(pending) }
+                    } label: {
+                        Text("Yes")
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .disabled(isBusy)
+
+                    Button {
+                        applicationInlineConfirmKind = nil
+                    } label: {
+                        Text("No")
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isBusy)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func applicationDetailGrid(_ application: BarberApplicationListRowDTO) -> some View {
+        LazyVGrid(columns: gridColumns, spacing: 8) {
+            applicationMetricCell(
+                title: "Experience",
+                value: application.yearsExperience.map { "\($0) years" } ?? "—"
+            )
+            applicationMetricCell(title: "Phone", value: applicationPhoneDisplay(application.phoneNumber))
+            applicationMetricCell(
+                title: "Own tools",
+                value: application.hasOwnTools == true ? "Yes" : (application.hasOwnTools == false ? "No" : "—")
+            )
+            if let when = application.createdAt {
+                applicationMetricCell(title: "Applied", value: applicationAppliedDate(when))
+            }
+        }
+    }
+
+    private func applicationPhoneDisplay(_ raw: String?) -> String {
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return "Not provided" }
+        // Prefer the applicant's stored formatting (punctuation / spaces). Only reformat
+        // legacy E.164 / digits-only values that were normalized before submit.
+        let hasApplicantFormatting = trimmed.contains(where: { !$0.isNumber && $0 != "+" })
+        if hasApplicantFormatting {
+            return trimmed
+        }
+        let digits = trimmed.filter(\.isNumber)
+        // Legacy NANP E.164 (`+1…` / `1…` / 10 digits) → `(555) 555-5555`.
+        if digits.count == 11, digits.hasPrefix("1") {
+            return PhoneNumberInputFormatter.format(String(digits.dropFirst()), regionCode: "US")
+        }
+        if digits.count == 10 {
+            return PhoneNumberInputFormatter.format(digits, regionCode: "US")
+        }
+        let region = Locale.current.region?.identifier ?? "US"
+        let formatted = PhoneNumberInputFormatter.format(trimmed, regionCode: region)
+        return formatted.isEmpty ? trimmed : formatted
+    }
+
+    private func applicationAppliedDate(_ date: Date) -> String {
+        date.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    private func applicationMetricCell(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.provider(.caption2))
+                .foregroundStyle(Color.lavaShellCreamTertiary)
+            Text(value)
+                .font(.provider(.caption, weight: .semibold))
+                .foregroundStyle(Color.lavaShellCream)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.providerScheduleTrackFill)
+        )
+    }
+
+    private func applicationDetailBlock(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.provider(.caption2))
+                .foregroundStyle(Color.lavaShellCreamTertiary)
+            Text(value)
+                .font(.provider(.footnote))
+                .foregroundStyle(Color.lavaShellCream)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.providerScheduleTrackFill)
+        )
+    }
+
+    private func applicationStatusTint(_ application: BarberApplicationListRowDTO) -> Color {
+        switch application.statusEnum {
+        case .pending: return Color.orange.opacity(0.55)
+        case .approved: return Color.green.opacity(0.55)
+        case .rejected: return Color.red.opacity(0.55)
+        case .underReview, .interviewScheduled: return Color.blue.opacity(0.45)
+        case nil: return Color.providerElevatedSurface
+        }
+    }
+
+    private func barberRow(_ barber: AdminBarberDTO) -> some View {
         Button {
             adminDetailPath.append(AdminDashboardDestination.barber(barber))
         } label: {
@@ -1222,16 +1661,22 @@ struct ProviderAdminDashboardView: View {
                     HStack(spacing: 6) {
                         Text(barber.displayName)
                             .font(.provider(.subheadline, weight: .semibold))
-                        if barber.isActive == false { tag(text: "Hidden", tint: Color.red.opacity(0.7)) }
+                        if barber.isActive == false {
+                            tag(text: "Hidden", tint: Color.red.opacity(0.7))
+                        }
+                        if barber.isBanned == true {
+                            tag(text: "Banned", tint: Color.red.opacity(0.85))
+                        }
                     }
                     Text(barber.email ?? "—")
                         .font(.provider(.caption))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
+                    // Prefer the provider's public pin label exactly — never nearest campus name.
+                    Text(barber.publicLocationDisplay)
+                        .font(.provider(.caption))
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .lineLimit(1)
                     HStack(spacing: 8) {
-                        if showCampusLabel, let cn = barber.campusName {
-                            Text(cn)
-                            Text("·")
-                        }
                         Text("\(barber.completedBookings ?? 0) bookings")
                         Text("·")
                         Text(dollarString(centsLike: Double(barber.totalVolumeCents ?? 0)))
@@ -1921,16 +2366,83 @@ struct ProviderAdminDashboardView: View {
     private func loadScopedData() async {
         selectedBucketIndex = nil
         usersVisibleCount = 25
+        selectedBarberApplication = nil
+        applicationInlineConfirmKind = nil
         let scope = selectedCampusId
         async let perfTask = fetchPerformance(campusId: scope)
         async let barbersTask = fetchBarbers(campusId: scope)
         async let usersTask = fetchUsers(campusId: scope)
         async let metricsTask = fetchMetricsSeries(campusId: scope, period: metricsTimeline.apiPeriod)
-        let (p, bs, us, m) = await (perfTask, barbersTask, usersTask, metricsTask)
+        async let applicationsTask = fetchActionableBarberApplications(campusId: scope)
+        let (p, bs, us, m, appsResult) = await (perfTask, barbersTask, usersTask, metricsTask, applicationsTask)
         performance = p
         barbers = bs
         users = us
         metricsSnapshot = m
+        switch appsResult {
+        case .success(let apps):
+            barberApplications = apps
+            applicationsError = nil
+        case .failure(let message):
+            barberApplications = []
+            applicationsError = message
+        }
+    }
+
+    private enum ApplicationsLoadResult {
+        case success([BarberApplicationListRowDTO])
+        case failure(String)
+    }
+
+    private func fetchActionableBarberApplications(campusId: String?) async -> ApplicationsLoadResult {
+        isLoadingApplications = true
+        defer { isLoadingApplications = false }
+        do {
+            let result = try await ProviderBarberApplicationService.listApplications(
+                campusId: campusId,
+                limit: 200
+            )
+            return .success(result.applications.filter(\.isActionableInAdminApplicationQueue))
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
+            return .failure(msg ?? "Could not load applications (\(code)).")
+        } catch {
+            return .failure(error.localizedDescription)
+        }
+    }
+
+    private func applyBarberApplicationAction(_ pending: PendingBarberApplicationAction) async {
+        busyApplicationId = pending.application.id
+        defer { busyApplicationId = nil }
+        applicationsError = nil
+        do {
+            try await ProviderBarberApplicationService.updateApplicationStatus(
+                id: pending.application.id,
+                status: pending.status
+            )
+            barberApplications.removeAll { $0.id == pending.application.id }
+            if selectedBarberApplication?.id == pending.application.id {
+                selectedBarberApplication = nil
+            }
+            applicationInlineConfirmKind = nil
+            if pending.kind == .approve {
+                // Don't replace the list with [] if the refresh fails (try? previously wiped Current).
+                do {
+                    if let campusId = selectedCampusId {
+                        barbers = try await ProviderAdminService.campusBarbers(campusId: campusId)
+                    } else {
+                        barbers = try await ProviderAdminService.allBarbers()
+                    }
+                } catch let OnCutsHTTPError.httpStatus(code, msg) {
+                    applicationsError = msg ?? "Approved, but could not refresh barbers (\(code))."
+                } catch {
+                    applicationsError = "Approved, but could not refresh barbers: \(error.localizedDescription)"
+                }
+            }
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
+            applicationsError = msg ?? "Could not update application (\(code))."
+        } catch {
+            applicationsError = error.localizedDescription
+        }
     }
 
     private func reloadMetricsTimeline() async {
@@ -2051,10 +2563,18 @@ struct ProviderAdminDashboardView: View {
     }
 
     private func fetchBarbers(campusId: String?) async -> [AdminBarberDTO] {
-        if let id = campusId {
-            return (try? await ProviderAdminService.campusBarbers(campusId: id)) ?? []
+        do {
+            if let id = campusId {
+                return try await ProviderAdminService.campusBarbers(campusId: id)
+            }
+            return try await ProviderAdminService.allBarbers()
+        } catch {
+            if errorText == nil {
+                errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+            // Keep whatever is already on screen rather than blanking Current on a transient failure.
+            return barbers
         }
-        return (try? await ProviderAdminService.allBarbers()) ?? []
     }
 
     private func fetchUsers(campusId: String?) async -> [AdminPlatformUserDTO] {

@@ -991,6 +991,10 @@ struct AdminMetricsSnapshotDTO: Decodable, Hashable {
 }
 
 /// `/admin/campuses/:id/barbers` (and `/admin/barbers`) row.
+///
+/// `campusId` / `campusName` are nearest-campus **bucketing** fields from pin proximity
+/// (~8km). Display location text must use `serviceLocationLabel` (or the unassigned
+/// fallbacks) — never substitute `campusName` for the provider's public pin label.
 struct AdminBarberDTO: Decodable, Hashable, Identifiable {
     let id: String
     let barberRecordId: String?
@@ -999,6 +1003,7 @@ struct AdminBarberDTO: Decodable, Hashable, Identifiable {
     let email: String?
     let profileImageUrl: String?
     let isActive: Bool?
+    let isBanned: Bool?
     let isCampusManager: Bool?
     let campusId: String?
     let campusName: String?
@@ -1007,6 +1012,8 @@ struct AdminBarberDTO: Decodable, Hashable, Identifiable {
     let createdAt: Date?
     let completedBookings: Int?
     let totalVolumeCents: Int?
+    let serviceLocationLabel: String?
+    let hasServiceLocation: Bool?
 
     var displayName: String {
         let f = firstName ?? ""
@@ -1020,6 +1027,23 @@ struct AdminBarberDTO: Decodable, Hashable, Identifiable {
     var avatarURL: URL? {
         guard let s = profileImageUrl?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
         return URL(string: s)
+    }
+
+    /// Prefer the provider's typed/chosen public pin label exactly.
+    var publicLocationDisplay: String {
+        let label = serviceLocationLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !label.isEmpty { return label }
+        if hasServiceLocation == true { return "Location set" }
+        return "No public location"
+    }
+
+    var isNearCampusBucket: Bool {
+        !(campusId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+    }
+
+    /// Spec: Unassigned = no pin **or** no nearest campus within ~8km.
+    var isLocationUnassigned: Bool {
+        hasServiceLocation != true || !isNearCampusBucket
     }
 }
 
@@ -1964,6 +1988,21 @@ struct BarberApplicationListRowDTO: Decodable, Identifiable, Hashable {
         let joined = "\(f) \(l)".trimmingCharacters(in: .whitespaces)
         if !joined.isEmpty { return joined }
         return email ?? "Applicant"
+    }
+
+    /// Profession label embedded in `additional_notes` by the Provider apply funnel
+    /// (`Profession: Barber` / `Profession: Beauty`, optionally followed by freeform notes).
+    var submittedProfessionLabel: String? {
+        let notes = additionalNotes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !notes.isEmpty else { return nil }
+        let prefix = "Profession:"
+        guard notes.hasPrefix(prefix) else { return nil }
+        let afterPrefix = notes.dropFirst(prefix.count)
+        let firstLine = afterPrefix.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return firstLine.isEmpty ? nil : firstLine
     }
 
     /// Mirrors web Campus Manager filter (`pending` plus approved guests without an account).

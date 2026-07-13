@@ -252,6 +252,7 @@ struct ProviderAdminBarberDetailView: View {
             email: b.email,
             profileImageUrl: b.profileImageUrl,
             isActive: newValue,
+            isBanned: b.isBanned,
             isCampusManager: b.isCampusManager,
             campusId: b.campusId,
             campusName: b.campusName,
@@ -259,7 +260,9 @@ struct ProviderAdminBarberDetailView: View {
             hasStripeAccountOnly: b.hasStripeAccountOnly,
             createdAt: b.createdAt,
             completedBookings: b.completedBookings,
-            totalVolumeCents: b.totalVolumeCents
+            totalVolumeCents: b.totalVolumeCents,
+            serviceLocationLabel: b.serviceLocationLabel,
+            hasServiceLocation: b.hasServiceLocation
         )
     }
 

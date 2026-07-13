@@ -1,4 +1,9 @@
 import SwiftUI
+import MapKit
+import CoreLocation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// `NSURLErrorCancelled` (-999) when a prior `URLSession` task is cancelled—**not** a user-visible failure.
 private func providerIsBenignRequestCancellation(_ error: Error) -> Bool {
@@ -40,6 +45,15 @@ struct ProviderScheduleDashboardView: View {
     @State private var editingMoveBookingID: String?
     @State private var timeChangeProposal: ScheduleAppointmentTimeChangeProposal?
     @State private var isSavingBookingMove = false
+    @State private var discoveryLocationPin: BarberServiceLocationDTO?
+    @State private var discoveryLocationLoadFailed = false
+    /// Toggle On = device GPS tracking; Off = manual place input (`web_only`).
+    @State private var shareDeviceLocation = true
+    @State private var isTogglingDiscoveryLocation = false
+    @State private var manualPlaceQuery = ""
+    @State private var isSavingManualPlace = false
+    @State private var placeSearch = ProviderPlaceSearchCompleter()
+    @FocusState private var isManualPlaceFieldFocused: Bool
 
     private let scheduleVerticalPadding: CGFloat = 36
 
@@ -186,13 +200,20 @@ struct ProviderScheduleDashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 12) {
                 awaitingPaymentBanner
+                    .simultaneousGesture(manualPlaceKeyboardDismissTap)
                 ZStack(alignment: .topLeading) {
                     VStack(alignment: .leading, spacing: 12) {
-                        summaryLine
+                        if session.hasProviderProfile {
+                            discoveryLocationStatusLine
+                        }
                         weekNavigationRow
+                            .simultaneousGesture(manualPlaceKeyboardDismissTap)
                         if session.hasProviderProfile {
                             scheduleAvailabilityActionsRow
+                                .simultaneousGesture(manualPlaceKeyboardDismissTap)
                         }
+                        summaryLine
+                            .simultaneousGesture(manualPlaceKeyboardDismissTap)
                     }
                     .opacity(editingMoveBookingID == nil ? 1 : 0)
                     .allowsHitTesting(editingMoveBookingID == nil)
@@ -200,12 +221,14 @@ struct ProviderScheduleDashboardView: View {
 
                     if editingMoveBookingID != nil {
                         bookingMoveChromeRow
+                            .simultaneousGesture(manualPlaceKeyboardDismissTap)
                     }
                 }
                 if let errorText {
                     Text(errorText)
                         .font(.provider(.footnote))
                         .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .simultaneousGesture(manualPlaceKeyboardDismissTap)
                 }
             }
             .background {
@@ -250,8 +273,29 @@ struct ProviderScheduleDashboardView: View {
             )
             .frame(maxHeight: .infinity, alignment: .top)
             .padding(.horizontal, -ProviderWeeklyScheduleGridMetrics.scheduleOuterHorizontalInset)
+            .simultaneousGesture(manualPlaceKeyboardDismissTap)
         }
         .onPreferenceChange(ProviderScheduleChromeHeightPreferenceKey.self) { scheduleChromeHeight = $0 }
+    }
+
+    private var manualPlaceKeyboardDismissTap: some Gesture {
+        TapGesture().onEnded {
+            guard isManualPlaceFieldFocused else { return }
+            dismissManualPlaceKeyboard()
+        }
+    }
+
+    private func dismissManualPlaceKeyboard() {
+        isManualPlaceFieldFocused = false
+        placeSearch.clearResults()
+        #if canImport(UIKit)
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
+        #endif
     }
 
     // MARK: - Chrome
@@ -341,6 +385,197 @@ struct ProviderScheduleDashboardView: View {
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
         .background { scheduleChromeTrackBackground }
+    }
+
+    private var discoveryLocationStatusLine: some View {
+        VStack(spacing: 8) {
+            if shareDeviceLocation {
+                HStack(spacing: 6) {
+                    Text(discoveryLocationPlaceText)
+                        .lineLimit(1)
+                    if isTogglingDiscoveryLocation {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .tint(Color.lavaShellCreamSecondary)
+                    }
+                }
+                .font(.provider(.caption))
+                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+            } else {
+                manualDiscoveryPlaceSearch
+            }
+
+            ZStack {
+                Text(shareDeviceLocation
+                      ? "Toggle off to enter a location"
+                      : "Toggle on to track your location")
+                    .font(.provider(.caption))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 52)
+
+                HStack {
+                    Spacer(minLength: 0)
+                    Toggle("", isOn: $shareDeviceLocation)
+                        .labelsHidden()
+                        .tint(.providerOlive)
+                        .disabled(isTogglingDiscoveryLocation || isSavingManualPlace || discoveryLocationPin == nil)
+                }
+            }
+            .contentShape(Rectangle())
+            .simultaneousGesture(manualPlaceKeyboardDismissTap)
+            .onChange(of: shareDeviceLocation) { oldValue, newValue in
+                guard oldValue != newValue else { return }
+                guard !isTogglingDiscoveryLocation else { return }
+                // Server `web_only` is the inverse of sharing device location.
+                let expectedWebOnly = !newValue
+                guard discoveryLocationPin?.serviceLocationWebOnly != expectedWebOnly else { return }
+                Task { await setShareDeviceLocation(newValue) }
+            }
+            .padding(.horizontal, 8)
+        }
+        .task(id: session.barberProfile?.id) {
+            await loadDiscoveryLocationStatus(seedManualField: true)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .providerDiscoveryLocationChanged)) { _ in
+            Task { await loadDiscoveryLocationStatus(seedManualField: false) }
+        }
+        .onChange(of: shareDeviceLocation) { _, sharingDevice in
+            if sharingDevice {
+                placeSearch.clearResults()
+                isManualPlaceFieldFocused = false
+            } else {
+                manualPlaceQuery = ""
+                placeSearch.clearResults()
+                isManualPlaceFieldFocused = true
+            }
+        }
+    }
+
+    private var manualDiscoveryPlaceSearch: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                TextField(
+                    "",
+                    text: $manualPlaceQuery,
+                    prompt: Text("Manually enter a location where you conduct service")
+                        .font(.provider(.caption))
+                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                )
+                .font(.provider(.subheadline))
+                .foregroundStyle(Color.lavaShellCream)
+                .textInputAutocapitalization(.words)
+                .autocorrectionDisabled()
+                .focused($isManualPlaceFieldFocused)
+                .submitLabel(.search)
+                .onSubmit {
+                    Task { await saveManualPlaceFromTypedQuery() }
+                }
+                .onChange(of: manualPlaceQuery) { _, newValue in
+                    placeSearch.queryFragment = newValue
+                }
+
+                if isSavingManualPlace || placeSearch.isSearching {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(Color.lavaShellCreamSecondary)
+                } else if !manualPlaceQuery.isEmpty {
+                    Button {
+                        manualPlaceQuery = ""
+                        placeSearch.clearResults()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(Color.lavaShellCreamTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear place search")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                Color.white.opacity(0.10),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.8)
+            )
+
+            if isManualPlaceFieldFocused, !placeSearch.suggestionsSuppressed, !placeSearch.results.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(placeSearch.results.enumerated()), id: \.offset) { index, completion in
+                        Button {
+                            Task { await selectManualPlace(completion) }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(completion.title)
+                                    .font(.provider(.subheadline, weight: .semibold))
+                                    .foregroundStyle(Color.lavaShellCream)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                if !completion.subtitle.isEmpty {
+                                    Text(completion.subtitle)
+                                        .font(.provider(.caption))
+                                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isSavingManualPlace)
+
+                        if index < placeSearch.results.count - 1 {
+                            Divider()
+                                .overlay(Color.white.opacity(0.12))
+                        }
+                    }
+                }
+                .background(
+                    Color.providerElevatedSurface.opacity(0.92),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+                )
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var discoveryLocationPlaceText: String {
+        if discoveryLocationLoadFailed {
+            return "Location unavailable"
+        }
+        guard let pin = discoveryLocationPin else {
+            return "Loading location…"
+        }
+        let label = pin.serviceLocationLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !label.isEmpty {
+            return label
+        }
+        if pin.hasCoordinates {
+            return "Public pin set · \(pin.sourceDisplayName)"
+        }
+        return "No public pin yet"
+    }
+
+    private func seedManualPlaceQueryFromPin() {
+        let label = discoveryLocationPin?.serviceLocationLabel?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !label.isEmpty {
+            manualPlaceQuery = label
+            placeSearch.dismissSuggestions(keepingQuery: label)
+        } else {
+            placeSearch.clearResults()
+        }
     }
 
     private var summaryLine: some View {
@@ -619,6 +854,123 @@ struct ProviderScheduleDashboardView: View {
         await loadWeeklySchedule()
         await loadWeekTimeBlocks()
         await loadGoogleCalendarStatusAndBusyTimes()
+        await loadDiscoveryLocationStatus(seedManualField: false)
+    }
+
+    private func loadDiscoveryLocationStatus(seedManualField: Bool) async {
+        guard session.hasProviderProfile else {
+            discoveryLocationPin = nil
+            discoveryLocationLoadFailed = false
+            shareDeviceLocation = true
+            return
+        }
+        do {
+            let pin = try await ProviderBarberServiceLocationService.fetch()
+            discoveryLocationPin = pin
+            shareDeviceLocation = !pin.serviceLocationWebOnly
+            discoveryLocationLoadFailed = false
+            // Only seed on initial profile load — never after a toggle, or the prior pin refills the cleared field.
+            if seedManualField, pin.serviceLocationWebOnly {
+                seedManualPlaceQueryFromPin()
+            }
+        } catch {
+            guard !providerIsBenignRequestCancellation(error) else { return }
+            discoveryLocationLoadFailed = true
+        }
+    }
+
+    private func setShareDeviceLocation(_ enabled: Bool) async {
+        guard session.hasProviderProfile, !isTogglingDiscoveryLocation else { return }
+        let previousPin = discoveryLocationPin
+        let previousShare = !(previousPin?.serviceLocationWebOnly ?? false)
+        isTogglingDiscoveryLocation = true
+        defer { isTogglingDiscoveryLocation = false }
+        do {
+            // Manual lock is the inverse of sharing device location.
+            let updated = try await ProviderServiceLocationSync.setUseManualLocation(!enabled)
+            discoveryLocationPin = updated
+            shareDeviceLocation = !updated.serviceLocationWebOnly
+            discoveryLocationLoadFailed = false
+            if updated.serviceLocationWebOnly {
+                manualPlaceQuery = ""
+                placeSearch.clearResults()
+            }
+            NotificationCenter.default.post(name: .providerDiscoveryLocationChanged, object: nil)
+        } catch {
+            discoveryLocationPin = previousPin
+            shareDeviceLocation = previousShare
+            errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func selectManualPlace(_ completion: MKLocalSearchCompletion) async {
+        guard session.hasProviderProfile, !isSavingManualPlace else { return }
+        isSavingManualPlace = true
+        defer { isSavingManualPlace = false }
+        do {
+            let resolved = try await placeSearch.resolveCoordinates(for: completion)
+            let updated = try await ProviderBarberServiceLocationService.update(
+                latitude: resolved.coordinate.latitude,
+                longitude: resolved.coordinate.longitude,
+                label: resolved.label,
+                source: "manual",
+                webOnly: true
+            )
+            discoveryLocationPin = updated
+            shareDeviceLocation = false
+            manualPlaceQuery = resolved.label
+            placeSearch.dismissSuggestions(keepingQuery: resolved.label)
+            isManualPlaceFieldFocused = false
+            discoveryLocationLoadFailed = false
+            NotificationCenter.default.post(name: .providerDiscoveryLocationChanged, object: nil)
+        } catch {
+            errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func saveManualPlaceFromTypedQuery() async {
+        let query = manualPlaceQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty, session.hasProviderProfile, !isSavingManualPlace else { return }
+        if let first = placeSearch.results.first {
+            await selectManualPlace(first)
+            return
+        }
+        isSavingManualPlace = true
+        defer { isSavingManualPlace = false }
+        do {
+            let geocoder = CLGeocoder()
+            let placemarks = try await geocoder.geocodeAddressString(query)
+            guard let place = placemarks.first, let location = place.location else {
+                errorText = "Couldn’t find that place. Try selecting a suggestion."
+                return
+            }
+            let label = [
+                place.name,
+                place.locality,
+                place.administrativeArea,
+            ]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .prefix(2)
+            .joined(separator: ", ")
+
+            let updated = try await ProviderBarberServiceLocationService.update(
+                latitude: location.coordinate.latitude,
+                longitude: location.coordinate.longitude,
+                label: label.isEmpty ? query : label,
+                source: "manual",
+                webOnly: true
+            )
+            discoveryLocationPin = updated
+            shareDeviceLocation = false
+            manualPlaceQuery = updated.serviceLocationLabel ?? query
+            placeSearch.dismissSuggestions(keepingQuery: manualPlaceQuery)
+            isManualPlaceFieldFocused = false
+            discoveryLocationLoadFailed = false
+            NotificationCenter.default.post(name: .providerDiscoveryLocationChanged, object: nil)
+        } catch {
+            errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
     }
 
     private func loadBookings() async {

@@ -22,6 +22,10 @@ import { validate } from '../middleware/validator';
 import { upload } from '../middleware/upload';
 import { pool } from '../database/connection';
 import { logger } from '../utils/logger';
+import {
+  getBarberServiceLocation,
+  updateBarberServiceLocation,
+} from '../controllers/user-location.controller';
 
 const router: Router = express.Router();
 
@@ -48,6 +52,20 @@ router.get(
  * @access  Private (Barbers only)
  */
 router.get('/me', authenticate, getMyBarberProfile);
+
+/**
+ * @route   GET /api/barbers/service-location
+ * @desc    Public discovery pin for the signed-in operator
+ * @access  Private
+ */
+router.get('/service-location', authenticate, getBarberServiceLocation);
+
+/**
+ * @route   PUT /api/barbers/service-location
+ * @desc    Update public discovery pin (device GPS or manual PlaceSearch)
+ * @access  Private
+ */
+router.put('/service-location', authenticate, updateBarberServiceLocation);
 
 /**
  * @route   GET /api/barbers/user/:userId

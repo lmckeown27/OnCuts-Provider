@@ -1650,32 +1650,35 @@ struct ProviderConsumerEnrollmentView: View {
             let row = try await ProviderBarberApplicationService.fetchMyApplication()
             existingApplication = row
             guard let row, let status = row.status?.lowercased(), !status.isEmpty else {
-                await loadCampusesIfNeeded()
-                await loadProfessionOptions()
-                await loadSpecialtyCatalog()
-                wizardPage = .profession
-                phase = .wizard
+                await enterFreshApplicationWizard()
                 return
             }
             if status == "approved" {
                 await session.retryProviderProfileSync()
                 if session.hasProviderProfile { return }
+                // Demoted (or never activated) operators still have an approved application row,
+                // but must not see "Application approved" — treat them like a first-time applicant.
+                existingApplication = nil
+                await enterFreshApplicationWizard()
+                return
             }
-            if ["pending", "under_review", "interview_scheduled", "approved", "rejected"].contains(status) {
+            if ["pending", "under_review", "interview_scheduled", "rejected"].contains(status) {
                 phase = .existingApplication
             } else {
-                await loadCampusesIfNeeded()
-                await loadProfessionOptions()
-                await loadSpecialtyCatalog()
-                phase = .wizard
+                await enterFreshApplicationWizard()
             }
         } catch {
             errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            await loadCampusesIfNeeded()
-            await loadProfessionOptions()
-            await loadSpecialtyCatalog()
-            phase = .wizard
+            await enterFreshApplicationWizard()
         }
+    }
+
+    private func enterFreshApplicationWizard() async {
+        await loadCampusesIfNeeded()
+        await loadProfessionOptions()
+        await loadSpecialtyCatalog()
+        wizardPage = .profession
+        phase = .wizard
     }
 
     private func submit() async {
@@ -1697,10 +1700,7 @@ struct ProviderConsumerEnrollmentView: View {
         }()
 
         var body: [String: Any] = [
-            "phoneNumber": PhoneNumberInputFormatter.normalized(
-                phoneNumber,
-                regionCode: currentRegionCode
-            ),
+            "phoneNumber": phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines),
             "yearsExperience": yearsExperience,
             "hasLicense": declared,
             "specialties": Array(selectedSpecialties).sorted(),

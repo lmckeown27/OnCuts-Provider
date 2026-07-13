@@ -42,8 +42,19 @@ class LocationService {
   async updateBarberServiceLocation(data: {
     latitude?: number;
     longitude?: number;
+    label?: string;
+    source?: 'device' | 'manual' | 'campus_default';
+    web_only?: boolean;
     service_radius_km?: number;
-  }): Promise<{ service_latitude: number; service_longitude: number; service_radius_km: number }> {
+  }): Promise<{
+    service_latitude: number | null;
+    service_longitude: number | null;
+    service_radius_km: number | null;
+    service_location_label?: string | null;
+    service_location_source?: string | null;
+    service_location_web_only?: boolean;
+    ignored_device_update?: boolean;
+  }> {
     const response = await api.put<{ success: boolean; data: any }>('/barbers/service-location', data);
     return response.data;
   }

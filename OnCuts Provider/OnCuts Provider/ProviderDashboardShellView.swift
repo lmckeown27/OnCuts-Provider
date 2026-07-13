@@ -1,5 +1,6 @@
 import SwiftUI
 #if os(iOS)
+import UIKit
 import UserNotifications
 #endif
 
@@ -22,6 +23,7 @@ struct ProviderDashboardShellView: View {
     @State private var pendingRequestCount = 0
     @State private var pendingRescheduleRequestCount = 0
     @State private var hasAwaitingPaymentAttention = false
+    @State private var showLocationDeniedGuidance = false
 
     private var bookingsTrayAttentionCount: Int {
         pendingRequestCount + pendingRescheduleRequestCount
@@ -33,162 +35,227 @@ struct ProviderDashboardShellView: View {
     }
 
     var body: some View {
+        shellWithNotificationRouting
+    }
+
+    private var shellWithNotificationRouting: some View {
+        shellWithLifecycle
+            .onReceive(NotificationCenter.default.publisher(for: .onCutsOpenMessagingConversation)) { notification in
+                showingRequestsInbox = false
+                let conversationId = Self.conversationId(from: notification.userInfo)
+                navigator.openMessages(conversationId: conversationId)
+                Task { await refreshHeaderCounts() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .providerMessagingUnreadCountShouldRefresh)) { _ in
+                Task { await refreshHeaderCounts() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .providerBookingsChanged)) { _ in
+                Task { await refreshHeaderCounts() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .providerBookingsListShouldRefresh)) { _ in
+                Task { await refreshHeaderCounts() }
+                NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .providerRequestsListShouldRefresh)) { _ in
+                Task { await refreshHeaderCounts() }
+                NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .onCutsOpenRequestsInbox)) { _ in
+                navigator.popToHub()
+                presentBookingsInbox()
+                Task { await refreshHeaderCounts() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: ProviderAwaitingPaymentTracker.didChangeNotification)) { _ in
+                Task { await refreshHeaderCounts() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .onCutsOpenBookingDetail)) { notification in
+                navigator.popToHub()
+                pendingInboxBookingDetailId = Self.bookingId(from: notification.userInfo)
+                presentBookingsInbox()
+                Task { await refreshHeaderCounts() }
+                NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
+            }
+    }
+
+    private var shellWithLifecycle: some View {
+        shellWithPresentations
+            .onAppear {
+                if navigator.isHub {
+                    shellNavigationAppearance.clearContainerBackdropImmediately()
+                }
+            }
+            .onChange(of: navigator.isHub) { _, isHub in
+                if isHub {
+                    shellNavigationAppearance.clearContainerBackdropImmediately()
+                    Task { await refreshHeaderCounts() }
+                }
+            }
+            .onChange(of: navigator.stack.count) { _, count in
+                handleNavigatorStackCountChange(count)
+            }
+            .task {
+                await bootstrapShell()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active, session.hasProviderProfile else { return }
+                Task { await stripeOnboardingGate.refresh() }
+            }
+            .onChange(of: session.hasProviderProfile) { _, hasProfile in
+                guard hasProfile else { return }
+                Task { await stripeOnboardingGate.refresh() }
+            }
+    }
+
+    private var shellWithPresentations: some View {
+        shellChromeRoot
+            .sheet(isPresented: $showingRequestsInbox, onDismiss: {
+                pendingInboxBookingDetailId = nil
+                Task { await refreshHeaderCounts() }
+            }) {
+                requestsInboxSheet
+            }
+            .sheet(isPresented: $showingBusinessAnalytics) {
+                ProviderBusinessAnalyticsView()
+                    .presentationDragIndicator(.visible)
+            }
+            .fullScreenCover(isPresented: Binding(
+                get: { showsPaymentsOnboardingGate },
+                set: { _ in
+                    // Dismiss only when Connect flags pass (`shouldPresentGuide` becomes false).
+                }
+            )) {
+                ProviderPaymentsOnboardingGuideView(
+                    blocking: true,
+                    gate: stripeOnboardingGate
+                )
+            }
+            .alert("Location access is off", isPresented: $showLocationDeniedGuidance) {
+                locationDeniedAlertActions
+            } message: {
+                Text("Your location access is turned off. If you wish, go to settings to turn on location access")
+            }
+    }
+
+    private var shellChromeRoot: some View {
+        shellRootLayout
+            .foregroundStyle(Color.lavaShellCream)
+            .tint(.providerOlive)
+            .providerLavaToolbarChrome()
+            .environment(navigator)
+            .optionalProviderShellNavigatorEnvironment(navigator)
+            #if os(iOS)
+            .environment(ProviderShellNavigationPopBridge.shared)
+            #endif
+    }
+
+    private var shellRootLayout: some View {
         GeometryReader { geometry in
             ZStack {
-                VStack(spacing: 0) {
-                    dashboardHeaderBar
-                    ProviderScheduleDashboardView()
-                        .providerHubScheduleChrome()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                }
-                .background {
-                    Color(uiColor: ProviderAppearance.shellBase)
-                        .ignoresSafeArea()
-                }
-                .allowsHitTesting(navigator.hubAcceptsTouches)
-
-                if let overlayScreen = navigator.overlayScreen {
-                    NavigationStack {
-                        pushedScreenView(overlayScreen)
-                            .providerShellNavigationDepthTracking()
-                    }
-                    .id(overlayScreen.overlayIdentity)
-                    .optionalProviderShellNavigatorEnvironment(navigator)
-                    .providerShellNavigationContainerChrome(
-                        backdrop: shellNavigationAppearance.navigationContainerBackdropStyle
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .offset(x: navigator.slideOffsetX(containerWidth: geometry.size.width))
-                    .allowsHitTesting(!navigator.isDismissingOverlay || navigator.slideProgress > 0.05)
-                    .providerShellInteractiveSlide(containerWidth: geometry.size.width)
-                }
+                hubContent
+                overlayNavigation(containerWidth: geometry.size.width)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private var hubContent: some View {
+        VStack(spacing: 0) {
+            dashboardHeaderBar
+            ProviderScheduleDashboardView()
+                .providerHubScheduleChrome()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+        .background {
+            Color(uiColor: ProviderAppearance.shellBase)
+                .ignoresSafeArea()
+        }
+        .allowsHitTesting(navigator.hubAcceptsTouches)
+    }
+
+    @ViewBuilder
+    private func overlayNavigation(containerWidth: CGFloat) -> some View {
+        if let overlayScreen = navigator.overlayScreen {
+            NavigationStack {
+                pushedScreenView(overlayScreen)
+                    .providerShellNavigationDepthTracking()
+            }
+            .id(overlayScreen.overlayIdentity)
+            .optionalProviderShellNavigatorEnvironment(navigator)
+            .providerShellNavigationContainerChrome(
+                backdrop: shellNavigationAppearance.navigationContainerBackdropStyle
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .offset(x: navigator.slideOffsetX(containerWidth: containerWidth))
+            .allowsHitTesting(!navigator.isDismissingOverlay || navigator.slideProgress > 0.05)
+            .providerShellInteractiveSlide(containerWidth: containerWidth)
+        }
+    }
+
+    private var requestsInboxSheet: some View {
+        ProviderRequestsInboxView(
+            presentationID: bookingsInboxPresentationID,
+            pendingBookingDetailId: $pendingInboxBookingDetailId
+        )
+        .id(bookingsInboxPresentationID)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Done") { showingRequestsInbox = false }
+            }
+        }
         .foregroundStyle(Color.lavaShellCream)
         .tint(.providerOlive)
-        .providerLavaToolbarChrome()
-        .environment(navigator)
-        .optionalProviderShellNavigatorEnvironment(navigator)
+        .providerLavaScreenChrome()
+        .presentationDragIndicator(.visible)
+    }
+
+    @ViewBuilder
+    private var locationDeniedAlertActions: some View {
         #if os(iOS)
-        .environment(ProviderShellNavigationPopBridge.shared)
+        Button("Open Settings") {
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        }
         #endif
-        .onAppear {
-            if navigator.isHub {
-                shellNavigationAppearance.clearContainerBackdropImmediately()
-            }
+        Button("Not Now", role: .cancel) {}
+    }
+
+    private func handleNavigatorStackCountChange(_ count: Int) {
+        #if os(iOS)
+        if count == 0 {
+            ProviderShellNavigationPopBridge.shared.resetHostNavigation()
+            ProviderShellNavigationPopBridge.shared.clearEmbeddedNavigation()
+        } else if let last = navigator.stack.last, case .route(.messages) = last {
+            // Conversation detail depth is tracked via `messagesDetailPath`.
+        } else {
+            ProviderShellNavigationPopBridge.shared.clearEmbeddedNavigation()
+            ProviderShellNavigationPopBridge.shared.resetHostDestinations()
         }
-        .onChange(of: navigator.isHub) { _, isHub in
-            if isHub {
-                shellNavigationAppearance.clearContainerBackdropImmediately()
-                Task { await refreshHeaderCounts() }
-            }
+        ProviderNavigationChromeBridge.applySynchronouslyFromKeyWindow()
+        #endif
+    }
+
+    private func bootstrapShell() async {
+        ProviderLocationPermissionBroker.shared.requestWhenInUseIfNeeded {
+            showLocationDeniedGuidance = true
         }
-        .onChange(of: navigator.stack.count) { _, count in
-            #if os(iOS)
-            if count == 0 {
-                ProviderShellNavigationPopBridge.shared.resetHostNavigation()
-                ProviderShellNavigationPopBridge.shared.clearEmbeddedNavigation()
-            } else if let last = navigator.stack.last, case .route(.messages) = last {
-                // Conversation detail depth is tracked via `messagesDetailPath`.
-            } else {
-                ProviderShellNavigationPopBridge.shared.clearEmbeddedNavigation()
-                ProviderShellNavigationPopBridge.shared.resetHostDestinations()
-            }
-            ProviderNavigationChromeBridge.applySynchronouslyFromKeyWindow()
-            #endif
+        await refreshHeaderCounts()
+        // Background Connect check — guide presents only if status comes back incomplete.
+        if session.hasProviderProfile {
+            await stripeOnboardingGate.refresh()
+            await syncDiscoveryLocationIfNeeded()
         }
-        .sheet(isPresented: $showingRequestsInbox, onDismiss: {
-            pendingInboxBookingDetailId = nil
-            Task { await refreshHeaderCounts() }
-        }) {
-            ProviderRequestsInboxView(
-                presentationID: bookingsInboxPresentationID,
-                pendingBookingDetailId: $pendingInboxBookingDetailId
-            )
-                .id(bookingsInboxPresentationID)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { showingRequestsInbox = false }
-                    }
-                }
-            .foregroundStyle(Color.lavaShellCream)
-            .tint(.providerOlive)
-            .providerLavaScreenChrome()
-            .presentationDragIndicator(.visible)
-        }
-        .sheet(isPresented: $showingBusinessAnalytics) {
-            ProviderBusinessAnalyticsView()
-                .presentationDragIndicator(.visible)
-        }
-        .fullScreenCover(isPresented: Binding(
-            get: { showsPaymentsOnboardingGate },
-            set: { _ in
-                // Dismiss only when Connect flags pass (`shouldPresentGuide` becomes false).
-            }
-        )) {
-            ProviderPaymentsOnboardingGuideView(
-                blocking: true,
-                gate: stripeOnboardingGate
-            )
-        }
-        .task {
-            ProviderLocationPermissionBroker.shared.requestWhenInUseIfNeeded()
-            await refreshHeaderCounts()
-            // Background Connect check — guide presents only if status comes back incomplete.
-            if session.hasProviderProfile {
-                await stripeOnboardingGate.refresh()
-            }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            guard phase == .active, session.hasProviderProfile else { return }
-            Task { await stripeOnboardingGate.refresh() }
-        }
-        .onChange(of: session.hasProviderProfile) { _, hasProfile in
-            guard hasProfile else { return }
-            Task { await stripeOnboardingGate.refresh() }
-        }
-        // Push router → in-app routing. Three observer cases:
-        //   1. `onCutsOpenMessagingConversation` → push Messages and focus the conversation in
-        //      `messagesDetailPath` (replaces duplicates; refreshes if already open).
-        //   2. `providerMessagingUnreadCountShouldRefresh` → refetch unread badge count.
-        //   3. `providerBookingsListShouldRefresh` / `providerRequestsListShouldRefresh` →
-        //      refresh pending count badge so the header is consistent with the server state.
-        //   4. `onCutsOpenRequestsInbox` → present the pending booking-requests sheet (new-request pushes).
-        .onReceive(NotificationCenter.default.publisher(for: .onCutsOpenMessagingConversation)) { notification in
-            showingRequestsInbox = false
-            let conversationId = Self.conversationId(from: notification.userInfo)
-            navigator.openMessages(conversationId: conversationId)
-            Task { await refreshHeaderCounts() }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .providerMessagingUnreadCountShouldRefresh)) { _ in
-            Task { await refreshHeaderCounts() }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .providerBookingsChanged)) { _ in
-            Task { await refreshHeaderCounts() }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .providerBookingsListShouldRefresh)) { _ in
-            Task { await refreshHeaderCounts() }
-            NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .providerRequestsListShouldRefresh)) { _ in
-            Task { await refreshHeaderCounts() }
-            NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .onCutsOpenRequestsInbox)) { _ in
-            navigator.popToHub()
-            presentBookingsInbox()
-            Task { await refreshHeaderCounts() }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: ProviderAwaitingPaymentTracker.didChangeNotification)) { _ in
-            Task { await refreshHeaderCounts() }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .onCutsOpenBookingDetail)) { notification in
-            navigator.popToHub()
-            pendingInboxBookingDetailId = Self.bookingId(from: notification.userInfo)
-            presentBookingsInbox()
-            Task { await refreshHeaderCounts() }
-            NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
+    }
+
+    /// When manual location is off, keep the public discovery pin fresh from this device.
+    private func syncDiscoveryLocationIfNeeded() async {
+        do {
+            let pin = try await ProviderBarberServiceLocationService.fetch()
+            guard !pin.serviceLocationWebOnly else { return }
+            _ = try await ProviderServiceLocationSync.syncDeviceLocation()
+            NotificationCenter.default.post(name: .providerDiscoveryLocationChanged, object: nil)
+        } catch {
+            // Non-fatal — account settings surface errors if the operator updates manually.
         }
     }
 

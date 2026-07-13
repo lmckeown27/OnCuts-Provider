@@ -37,6 +37,8 @@ extension Notification.Name {
     /// Posted when the provider edits weekly schedule, time blocks, or Google Calendar connection.
     /// Lets the schedule dashboard refetch availability + the day's slot list immediately.
     static let providerAvailabilityChanged = Notification.Name("ProviderAvailabilityChanged")
+    /// Posted when the public discovery pin / manual-location toggle changes (Account settings).
+    static let providerDiscoveryLocationChanged = Notification.Name("ProviderDiscoveryLocationChanged")
 }
 
 extension Notification.Name {
