@@ -67,7 +67,7 @@ struct ProviderBookingsListView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .navigationTitle("Bookings")
+            .providerPageNavigationTitle("Bookings")
             .navigationDestination(for: SimpleBookingDTO.self) { booking in
                 BookingDetailScreen(booking: booking, onChanged: { await load(isUserPullToRefresh: false) })
             }

@@ -486,8 +486,7 @@ struct AuthEntryView: View {
             }
         }
         .providerLavaIntegratedFormSurface()
-        .navigationTitle("Create account")
-        .navigationBarTitleDisplayMode(.inline)
+        .providerPageNavigationTitle("Create account")
         .foregroundStyle(Color.lavaShellCream)
         .tint(.providerBrandGold)
         .providerAuthIntegratedScreenChrome()
@@ -504,8 +503,7 @@ struct AuthEntryView: View {
                 ProviderLegalWebView(url: document.url)
                     .id(document.id)
                     .ignoresSafeArea(edges: .bottom)
-                    .navigationTitle(document.title)
-                    .navigationBarTitleDisplayMode(.inline)
+                    .providerPageNavigationTitle(document.title)
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Done") { presentedLegalDocument = nil }
@@ -557,8 +555,7 @@ struct AuthEntryView: View {
                 }
             }
             .searchable(text: $campusSearchText, prompt: "Search campuses")
-            .navigationTitle("Select campus")
-            .navigationBarTitleDisplayMode(.inline)
+            .providerPageNavigationTitle("Select campus")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { showCampusPicker = false }

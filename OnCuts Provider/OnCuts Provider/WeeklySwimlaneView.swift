@@ -654,55 +654,71 @@ private struct WeeklySwimlaneAppointmentsLayer: View {
         let isMoveSession = editingMoveBookingID == appointment.id
         let isDragActive = activeMoveDragBookingID == appointment.id
 
-        WeeklyDraggableSwimlaneAppointmentCard(
-            originX: originX,
-            top: cardTop,
-            height: cardHeight,
-            columnWidth: WeeklySwimlaneLayout.dayColumnWidth,
-            viewportWidth: viewportWidth,
-            viewportHeight: viewportHeight,
-            isMoveSession: isMoveSession,
-            isDragActive: isDragActive,
-            canRequestMove: canMove && editingMoveBookingID == nil,
-            snapDragOffsetFromGridPoint: { gridPoint in
-                moveResolver.clampedDragOffsetFromGridPoint(
-                    for: positioned,
-                    gridX: gridPoint.x,
-                    gridY: gridPoint.y
-                )
-            },
-            onTap: {
-                if let editingID = editingMoveBookingID {
-                    if appointment.id == editingID {
-                        timeChangeProposal = nil
-                        activeMoveDragBookingID = appointment.id
-                    } else {
+        ZStack(alignment: .topLeading) {
+            if isMoveSession {
+                RoundedRectangle(cornerRadius: WeeklySwimlaneLayout.cardCornerRadius, style: .continuous)
+                    .fill(appointment.booking.scheduleAppointmentMoveOriginFillColor)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: WeeklySwimlaneLayout.cardCornerRadius, style: .continuous)
+                            .strokeBorder(Color.lavaShellCream.opacity(0.12), lineWidth: 0.6)
+                    )
+                    .frame(width: WeeklySwimlaneLayout.dayColumnWidth, height: cardHeight)
+                    .padding(.horizontal, WeeklySwimlaneLayout.cardHorizontalInset)
+                    .offset(x: originX, y: cardTop)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+
+            WeeklyDraggableSwimlaneAppointmentCard(
+                originX: originX,
+                top: cardTop,
+                height: cardHeight,
+                columnWidth: WeeklySwimlaneLayout.dayColumnWidth,
+                viewportWidth: viewportWidth,
+                viewportHeight: viewportHeight,
+                isMoveSession: isMoveSession,
+                isDragActive: isDragActive,
+                canRequestMove: canMove && editingMoveBookingID == nil,
+                snapDragOffsetFromGridPoint: { gridPoint in
+                    moveResolver.clampedDragOffsetFromGridPoint(
+                        for: positioned,
+                        gridX: gridPoint.x,
+                        gridY: gridPoint.y
+                    )
+                },
+                onTap: {
+                    if let editingID = editingMoveBookingID {
+                        if appointment.id == editingID {
+                            timeChangeProposal = nil
+                            activeMoveDragBookingID = appointment.id
+                        } else {
+                            activeMoveDragBookingID = nil
+                        }
+                        return
+                    }
+                    onBookingTap(appointment.booking)
+                },
+                onMoveRequested: { onMoveBookingRequested(appointment.booking) },
+                onDragEndedAtGridPoint: { gridPoint in
+                    let moved = moveResolver.handleDragEndedFromGridPoint(
+                        for: positioned,
+                        gridX: gridPoint.x,
+                        gridY: gridPoint.y,
+                        onProposed: onBookingTimeChangeProposed
+                    )
+                    if moved {
                         activeMoveDragBookingID = nil
                     }
-                    return
+                    return moved
                 }
-                onBookingTap(appointment.booking)
-            },
-            onMoveRequested: { onMoveBookingRequested(appointment.booking) },
-            onDragEndedAtGridPoint: { gridPoint in
-                let moved = moveResolver.handleDragEndedFromGridPoint(
-                    for: positioned,
-                    gridX: gridPoint.x,
-                    gridY: gridPoint.y,
-                    onProposed: onBookingTimeChangeProposed
+            ) {
+                WeeklySwimlaneAppointmentCardContent(
+                    appointment: appointment,
+                    cardHeight: cardHeight,
+                    isMoveSession: isMoveSession,
+                    isDragActive: isDragActive
                 )
-                if moved {
-                    activeMoveDragBookingID = nil
-                }
-                return moved
             }
-        ) {
-            WeeklySwimlaneAppointmentCardContent(
-                appointment: appointment,
-                cardHeight: cardHeight,
-                isMoveSession: isMoveSession,
-                isDragActive: isDragActive
-            )
         }
     }
 }
@@ -892,8 +908,8 @@ private struct WeeklySwimlaneAppointmentCardContent: View {
                         .font(.provider(size: moveModeIconSize(for: cardHeight), weight: .semibold))
                         .foregroundStyle(
                             isDragActive
-                                ? Color.lavaShellCreamSecondary.opacity(0.88)
-                                : Color.lavaShellCream.opacity(0.92)
+                                ? Color.providerScheduleAppointmentSecondaryLabel
+                                : Color.providerScheduleAppointmentPrimaryLabel
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                         .padding(.horizontal, 5)
@@ -907,7 +923,7 @@ private struct WeeklySwimlaneAppointmentCardContent: View {
                                     : consumerFontSize(for: cardHeight),
                                 weight: .semibold
                             ))
-                            .foregroundStyle(Color.lavaShellCream)
+                            .foregroundStyle(Color.providerScheduleAppointmentPrimaryLabel)
                             .lineLimit(usesCompactStatusLabel ? 2 : (cardHeight > 44 ? 2 : 1))
                             .minimumScaleFactor(usesCompactStatusLabel ? 0.55 : 0.85)
                             .frame(maxWidth: .infinity, alignment: usesCompactStatusLabel ? .center : .leading)
@@ -915,7 +931,7 @@ private struct WeeklySwimlaneAppointmentCardContent: View {
                         if cardHeight > 40 {
                             Text(appointment.booking.serviceDisplayName)
                                 .font(.provider(size: serviceFontSize(for: cardHeight), weight: .medium))
-                                .foregroundStyle(Color.lavaShellCreamSecondary)
+                                .foregroundStyle(Color.providerScheduleAppointmentSecondaryLabel)
                                 .lineLimit(1)
                         }
                     }
@@ -946,8 +962,9 @@ private struct WeeklySwimlaneAppointmentCardContent: View {
     }
 
     private var moveModeBackgroundColor: Color {
-        if isDragActive {
-            return Color.lavaShellCreamSecondary.opacity(0.22)
+        // Keep the status fill while dragging; original slot uses the muted origin ghost.
+        if isMoveSession {
+            return appointment.booking.scheduleAppointmentFillColor
         }
         return Color.providerOlive.opacity(0.26)
     }

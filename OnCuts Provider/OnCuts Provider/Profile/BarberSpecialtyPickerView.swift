@@ -60,8 +60,7 @@ struct BarberSpecialtyPickerView: View {
                 }
             }
             .background(Color.clear)
-            .navigationTitle("Add Specialty")
-            .navigationBarTitleDisplayMode(.inline)
+            .providerPageNavigationTitle("Add Specialty")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

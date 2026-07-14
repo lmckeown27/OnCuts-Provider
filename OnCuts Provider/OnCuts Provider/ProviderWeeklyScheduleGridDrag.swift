@@ -425,60 +425,75 @@ struct ProviderWeeklyScheduleGridAppointmentsLayer: View {
         let originX = CGFloat(positioned.dayIndex) * dayColumnWidth
         let canMove = appointmentDragEnabled && ScheduleAppointmentDrag.isDraggable(positioned.booking)
         let isMoveSession = editingMoveBookingID == positioned.booking.id
+        let cornerRadius = ProviderWeeklyScheduleGridMetrics.bookingCardCornerRadius(height: positioned.height)
 
-        ProviderWeeklyScheduleGridDraggableBookingCard(
-            originX: originX,
-            top: positioned.yOffset,
-            height: positioned.height,
-            columnWidth: dayColumnWidth,
-            viewportWidth: viewportWidth,
-            viewportHeight: viewportHeight,
-            isMoveSession: isMoveSession,
-            canRequestMove: canMove && editingMoveBookingID == nil,
-            snapDragOffsetFromGridPoint: { gridPoint in
-                moveResolver.clampedDragOffsetFromGridPoint(
-                    for: positioned,
-                    gridX: gridPoint.x,
-                    gridY: gridPoint.y
+        ZStack(alignment: .topLeading) {
+            if isMoveSession {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(positioned.booking.scheduleAppointmentMoveOriginFillColor)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(Color.lavaShellCream.opacity(0.12), lineWidth: 0.6)
+                    )
+                    .frame(width: dayColumnWidth, height: positioned.height, alignment: .topLeading)
+                    .offset(x: originX, y: positioned.yOffset)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+
+            ProviderWeeklyScheduleGridDraggableBookingCard(
+                originX: originX,
+                top: positioned.yOffset,
+                height: positioned.height,
+                columnWidth: dayColumnWidth,
+                viewportWidth: viewportWidth,
+                viewportHeight: viewportHeight,
+                isMoveSession: isMoveSession,
+                canRequestMove: canMove && editingMoveBookingID == nil,
+                snapDragOffsetFromGridPoint: { gridPoint in
+                    moveResolver.clampedDragOffsetFromGridPoint(
+                        for: positioned,
+                        gridX: gridPoint.x,
+                        gridY: gridPoint.y
+                    )
+                },
+                onTap: {
+                    onViewBooking(positioned.booking)
+                },
+                onMoveRequested: { onMoveBookingRequested(positioned.booking) },
+                reportMoveAtGridPoint: { gridPoint in
+                    guard let proposedDate = moveResolver.proposedDate(
+                        for: positioned,
+                        gridX: gridPoint.x,
+                        gridY: gridPoint.y
+                    ) else {
+                        onBookingMoveProposalCleared()
+                        return
+                    }
+                    let targetsPast = moveResolver.isTargetingPastTime(
+                        for: positioned,
+                        gridX: gridPoint.x,
+                        gridY: gridPoint.y
+                    )
+                    onBookingTimeChangeProposed(positioned.booking, proposedDate, targetsPast)
+                },
+                onMoveProposalCleared: onBookingMoveProposalCleared,
+                onDragEndedAtGridPoint: { gridPoint in
+                    moveResolver.handleDragEndedFromGridPoint(
+                        for: positioned,
+                        gridX: gridPoint.x,
+                        gridY: gridPoint.y,
+                        onProposed: onBookingTimeChangeProposed
+                    )
+                },
+                accessibilityName: positioned.booking.consumerDisplayName
+            ) {
+                ProviderWeeklyScheduleGridBookingCardContent(
+                    booking: positioned.booking,
+                    cardHeight: positioned.height,
+                    isMoveSession: isMoveSession
                 )
-            },
-            onTap: {
-                guard editingMoveBookingID == nil else { return }
-                onViewBooking(positioned.booking)
-            },
-            onMoveRequested: { onMoveBookingRequested(positioned.booking) },
-            reportMoveAtGridPoint: { gridPoint in
-                guard let proposedDate = moveResolver.proposedDate(
-                    for: positioned,
-                    gridX: gridPoint.x,
-                    gridY: gridPoint.y
-                ) else {
-                    onBookingMoveProposalCleared()
-                    return
-                }
-                let targetsPast = moveResolver.isTargetingPastTime(
-                    for: positioned,
-                    gridX: gridPoint.x,
-                    gridY: gridPoint.y
-                )
-                onBookingTimeChangeProposed(positioned.booking, proposedDate, targetsPast)
-            },
-            onMoveProposalCleared: onBookingMoveProposalCleared,
-            onDragEndedAtGridPoint: { gridPoint in
-                moveResolver.handleDragEndedFromGridPoint(
-                    for: positioned,
-                    gridX: gridPoint.x,
-                    gridY: gridPoint.y,
-                    onProposed: onBookingTimeChangeProposed
-                )
-            },
-            accessibilityName: positioned.booking.consumerDisplayName
-        ) {
-            ProviderWeeklyScheduleGridBookingCardContent(
-                booking: positioned.booking,
-                cardHeight: positioned.height,
-                isMoveSession: isMoveSession
-            )
+            }
         }
     }
 }
@@ -506,12 +521,12 @@ struct ProviderWeeklyScheduleGridBookingCardContent: View {
             if isMoveSession {
                 Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
                     .font(.provider(size: moveModeIconSize, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCream.opacity(0.92))
+                    .foregroundStyle(Color.providerScheduleAppointmentPrimaryLabel)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if cardHeight >= 20 {
                 Text(booking.statusDisplayTitle)
                     .font(.provider(size: statusFontSize, weight: .bold))
-                    .foregroundStyle(Color.lavaShellCream)
+                    .foregroundStyle(Color.providerScheduleAppointmentPrimaryLabel)
                     .multilineTextAlignment(.center)
                     .lineLimit(cardHeight >= 36 ? 2 : 1)
                     .minimumScaleFactor(0.55)
@@ -851,7 +866,11 @@ private struct ProviderWeeklyScheduleGridPlaneDragOverlay: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
+        let wasImmediateDrag = context.coordinator.allowsImmediateDrag
         context.coordinator.allowsImmediateDrag = allowsImmediateDrag
+        if wasImmediateDrag != allowsImmediateDrag {
+            context.coordinator.resetEphemeralGestureState()
+        }
         context.coordinator.onHoldIndicationBegan = onHoldIndicationBegan
         context.coordinator.onHoldIndicationEnded = onHoldIndicationEnded
         context.coordinator.onMoveBegan = onMoveBegan
@@ -903,6 +922,13 @@ private struct ProviderWeeklyScheduleGridPlaneDragOverlay: UIViewRepresentable {
 
         private var canTrackPan: Bool {
             allowsImmediateDrag || didBeginMoveSession
+        }
+
+        func resetEphemeralGestureState() {
+            didBeginMoveSession = false
+            isHoldIndicationActive = false
+            lastValidGridPoint = nil
+            stopEdgeScroll()
         }
 
         private var scrollOffsetObservations: [NSKeyValueObservation] = []
@@ -1094,7 +1120,9 @@ private struct ProviderWeeklyScheduleGridPlaneDragOverlay: UIViewRepresentable {
 
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
             guard recognizer.state == .ended else { return }
-            guard !allowsImmediateDrag, !didBeginMoveSession else { return }
+            // Allow taps during move mode (immediate drag) so the booking can still open details.
+            // Ignore only if this touch already committed a hold-to-move session.
+            guard !didBeginMoveSession else { return }
             onTap()
         }
 

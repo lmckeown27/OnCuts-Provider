@@ -131,6 +131,24 @@ enum ProviderAppearance {
     /// Weekly grid canvas, time gutter, and day header row backdrop.
     static let scheduleGridBackground = shellBase
 
+    /// Labels drawn on saturated booking fills (pending yellow, etc.).
+    /// Dark mode uses pure white — cream reads too muted on those fills.
+    static let scheduleAppointmentPrimaryLabel = UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .white : ink
+    }
+
+    static let scheduleAppointmentSecondaryLabel = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor.white.withAlphaComponent(0.92)
+            : inkSecondary
+    }
+
+    static let scheduleAppointmentTertiaryLabel = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor.white.withAlphaComponent(0.8)
+            : inkTertiary
+    }
+
     /// Web parity action pills (`Edit Schedule`, `Block Time`) — white in light, elevated in dark.
     static let scheduleActionBackground = UIColor { traits in
         traits.userInterfaceStyle == .dark
@@ -296,6 +314,17 @@ extension Color {
     static var providerScheduleControlStroke: Color { Color(uiColor: ProviderAppearance.scheduleControlStroke) }
 
     static var providerScheduleGridBackground: Color { Color(uiColor: ProviderAppearance.scheduleGridBackground) }
+
+    /// Primary / secondary text on colored booking blocks.
+    static var providerScheduleAppointmentPrimaryLabel: Color {
+        Color(uiColor: ProviderAppearance.scheduleAppointmentPrimaryLabel)
+    }
+    static var providerScheduleAppointmentSecondaryLabel: Color {
+        Color(uiColor: ProviderAppearance.scheduleAppointmentSecondaryLabel)
+    }
+    static var providerScheduleAppointmentTertiaryLabel: Color {
+        Color(uiColor: ProviderAppearance.scheduleAppointmentTertiaryLabel)
+    }
 
     /// Schedule action pills (`Edit Schedule`, `Block Time`).
     static var providerScheduleActionBackground: Color { Color(uiColor: ProviderAppearance.scheduleActionBackground) }

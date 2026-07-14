@@ -120,14 +120,7 @@ struct ProviderAvailabilityEditorView: View {
             }
         }
         .providerNavigationStackDestinationBackdrop()
-        .navigationTitle(navigationTitleText)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(navigationTitleText)
-                    .font(.provider(.headline, weight: .semibold))
-            }
-        }
+        .providerPageNavigationTitle(navigationTitleText)
         .toolbar(.visible, for: .navigationBar)
         .foregroundStyle(Color.lavaShellCream)
         .tint(.providerOlive)
@@ -208,22 +201,23 @@ struct ProviderAvailabilityEditorView: View {
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    /// Full-width entry on **Edit Schedule** — opens the Block Time sheet (hub CTA removed).
+    /// Compact entry on **Edit Schedule** — opens the Block Time sheet (hub CTA removed).
     private var blockTimeEntryButton: some View {
         Button {
             showingAddBlock = true
         } label: {
             Text("Block Time")
                 .font(.provider(.subheadline, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .foregroundStyle(Color.providerOnOliveFill)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.providerOlive.opacity(0.85))
+                    Capsule(style: .continuous)
+                        .fill(Color.providerOlive)
                 )
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .center)
         .accessibilityLabel("Block Time")
     }
 

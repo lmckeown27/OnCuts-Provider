@@ -4,8 +4,7 @@ import SwiftUI
 struct ProviderProfileContent: View {
     var body: some View {
         BarberAccountControlView()
-            .navigationTitle("Account")
-            .navigationBarTitleDisplayMode(.inline)
+            .providerPageNavigationTitle("Account")
     }
 }
 

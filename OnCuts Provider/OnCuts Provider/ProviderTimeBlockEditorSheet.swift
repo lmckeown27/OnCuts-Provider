@@ -168,8 +168,7 @@ struct ProviderTimeBlockEditorSheet: View {
                 }
             }
             .providerLavaIntegratedFormSurface()
-            .navigationTitle(navigationTitle)
-            .navigationBarTitleDisplayMode(.inline)
+            .providerPageNavigationTitle(navigationTitle)
         }
         .foregroundStyle(Color.lavaShellCream)
         .tint(.providerOlive)

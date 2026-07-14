@@ -163,6 +163,31 @@ enum ProviderBookingStatusDisplay {
         }
     }
 
+    /// Original-slot fill while drag-moving a booking — desaturated/greyed status color
+    /// (plain opacity on yellow still reads as bright against the schedule).
+    static func scheduleAppointmentMoveOriginFill(for booking: SimpleBookingDTO) -> Color {
+        #if canImport(UIKit)
+        Color(uiColor: scheduleAppointmentMoveOriginUIColor(for: booking))
+        #else
+        scheduleAppointmentFill(for: booking).opacity(0.28)
+        #endif
+    }
+
+    #if canImport(UIKit)
+    private static func scheduleAppointmentMoveOriginUIColor(for booking: SimpleBookingDTO) -> UIColor {
+        let base: UIColor
+        switch normalized(booking.status) {
+        case "pending":
+            base = ProviderChatDesignTokens.Color.statusYellow
+        case "completed":
+            base = UIColor(Color.providerScheduleCompletedAppointmentFill)
+        default:
+            base = UIColor(Color.providerScheduleUpcomingAppointmentFill)
+        }
+        return base.providerMixed(with: .systemGray3, amount: 0.58).withAlphaComponent(0.82)
+    }
+    #endif
+
     /// Cancelled and paid bookings are omitted from the main schedule entirely.
     static func isVisibleOnMainSchedule(status raw: String?) -> Bool {
         switch normalized(raw) {
@@ -239,4 +264,30 @@ extension SimpleBookingDTO {
     var scheduleAppointmentFillColor: Color {
         ProviderBookingStatusDisplay.scheduleAppointmentFill(for: self)
     }
+
+    var scheduleAppointmentMoveOriginFillColor: Color {
+        ProviderBookingStatusDisplay.scheduleAppointmentMoveOriginFill(for: self)
+    }
 }
+
+#if canImport(UIKit)
+private extension UIColor {
+    /// Linear RGB mix toward `other` by `amount` (0 = self, 1 = other).
+    func providerMixed(with other: UIColor, amount: CGFloat) -> UIColor {
+        let t = min(1, max(0, amount))
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+        let ok1 = getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+        let ok2 = other.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+        guard ok1, ok2 else {
+            return self.withAlphaComponent(0.35)
+        }
+        return UIColor(
+            red: r1 + (r2 - r1) * t,
+            green: g1 + (g2 - g1) * t,
+            blue: b1 + (b2 - b1) * t,
+            alpha: a1 + (a2 - a1) * t
+        )
+    }
+}
+#endif

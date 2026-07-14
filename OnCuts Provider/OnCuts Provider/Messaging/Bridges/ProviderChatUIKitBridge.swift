@@ -151,8 +151,7 @@ struct ProviderMessagesInboxView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .providerNavigationStackDestinationBackdrop(style: .neutralGrey)
-            .navigationTitle("Chats")
-            .navigationBarTitleDisplayMode(.inline)
+            .providerPageNavigationTitle("Chats")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -203,13 +202,7 @@ struct ProviderMessagesInboxView: View {
         .sheet(isPresented: $showingBlockedUsers) {
             NavigationStack {
                 ProviderBlockedUsersHost()
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .principal) {
-                            Text("Blocked Users")
-                                .font(.provider(.headline, weight: .semibold))
-                        }
-                    }
+                    .providerPageNavigationTitle("Blocked Users")
             }
             .foregroundStyle(Color.lavaShellCream)
             .tint(.providerOlive)

@@ -1069,87 +1069,107 @@ private struct SchedulePreciseTimelineCanvas: View {
         let minDragOffsetY = (timelineLayout.contentY(forMinute: allowedStart.minStart) ?? top) - top
         let maxDragOffsetY = (timelineLayout.contentY(forMinute: allowedStart.maxStart) ?? top) - top
 
-        ScheduleDraggableAppointmentBlock(
-            top: top,
-            height: height,
-            appointmentID: app.booking.id,
-            isMoveSession: isMoveSession,
-            isDragActive: isDragActive,
-            canRequestMove: canMove && editingMoveBookingID == nil,
-            minDragOffsetY: minDragOffsetY,
-            maxDragOffsetY: maxDragOffsetY,
-            snapDragOffset: { totalOffsetY in
-                clampedDragOffsetY(for: app, totalOffsetY: totalOffsetY)
-            },
-            liveClampDragOffset: { totalOffsetY in
-                liveClampedDragOffsetY(
-                    for: app,
-                    top: top,
-                    height: height,
-                    totalOffsetY: totalOffsetY
-                )
-            },
-            shouldAllowEdgeScroll: { direction, totalOffsetY in
-                shouldAllowEdgeScroll(
-                    direction: direction,
-                    for: app,
-                    top: top,
-                    height: height,
-                    minDragOffsetY: minDragOffsetY,
-                    maxDragOffsetY: maxDragOffsetY,
-                    totalOffsetY: totalOffsetY
-                )
-            },
-            viewportHeight: viewportHeight,
-            canScrollTimelineUp: canScrollTimelineUp,
-            canScrollTimelineDown: canScrollTimelineDown,
-            onScrollTimelineBy: onScrollTimelineBy,
-            currentScrollOffsetY: currentScrollOffsetY,
-            onTap: {
-                if let editingID = editingMoveBookingID {
-                    if app.id == editingID {
-                        timeChangeProposal = nil
-                        activeMoveDragBookingID = app.id
-                    } else {
-                        activeMoveDragBookingID = nil
-                    }
-                    return
-                }
-                onBookingTap(app.booking)
-            },
-            onMoveRequested: { onMoveBookingRequested(app.booking) },
-            onDragEnded: { totalOffsetY in
-                handleAppointmentDragEnded(app: app, totalOffsetY: totalOffsetY)
-            }
-        ) {
-            HStack(spacing: 0) {
-                Spacer().frame(width: 52)
-                appointmentBlockContent(
-                    for: app,
-                    blockHeight: height,
-                    isMoveSession: isMoveSession,
-                    isDragActive: isDragActive,
-                    canRequestMove: canMove && editingMoveBookingID == nil
-                )
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    .background(appointmentColor(for: app.booking, isDragActive: isDragActive, isParkedForMove: isMoveSession && !isDragActive))
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay {
-                        if isMoveSession {
+        ZStack(alignment: .topLeading) {
+            if isMoveSession {
+                HStack(spacing: 0) {
+                    Spacer().frame(width: 52)
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(app.booking.scheduleAppointmentMoveOriginFillColor)
+                        .overlay(
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .strokeBorder(
-                                    isDragActive
-                                        ? Color.lavaShellCreamSecondary.opacity(0.45)
-                                        : Color.providerOlive.opacity(0.95),
-                                    lineWidth: 2
-                                )
-                        }
-                    }
-                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                .strokeBorder(Color.lavaShellCream.opacity(0.12), lineWidth: 0.6)
+                        )
+                        .frame(maxWidth: .infinity)
+                        .frame(height: height)
+                        .padding(.horizontal, 10)
+                }
+                .offset(y: top)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            ScheduleDraggableAppointmentBlock(
+                top: top,
+                height: height,
+                appointmentID: app.booking.id,
+                isMoveSession: isMoveSession,
+                isDragActive: isDragActive,
+                canRequestMove: canMove && editingMoveBookingID == nil,
+                minDragOffsetY: minDragOffsetY,
+                maxDragOffsetY: maxDragOffsetY,
+                snapDragOffset: { totalOffsetY in
+                    clampedDragOffsetY(for: app, totalOffsetY: totalOffsetY)
+                },
+                liveClampDragOffset: { totalOffsetY in
+                    liveClampedDragOffsetY(
+                        for: app,
+                        top: top,
+                        height: height,
+                        totalOffsetY: totalOffsetY
+                    )
+                },
+                shouldAllowEdgeScroll: { direction, totalOffsetY in
+                    shouldAllowEdgeScroll(
+                        direction: direction,
+                        for: app,
+                        top: top,
+                        height: height,
+                        minDragOffsetY: minDragOffsetY,
+                        maxDragOffsetY: maxDragOffsetY,
+                        totalOffsetY: totalOffsetY
+                    )
+                },
+                viewportHeight: viewportHeight,
+                canScrollTimelineUp: canScrollTimelineUp,
+                canScrollTimelineDown: canScrollTimelineDown,
+                onScrollTimelineBy: onScrollTimelineBy,
+                currentScrollOffsetY: currentScrollOffsetY,
+                onTap: {
+                    if let editingID = editingMoveBookingID {
+                        if app.id == editingID {
+                            timeChangeProposal = nil
+                            activeMoveDragBookingID = app.id
+                        } else {
+                            activeMoveDragBookingID = nil
+                        }
+                        return
+                    }
+                    onBookingTap(app.booking)
+                },
+                onMoveRequested: { onMoveBookingRequested(app.booking) },
+                onDragEnded: { totalOffsetY in
+                    handleAppointmentDragEnded(app: app, totalOffsetY: totalOffsetY)
+                }
+            ) {
+                HStack(spacing: 0) {
+                    Spacer().frame(width: 52)
+                    appointmentBlockContent(
+                        for: app,
+                        blockHeight: height,
+                        isMoveSession: isMoveSession,
+                        isDragActive: isDragActive,
+                        canRequestMove: canMove && editingMoveBookingID == nil
+                    )
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        .background(appointmentColor(for: app.booking))
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay {
+                            if isMoveSession {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .strokeBorder(
+                                        isDragActive
+                                            ? Color.lavaShellCreamSecondary.opacity(0.45)
+                                            : Color.providerOlive.opacity(0.95),
+                                        lineWidth: 2
+                                    )
+                            }
+                        }
+                        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
@@ -1430,8 +1450,8 @@ private struct SchedulePreciseTimelineCanvas: View {
                 .font(.provider(size: moveModeIconSize(for: blockHeight), weight: .semibold))
                 .foregroundStyle(
                     isDragActive
-                        ? Color.lavaShellCreamSecondary.opacity(0.88)
-                        : Color.lavaShellCream.opacity(0.92)
+                        ? Color.providerScheduleAppointmentSecondaryLabel
+                        : Color.providerScheduleAppointmentPrimaryLabel
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .allowsHitTesting(false)
@@ -1461,6 +1481,7 @@ private struct SchedulePreciseTimelineCanvas: View {
             if detailTextOpacity > 0.05 {
                 Text(booking.consumerDisplayName)
                     .font(.provider(size: consumerFontSize(for: blockHeight, level: detailLevel), weight: .bold))
+                    .foregroundStyle(Color.providerScheduleAppointmentPrimaryLabel)
                     .multilineTextAlignment(.center)
                     .lineLimit(lineLimit(for: detailLevel, primary: true))
                     .minimumScaleFactor(0.85)
@@ -1469,7 +1490,7 @@ private struct SchedulePreciseTimelineCanvas: View {
 
                 Text(booking.serviceDisplayName)
                     .font(.provider(size: serviceFontSize(for: blockHeight, level: detailLevel), weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .foregroundStyle(Color.providerScheduleAppointmentSecondaryLabel)
                     .multilineTextAlignment(.center)
                     .lineLimit(lineLimit(for: detailLevel, primary: false))
                     .minimumScaleFactor(0.85)
@@ -1479,13 +1500,13 @@ private struct SchedulePreciseTimelineCanvas: View {
                 if detailLevel >= .standard {
                     Text(appointmentTimeRange(for: app))
                         .font(.provider(size: detailFontSize(for: blockHeight), weight: .medium))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .foregroundStyle(Color.providerScheduleAppointmentTertiaryLabel)
                         .multilineTextAlignment(.center)
                         .allowsHitTesting(false)
 
                     Text(ProviderBookingStatusDisplay.title(for: booking.status))
                         .font(.provider(size: detailFontSize(for: blockHeight) - 1, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(Color.providerScheduleAppointmentSecondaryLabel)
                         .multilineTextAlignment(.center)
                         .allowsHitTesting(false)
                 }
@@ -1494,7 +1515,7 @@ private struct SchedulePreciseTimelineCanvas: View {
                     if let price = formattedPrice(for: booking) {
                         Text(price)
                             .font(.provider(size: detailFontSize(for: blockHeight), weight: .semibold))
-                            .foregroundStyle(Color.lavaShellCream)
+                            .foregroundStyle(Color.providerScheduleAppointmentPrimaryLabel)
                             .multilineTextAlignment(.center)
                             .allowsHitTesting(false)
                     }
@@ -1502,7 +1523,7 @@ private struct SchedulePreciseTimelineCanvas: View {
                     if let duration = formattedDuration(minutes: app.durationMinutes) {
                         Text(duration)
                             .font(.provider(size: detailFontSize(for: blockHeight) - 1, weight: .medium))
-                            .foregroundStyle(Color.lavaShellCreamTertiary)
+                            .foregroundStyle(Color.providerScheduleAppointmentTertiaryLabel)
                             .multilineTextAlignment(.center)
                             .allowsHitTesting(false)
                     }
@@ -1524,7 +1545,7 @@ private struct SchedulePreciseTimelineCanvas: View {
                                 .lineLimit(2)
                         }
                         .font(.provider(size: detailFontSize(for: blockHeight) - 1, weight: .medium))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .foregroundStyle(Color.providerScheduleAppointmentTertiaryLabel)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .allowsHitTesting(false)
                     }
@@ -1533,7 +1554,7 @@ private struct SchedulePreciseTimelineCanvas: View {
                         Text(notes)
                             .font(.provider(size: detailFontSize(for: blockHeight) - 1, weight: .regular))
                             .italic()
-                            .foregroundStyle(Color.lavaShellCreamTertiary)
+                            .foregroundStyle(Color.providerScheduleAppointmentTertiaryLabel)
                             .multilineTextAlignment(.center)
                             .lineLimit(3)
                             .allowsHitTesting(false)
@@ -1557,7 +1578,7 @@ private struct SchedulePreciseTimelineCanvas: View {
             Label("Hold to move time", systemImage: "clock.arrow.circlepath")
         }
         .font(.provider(size: fontSize, weight: .medium))
-        .foregroundStyle(Color.lavaShellCream.opacity(0.72))
+        .foregroundStyle(Color.providerScheduleAppointmentSecondaryLabel)
         .labelStyle(.titleAndIcon)
         .lineLimit(1)
         .minimumScaleFactor(0.75)
@@ -1657,15 +1678,8 @@ private struct SchedulePreciseTimelineCanvas: View {
         return trimmed
     }
 
-    private func appointmentColor(for booking: SimpleBookingDTO, isDragActive: Bool, isParkedForMove: Bool) -> Color {
-        if isDragActive {
-            return Color.lavaShellCreamSecondary.opacity(0.22)
-        }
-
-        if isParkedForMove {
-            return booking.scheduleAppointmentFillColor.opacity(0.75)
-        }
-
+    private func appointmentColor(for booking: SimpleBookingDTO) -> Color {
+        // Moving card keeps status fill; original slot uses `scheduleAppointmentMoveOriginFillColor`.
         switch ProviderBookingStatusDisplay.normalized(booking.status) {
         case "pending", "accepted", "booked", "in_progress", "completed":
             return booking.scheduleAppointmentFillColor

@@ -4,7 +4,7 @@ import SwiftUI
 import UIKit
 #endif
 
-/// Native SwiftUI barber account management — public identity, specialties, visibility, and account safety.
+/// Native SwiftUI barber account management — public identity, visibility, and account safety.
 struct BarberAccountControlView: View {
     @Environment(ProviderSession.self) private var session
 
@@ -13,8 +13,6 @@ struct BarberAccountControlView: View {
     @State private var biography = ""
     @State private var instagramHandle = ""
     @State private var isProfileVisible = true
-    @State private var specialties: [String] = []
-    @State private var showingSpecialtyPicker = false
 
     @State private var avatarURL: URL?
     @State private var selectedPhotoItem: PhotosPickerItem?
@@ -40,10 +38,10 @@ struct BarberAccountControlView: View {
         Form {
             profileHeaderSection
             coreDetailsSection
-            specialtiesSection
             visibilitySection
             accountActionsSection
         }
+        .scrollDisabled(true)
         .providerLavaIntegratedFormSurface()
         .disabled(isSaving || isDeletingAccount || isUploadingPhoto)
         .overlay {
@@ -73,13 +71,9 @@ struct BarberAccountControlView: View {
         .onChange(of: biography) { _, _ in scheduleAutosave() }
         .onChange(of: instagramHandle) { _, _ in scheduleAutosave() }
         .onChange(of: isProfileVisible) { _, _ in scheduleAutosave() }
-        .onChange(of: specialties) { _, _ in scheduleAutosave() }
         .onChange(of: selectedPhotoItem) { _, item in
             guard let item else { return }
             Task { await uploadProfilePhoto(from: item) }
-        }
-        .sheet(isPresented: $showingSpecialtyPicker) {
-            BarberSpecialtyPickerView(selectedSpecialties: $specialties)
         }
         .alert(alertTitle, isPresented: $showAlert) {
             Button("OK", role: .cancel) {}
@@ -185,7 +179,7 @@ struct BarberAccountControlView: View {
     }
 
     private var coreDetailsSection: some View {
-        Section("Public Identity") {
+        Section {
             TextField("First Name", text: $firstName)
                 .textContentType(.givenName)
                 .autocorrectionDisabled()
@@ -218,59 +212,8 @@ struct BarberAccountControlView: View {
         }
     }
 
-    private var specialtiesSection: some View {
-        Section("Specialties") {
-            ProviderWrappingChipFlowLayout(horizontalSpacing: 8, verticalSpacing: 8) {
-                ForEach(specialties, id: \.self) { specialty in
-                    specialtyChip(specialty)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
-
-            Button {
-                showingSpecialtyPicker = true
-            } label: {
-                HStack(spacing: 10) {
-                    Text("Add specialty")
-                        .font(.provider(.body))
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyleProviderShellIcon()
-                }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Add specialty from campus services")
-        }
-    }
-
-    private func specialtyChip(_ specialty: String) -> some View {
-        HStack(alignment: .top, spacing: 6) {
-            Text(specialty)
-                .font(.provider(.subheadline, weight: .medium))
-                .providerOliveOutlined()
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Button {
-                specialties.removeAll { $0.caseInsensitiveCompare(specialty) == .orderedSame }
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 15))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Remove \(specialty)")
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(Color(.systemGray5), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-    }
-
     private var visibilitySection: some View {
-        Section("Visibility") {
+        Section {
             Toggle(isOn: $isProfileVisible) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(isProfileVisible ? "Visible to Public" : "Hidden from Public")
@@ -308,8 +251,7 @@ struct BarberAccountControlView: View {
                     Text("Enter your OnCuts Provider password to permanently delete your account.")
                 }
             }
-            .navigationTitle("Confirm Password")
-            .navigationBarTitleDisplayMode(.inline)
+            .providerPageNavigationTitle("Confirm Password")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -360,14 +302,6 @@ struct BarberAccountControlView: View {
 
         instagramHandle = sanitizedInstagramHandle(barber?.instagramHandle ?? "")
         isProfileVisible = barber?.isActive ?? true
-
-        if let remote = barber?.specialties?.filter({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
-           !remote.isEmpty {
-            specialties = remote
-        } else {
-            specialties = []
-        }
-
         avatarURL = barber?.avatarURL
     }
 
@@ -400,12 +334,15 @@ struct BarberAccountControlView: View {
         defer { isSaving = false }
 
         do {
+            // Preserve specialties managed on Services Offered; Account does not edit them.
+            let existingSpecialties = session.barberProfile?.specialties?
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? []
             try await ProviderAuthService.updateMyBarberProfile(
                 barberId: barberId,
                 displayName: composedDisplayName,
                 bio: biography.trimmingCharacters(in: .whitespacesAndNewlines),
                 instagramHandle: sanitizedInstagramHandle(instagramHandle),
-                specialties: specialties,
+                specialties: existingSpecialties,
                 isActive: isProfileVisible
             )
             try await session.refreshProfileAfterSignIn()

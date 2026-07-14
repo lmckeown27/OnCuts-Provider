@@ -49,8 +49,7 @@ struct ProviderBookingRescheduleSheetView: View {
             }
             .scrollContentBackground(.hidden)
             .background(Color.clear)
-            .navigationTitle("Reschedule")
-            .navigationBarTitleDisplayMode(.inline)
+            .providerPageNavigationTitle("Reschedule")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onCancel)

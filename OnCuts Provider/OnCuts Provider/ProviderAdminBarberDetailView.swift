@@ -51,8 +51,7 @@ struct ProviderAdminBarberDetailView: View {
         .providerNavigationStackDestinationBackdrop()
         .refreshable { await loadBookings() }
         .task { await loadBookings() }
-        .navigationTitle(barber.displayName)
-        .navigationBarTitleDisplayMode(.inline)
+        .providerPageNavigationTitle(barber.displayName)
         .providerLavaScreenChrome()
         .onChange(of: barber.id) { _, _ in
             syncCommissionFormFromBarber()

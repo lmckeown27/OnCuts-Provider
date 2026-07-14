@@ -244,14 +244,7 @@ struct ProviderAdminDashboardView: View {
         .providerNavigationStackDestinationBackdrop()
         .refreshable { await loadAll() }
         .task { await loadAll() }
-        .navigationTitle("Admin")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("Admin")
-                    .font(.provider(.headline, weight: .semibold))
-            }
-        }
+        .providerPageNavigationTitle("Admin")
         .providerLavaScreenChrome()
         .onChange(of: userSearch) { _, _ in
             usersVisibleCount = 25
@@ -1358,8 +1351,7 @@ struct ProviderAdminDashboardView: View {
             .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color.providerFormGroupedBackground.ignoresSafeArea())
-            .navigationTitle("Filters")
-            .navigationBarTitleDisplayMode(.inline)
+            .providerPageNavigationTitle("Filters")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Reset") {

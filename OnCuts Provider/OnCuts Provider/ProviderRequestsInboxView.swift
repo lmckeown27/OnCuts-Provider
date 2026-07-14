@@ -81,8 +81,7 @@ struct ProviderRequestsInboxContent: View {
             inboxRoot
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .providerNavigationStackDestinationBackdrop()
-                .navigationTitle("Bookings")
-                .navigationBarTitleDisplayMode(.inline)
+                .providerPageNavigationTitle("Bookings")
                 .navigationDestination(for: String.self) { bookingId in
                     // One destination type — branching ProgressView → detail inside
                     // `navigationDestination` often never re-evaluates after load (notification deep links).
@@ -340,8 +339,7 @@ struct ProviderRequestsInboxContent: View {
                     systemImage: "person.crop.circle.badge.exclamationmark",
                     description: Text("Complete barber onboarding to reschedule bookings.")
                 )
-                .navigationTitle("Reschedule")
-                .navigationBarTitleDisplayMode(.inline)
+                .providerPageNavigationTitle("Reschedule")
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Done") { rescheduleBooking = nil }

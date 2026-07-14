@@ -35,6 +35,9 @@ struct ProviderScheduleDashboardView: View {
     @State private var errorText: String?
 
     @State private var showingBlockTimeSheet = false
+    @State private var showingEditScheduleSheet = false
+    @State private var showingPayoutSettingsSheet = false
+    @State private var showingServicesOfferedSheet = false
     @State private var blockSheetDayStart: Date = .now
     @State private var blockSheetStart: Date = .now
     @State private var blockSheetEnd: Date = .now
@@ -192,6 +195,44 @@ struct ProviderScheduleDashboardView: View {
                 .id(blockSheetPresentationID)
             }
         }
+        .sheet(isPresented: $showingEditScheduleSheet) {
+            hubPullUpSheet(close: { showingEditScheduleSheet = false }) {
+                ProviderAvailabilityEditorView(presentation: .weeklyEditorOnly)
+            }
+        }
+        .sheet(isPresented: $showingPayoutSettingsSheet) {
+            hubPullUpSheet(close: { showingPayoutSettingsSheet = false }) {
+                ProviderPayoutSettingsView()
+            }
+        }
+        .sheet(isPresented: $showingServicesOfferedSheet) {
+            hubPullUpSheet(close: { showingServicesOfferedSheet = false }) {
+                ProviderBarberServicesView()
+            }
+        }
+    }
+
+    /// Shared pull-up chrome for hub actions (Edit Schedule / Payouts / Services Offered).
+    private func hubPullUpSheet<Content: View>(
+        close: @escaping () -> Void,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        NavigationStack {
+            content()
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Close", action: close)
+                            .font(.provider(.body, weight: .semibold))
+                    }
+                }
+        }
+        .foregroundStyle(Color.lavaShellCream)
+        .tint(.providerOlive)
+        .providerLavaScreenChrome()
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        .presentationCornerRadius(22)
+        .presentationBackground(OnCutsLavaMidnight.color)
     }
 
     // MARK: - Content
@@ -252,7 +293,9 @@ struct ProviderScheduleDashboardView: View {
                     Task { await deleteTimeBlock(blockId: blockId) }
                 },
                 onViewBooking: { booking in
-                    guard editingMoveBookingID == nil else { return }
+                    // Leave move mode so the booking is interactive again after a drag.
+                    editingMoveBookingID = nil
+                    timeChangeProposal = nil
                     shellNavigator.pushBooking(booking)
                 },
                 onMoveBookingRequested: { booking in
@@ -692,16 +735,16 @@ struct ProviderScheduleDashboardView: View {
                 if let barberId = session.barberProfile?.id {
                     ProviderAvailabilityEditorPrefetch.begin(barberId: barberId)
                 }
-                shellNavigator.pushRoute(.weeklyScheduleEditor)
+                showingEditScheduleSheet = true
             }
             schedulePayoutsActionButton {
-                NotificationCenter.default.post(name: .providerPresentPayoutSettings, object: nil)
+                showingPayoutSettingsSheet = true
             }
             scheduleActionButton(title: "Services Offered") {
-                shellNavigator.pushRoute(.services)
+                showingServicesOfferedSheet = true
             }
         }
-        .frame(maxWidth: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity)
     }
 
     private func scheduleActionButton(title: String, action: @escaping () -> Void) -> some View {
@@ -710,7 +753,10 @@ struct ProviderScheduleDashboardView: View {
                 .font(.provider(size: 14, weight: .medium))
                 .foregroundStyle(Color.providerScheduleActionForeground)
                 .lineLimit(1)
-                .padding(.horizontal, 12)
+                .minimumScaleFactor(0.85)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
                 .padding(.vertical, 10)
                 .background {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -723,6 +769,7 @@ struct ProviderScheduleDashboardView: View {
                 }
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
     }
 
     /// Stripe-branded hub CTA (web `#635BFF`) — opens Payout Settings.
@@ -733,7 +780,10 @@ struct ProviderScheduleDashboardView: View {
                 .font(.provider(size: 14, weight: .semibold))
                 .foregroundStyle(Color.white)
                 .lineLimit(1)
-                .padding(.horizontal, 12)
+                .minimumScaleFactor(0.85)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
                 .padding(.vertical, 10)
                 .background {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -742,6 +792,7 @@ struct ProviderScheduleDashboardView: View {
                 }
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
         .accessibilityLabel("Payouts")
     }
 
@@ -764,7 +815,7 @@ struct ProviderScheduleDashboardView: View {
         let start = weekStartMonday
         let end = mondayCalendar.date(byAdding: .day, value: 6, to: start) ?? start
         let startFmt = start.formatted(.dateTime.month(.abbreviated).day())
-        let endFmt = end.formatted(.dateTime.month(.abbreviated).day().year())
+        let endFmt = end.formatted(.dateTime.month(.abbreviated).day())
         return "\(startFmt) – \(endFmt)"
     }
 

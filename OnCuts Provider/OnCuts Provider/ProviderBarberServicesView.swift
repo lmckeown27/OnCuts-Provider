@@ -52,10 +52,6 @@ struct ProviderBarberServicesView: View {
                                 .background(Color.providerOlive.opacity(0.45), in: Capsule())
                         }
 
-                        Text("Choose the services you offer, then set a price and duration within each service's allowed range.")
-                            .font(.provider(.subheadline))
-                            .foregroundStyle(Color.lavaShellCream.opacity(0.8))
-
                         servicesLedger
                     }
                     .padding(.horizontal, 16)
@@ -67,8 +63,7 @@ struct ProviderBarberServicesView: View {
         }
         .background(Color.clear)
         .providerNavigationStackDestinationBackdrop()
-        .navigationTitle("Services Offered")
-        .navigationBarTitleDisplayMode(.inline)
+        .providerPageNavigationTitle("Services Offered")
         .toolbar(.visible, for: .navigationBar)
         .foregroundStyle(Color.lavaShellCream)
         .tint(.providerOlive)

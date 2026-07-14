@@ -174,7 +174,8 @@ final class ProviderChatDetailViewController: UIViewController {
         backButton.addTarget(self, action: #selector(conversationBackTapped), for: .touchUpInside)
 
         titleLabel.text = consumerDisplayName
-        titleLabel.font = ProviderChatDesignTokens.Font.heading(17)
+        // Match SwiftUI `providerPageNavigationTitle` (headline semibold).
+        titleLabel.font = .provider(size: 17, weight: .semibold, textStyle: .headline)
         titleLabel.textColor = ProviderChatDesignTokens.Color.lavaShellCream
         titleLabel.textAlignment = .center
         titleLabel.lineBreakMode = .byTruncatingTail

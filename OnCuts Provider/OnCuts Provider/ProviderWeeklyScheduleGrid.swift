@@ -456,6 +456,10 @@ struct ProviderWeeklyScheduleGrid: View {
             return Color.clear
         case .booked:
             if let booking = cell.booking {
+                // While this booking is being drag-moved, keep the original slot muted.
+                if booking.id == editingMoveBookingID {
+                    return booking.scheduleAppointmentMoveOriginFillColor
+                }
                 return booking.scheduleAppointmentFillColor
             }
             return Color.providerScheduleUpcomingAppointmentFill

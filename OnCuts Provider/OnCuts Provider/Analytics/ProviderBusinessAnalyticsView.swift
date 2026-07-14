@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// Barber-facing **Business Analytics**: Performance metrics + Clients directory.
-/// Standalone sheet or nested inside Payout Settings (`embedsOwnNavigationStack: false`).
+/// Standalone sheet, or the **Analytics** tab inside Payout Settings (`embedsOwnNavigationStack: false`).
 struct ProviderBusinessAnalyticsView: View {
-    /// When `false`, content is hosted in a parent `NavigationStack` (Payout Settings nesting).
+    /// When `false`, omit NavigationStack / toolbar chrome — parent (Payout Settings) owns the shell.
     var embedsOwnNavigationStack: Bool = true
 
     @Environment(ProviderSession.self) private var session
@@ -58,56 +58,17 @@ struct ProviderBusinessAnalyticsView: View {
 
     private var analyticsRoot: some View {
         Group {
-            if isLoading {
-                ProgressView("Loading analytics…")
-                    .tint(.providerOlive)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let loadError {
-                ContentUnavailableView(
-                    "Couldn't load analytics",
-                    systemImage: "chart.bar.xaxis",
-                    description: Text(loadError)
-                )
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        sectionTabPicker
-
-                        switch tab {
-                        case .performance:
-                            ProviderBusinessAnalyticsPerformanceView(
-                                bookings: bookings,
-                                snapshot: snapshot,
-                                paymentMethodsSnapshot: paymentMethodsSnapshot,
-                                metricsTimeline: $metricsTimeline
-                            )
-                        case .clients:
-                            ProviderBusinessAnalyticsClientsView(clients: clients) { client in
-                                selectedClient = client
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .padding(.bottom, 28)
-                }
-                .scrollIndicators(.hidden)
-            }
-        }
-        .providerNavigationStackDestinationBackdrop()
-        .navigationTitle("Business Analytics")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
             if embedsOwnNavigationStack {
-                ToolbarItem(placement: .principal) {
-                    Text("Business Analytics")
-                        .font(.provider(.headline, weight: .semibold))
-                }
+                analyticsContent
+                    .providerNavigationStackDestinationBackdrop()
+                    .providerPageNavigationTitle("Business Analytics")
+                    .providerLavaScreenChrome()
+            } else {
+                analyticsContent
             }
         }
         .foregroundStyle(Color.lavaShellCream)
         .tint(.providerOlive)
-        .providerLavaScreenChrome()
         .task { await load() }
         .refreshable { await load(forceRefresh: true) }
         .sheet(item: $selectedClient) { client in
@@ -119,6 +80,45 @@ struct ProviderBusinessAnalyticsView: View {
                 )
             )
             .presentationDragIndicator(.visible)
+        }
+    }
+
+    @ViewBuilder
+    private var analyticsContent: some View {
+        if isLoading {
+            ProgressView("Loading analytics…")
+                .tint(.providerOlive)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let loadError {
+            ContentUnavailableView(
+                "Couldn't load analytics",
+                systemImage: "chart.bar.xaxis",
+                description: Text(loadError)
+            )
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    sectionTabPicker
+
+                    switch tab {
+                    case .performance:
+                        ProviderBusinessAnalyticsPerformanceView(
+                            bookings: bookings,
+                            snapshot: snapshot,
+                            paymentMethodsSnapshot: paymentMethodsSnapshot,
+                            metricsTimeline: $metricsTimeline
+                        )
+                    case .clients:
+                        ProviderBusinessAnalyticsClientsView(clients: clients) { client in
+                            selectedClient = client
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .padding(.bottom, 28)
+            }
+            .scrollIndicators(.hidden)
         }
     }
 

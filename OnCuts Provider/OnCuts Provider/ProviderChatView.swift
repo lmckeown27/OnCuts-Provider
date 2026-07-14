@@ -44,8 +44,7 @@ struct ProviderChatView: View {
         }
         .background(Color.clear)
         .providerNavigationStackDestinationBackdrop()
-        .navigationTitle(chatTitle)
-        .navigationBarTitleDisplayMode(.inline)
+        .providerPageNavigationTitle(chatTitle)
         .foregroundStyle(Color.lavaShellCream)
         .tint(.providerOlive)
         .providerLavaScreenChrome()

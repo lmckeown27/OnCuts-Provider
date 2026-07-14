@@ -915,7 +915,6 @@ final class BookingDetailViewController: UIViewController {
     private func makePendingActionStack() -> UIView {
         let accept = makePrimaryActionButton(
             title: "Accept",
-            icon: "checkmark.circle.fill",
             background: Token.statusGreen,
             foreground: .white,
             action: #selector(acceptTapped),
@@ -923,7 +922,6 @@ final class BookingDetailViewController: UIViewController {
         )
         let reschedule = makeSecondaryActionButton(
             title: "Reschedule",
-            icon: "calendar.badge.clock",
             background: Token.statusYellow,
             foreground: UIColor(white: 0.1, alpha: 1),
             action: #selector(rescheduleTapped),
@@ -931,7 +929,6 @@ final class BookingDetailViewController: UIViewController {
         )
         let decline = makeSecondaryActionButton(
             title: "Decline",
-            icon: "xmark",
             background: Token.destructiveFill,
             foreground: Token.destructiveText,
             action: #selector(declineTapped),

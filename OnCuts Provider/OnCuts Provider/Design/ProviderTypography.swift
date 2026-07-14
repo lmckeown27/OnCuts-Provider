@@ -140,6 +140,22 @@ extension Font {
     }
 }
 
+extension View {
+    /// Shared inline nav title used by hub sheets and shell destinations (headline semibold principal).
+    func providerPageNavigationTitle(_ title: String) -> some View {
+        navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text(title)
+                        .font(.provider(.headline, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+            }
+    }
+}
+
 extension UIFont {
     static func provider(size: CGFloat, weight: UIFont.Weight = .regular, textStyle: UIFont.TextStyle = .body) -> UIFont {
         ProviderTypography.uiFont(size: size, weight: weight, textStyle: textStyle)

@@ -5,8 +5,7 @@ struct ProviderRequestsListView: View {
     var body: some View {
         NavigationStack {
             ProviderBookingRequestsPanel()
-                .navigationTitle("Bookings")
-                .navigationBarTitleDisplayMode(.large)
+                .providerPageNavigationTitle("Bookings")
         }
         .foregroundStyle(Color.lavaShellCream)
         .tint(.providerOlive)

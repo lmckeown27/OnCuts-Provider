@@ -1,114 +1,90 @@
 import SwiftUI
 
-/// Stripe Connect payouts — sheet opened from the schedule hub **Payouts** button.
-/// Connected operators: status → Analytics → Stripe Express → Stripe App.
-/// Business Analytics is nested in this sheet (back chevron returns here; Close dismisses all).
+/// Payout Settings — pushed from the schedule hub **Payouts** button (same chrome as Edit Schedule / Services Offered).
+/// Column: nav title → **Payouts | Analytics** tabs → scrollable body.
 struct ProviderPayoutSettingsView: View {
-    private enum Destination: Hashable {
-        case analytics
+    private enum MainTab: String, CaseIterable, Identifiable {
+        case payouts = "Payouts"
+        case analytics = "Analytics"
+        var id: String { rawValue }
+    }
+
+    private struct FAQItem: Identifiable, Hashable {
+        let id: String
+        let title: String
+        let body: String
     }
 
     @Environment(ProviderSession.self) private var session
     @Environment(\.openURL) private var openURL
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var stripeGate = ProviderStripeOnboardingGate()
     @State private var connectBusy = false
     @State private var errorAlert: String?
-    @State private var path: [Destination] = []
+    @State private var mainTab: MainTab = .payouts
+    @State private var expandedFAQID: String?
 
     private static let stripePurple = Color(red: 99 / 255, green: 91 / 255, blue: 255 / 255)
     private static let stripeDashboardAppStoreURL = URL(string: "https://apps.apple.com/app/id978516833")!
+
+    private static let faqItems: [FAQItem] = [
+        FAQItem(
+            id: "first-client-delay",
+            title: "First-client money delay",
+            body: "For new Stripe accounts, the first payout commonly takes 7-14 business days. That hold is Stripe’s new-account wait, not an OnCuts delay, and ends once your Connect account is established."
+        ),
+        FAQItem(
+            id: "why-wait",
+            title: "Why that wait exists",
+            body: "Stripe uses the early window to finish KYC, watch for chargebacks, and reduce fraud risk on brand-new payout accounts. Until that clears, card earnings stay in Stripe rather than landing in your bank."
+        ),
+        FAQItem(
+            id: "speed-after",
+            title: "Speed after the wait",
+            body: "After the new-account hold, eligible operators can use Instant Payouts when Stripe offers them. Otherwise funds follow your normal Stripe payout schedule (often daily or weekly) into your linked bank."
+        ),
+        FAQItem(
+            id: "balance-bank",
+            title: "Where to see balance and bank",
+            body: "Open Stripe Express from this screen. Available balance, payout history, and bank details live in Stripe. OnCuts does not keep a separate operator wallet balance."
+        ),
+        FAQItem(
+            id: "express",
+            title: "What Stripe Express is",
+            body: "Stripe Express is your connected payout dashboard. Use it for bank account, tax details, statements, and transfers from card payments clients make through OnCuts."
+        ),
+        FAQItem(
+            id: "app",
+            title: "What the Stripe App is",
+            body: "The Stripe Dashboard app is optional. Install it from the App Store if you want balances and payout activity on your phone without opening Express in a browser."
+        ),
+        FAQItem(
+            id: "cash-card",
+            title: "Cash vs card",
+            body: "Card payments settle through Stripe Connect to your bank. Cash is paid to you directly by the client. OnCuts does not deposit cash into Stripe. Track both in the Analytics tab."
+        ),
+    ]
 
     private var isFullyConnected: Bool {
         BarberStripeConnectStatus.isFullyConnected(stripeGate.status)
     }
 
     var body: some View {
-        NavigationStack(path: $path) {
-            payoutRoot
-                .navigationTitle("Payout Settings")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { payoutToolbar(showsBack: false) }
-                .navigationDestination(for: Destination.self) { destination in
-                    switch destination {
-                    case .analytics:
-                        ProviderBusinessAnalyticsView(embedsOwnNavigationStack: false)
-                            .navigationTitle("Business Analytics")
-                            .navigationBarTitleDisplayMode(.inline)
-                            .navigationBarBackButtonHidden(true)
-                            .toolbar { payoutToolbar(showsBack: true) }
-                    }
-                }
+        VStack(spacing: 0) {
+            tabBar
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 10)
+            tabBody
         }
-        .tint(.providerOlive)
-    }
-
-    @ToolbarContentBuilder
-    private func payoutToolbar(showsBack: Bool) -> some ToolbarContent {
-        if showsBack {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    path.removeAll()
-                } label: {
-                    Image(systemName: "chevron.backward")
-                        .fontWeight(.semibold)
-                }
-                .accessibilityLabel("Back to Payout Settings")
-            }
-        }
-        ToolbarItem(placement: .principal) {
-            Text(showsBack ? "Business Analytics" : "Payout Settings")
-                .font(.provider(.headline, weight: .semibold))
-        }
-        ToolbarItem(placement: .topBarTrailing) {
-            Button("Close") {
-                dismiss()
-            }
-            .font(.provider(.body, weight: .semibold))
-        }
-    }
-
-    private var payoutRoot: some View {
-        Group {
-            if !session.hasProviderProfile {
-                ContentUnavailableView(
-                    "No barber profile",
-                    systemImage: "person.crop.circle.badge.exclamationmark",
-                    description: Text("Complete barber setup on the web, then pull to refresh.")
-                )
-                .foregroundStyle(Color.lavaShellCream)
-            } else if stripeGate.isLoading && !stripeGate.hasLoadedOnce {
-                HStack(spacing: 10) {
-                    ProgressView()
-                        .tint(.providerOlive)
-                    Text("Checking Stripe Connect…")
-                        .font(.provider(.subheadline))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if isFullyConnected {
-                connectedHub
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        ProviderPaymentsOnboardingGuideView(
-                            blocking: false,
-                            embedded: true,
-                            gate: stripeGate
-                        )
-                        stripeMobileAppSection
-                    }
-                    .padding(.bottom, 16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .refreshable { await stripeGate.refresh() }
-            }
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .providerNavigationStackDestinationBackdrop()
+        .providerPageNavigationTitle("Payout Settings")
+        .toolbar(.visible, for: .navigationBar)
         .foregroundStyle(Color.lavaShellCream)
-        .providerLavaScreenChrome()
+        .tint(.providerOlive)
         .task {
             if session.hasProviderProfile {
                 await stripeGate.refresh()
@@ -128,159 +104,256 @@ struct ProviderPayoutSettingsView: View {
         }
     }
 
-    // MARK: - Fully onboarded hub
+    // MARK: - Chrome
 
-    private var connectedHub: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                connectedStatusCard
-                analyticsSection
-                openExpressSection
-                stripeMobileAppSection
+    private var tabBar: some View {
+        HStack(spacing: 4) {
+            ForEach(MainTab.allCases) { tab in
+                tabButton(tab)
             }
-            .padding(16)
-            .padding(.bottom, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .refreshable { await stripeGate.refresh() }
+        .padding(4)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(ProviderOliveChromeStyle.adminTabTrackFill(colorScheme))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(ProviderOliveChromeStyle.adminTabTrackStroke(colorScheme), lineWidth: 0.6)
+                )
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Payout Settings tabs")
     }
 
-    private var connectedStatusCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.provider(size: 22))
-                    .foregroundStyle(Color.green)
-                Text("Stripe Connect active")
-                    .font(.provider(.title3, weight: .semibold))
+    private func tabButton(_ tab: MainTab) -> some View {
+        let isSelected = mainTab == tab
+        return Button {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                mainTab = tab
             }
-
-            Text("You're fully onboarded with Stripe. Charges and payouts are enabled for your OnCuts operator account.")
-                .font(.provider(.body))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+        } label: {
+            Text(tab.rawValue)
+                .font(.provider(.subheadline, weight: isSelected ? .semibold : .medium))
+                .foregroundStyle(
+                    isSelected
+                        ? ProviderOliveChromeStyle.adminTabActiveForeground(colorScheme)
+                        : ProviderOliveChromeStyle.adminTabInactiveForeground(colorScheme)
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(ProviderOliveChromeStyle.adminTabActiveFill(colorScheme))
+                    }
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+
+    @ViewBuilder
+    private var tabBody: some View {
+        switch mainTab {
+        case .payouts:
+            payoutsTab
+        case .analytics:
+            ProviderBusinessAnalyticsView(embedsOwnNavigationStack: false)
+        }
+    }
+
+    // MARK: - Payouts tab
+
+    @ViewBuilder
+    private var payoutsTab: some View {
+        if !session.hasProviderProfile {
+            ContentUnavailableView(
+                "No barber profile",
+                systemImage: "person.crop.circle.badge.exclamationmark",
+                description: Text("Complete barber setup, then pull to refresh.")
+            )
+            .foregroundStyle(Color.lavaShellCreamSecondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if stripeGate.isLoading && !stripeGate.hasLoadedOnce {
+            VStack(spacing: 14) {
+                ProgressView()
+                    .tint(.providerOlive)
+                Text("Checking Stripe Connect…")
+                    .font(.provider(.subheadline))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if isFullyConnected {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    connectedStatusBadge
+                    faqSection
+                    expressAndAppRow
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 36)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .scrollIndicators(.hidden)
+            .scrollContentBackground(.hidden)
+            .refreshable { await stripeGate.refresh() }
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    ProviderPaymentsOnboardingGuideView(
+                        blocking: false,
+                        embedded: true,
+                        gate: stripeGate
+                    )
+                }
+                .padding(.bottom, 28)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .scrollIndicators(.hidden)
+            .scrollContentBackground(.hidden)
+            .refreshable { await stripeGate.refresh() }
+        }
+    }
+
+    private var connectedStatusBadge: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.provider(size: 18, weight: .semibold))
+            Text("Stripe Connect is Active")
+                .font(.provider(.subheadline, weight: .semibold))
+        }
+        .foregroundStyle(Color.green)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.green.opacity(0.14))
+            Capsule(style: .continuous)
+                .fill(Color.green.opacity(0.16))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    Capsule(style: .continuous)
                         .strokeBorder(Color.green.opacity(0.45), lineWidth: 1)
                 )
         )
+        .frame(maxWidth: .infinity, alignment: .center)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Stripe Connect is Active")
     }
 
-    private var analyticsSection: some View {
+    private var faqSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Analytics")
-                .font(.provider(.title2, weight: .semibold))
+            Text("Payouts Q&A")
+                .font(.provider(.title3, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCream)
 
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Review card vs cash volume, take-home estimates, and your clients.")
-                    .font(.provider(.body))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Button {
-                    path.append(.analytics)
-                } label: {
-                    Text("Open Business Analytics")
-                        .font(.provider(.headline, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCream)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 16)
-                        .background(Color.providerOlive, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(14)
-            .background(Color.providerScheduleCardFill, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .strokeBorder(Color.providerScheduleCardStroke, lineWidth: 0.6)
-            )
-        }
-    }
-
-    private var openExpressSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Stripe Express")
-                .font(.provider(.title2, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream)
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Manage your bank account, tax details, payouts, and statements in Stripe Express.")
-                    .font(.provider(.body))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Button {
-                    Task { await openStripeExpress() }
-                } label: {
-                    HStack(spacing: 10) {
-                        if connectBusy {
-                            ProgressView()
-                                .tint(Color.white)
-                        }
-                        Text(connectBusy ? "Opening…" : "Open Stripe Express")
-                            .font(.provider(.headline, weight: .semibold))
+            VStack(spacing: 0) {
+                ForEach(Array(Self.faqItems.enumerated()), id: \.element.id) { index, item in
+                    faqRow(item)
+                    if index < Self.faqItems.count - 1 {
+                        Divider()
+                            .overlay(Color.lavaShellCream.opacity(0.12))
                     }
-                    .foregroundStyle(Color.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 16)
-                    .background(Self.stripePurple, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
-                .buttonStyle(.plain)
-                .disabled(connectBusy)
             }
-            .padding(14)
-            .background(Color.providerScheduleCardFill, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .strokeBorder(Color.providerScheduleCardStroke, lineWidth: 0.6)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.providerScheduleCardFill)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(Color.providerScheduleCardStroke, lineWidth: 0.6)
+                    )
             )
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
     }
 
-    private var stripeMobileAppSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Stripe App")
-                .font(.provider(.title2, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream)
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Optional — track balances and payout activity on your phone.")
-                    .font(.provider(.body))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-
-                Button {
-                    openURL(Self.stripeDashboardAppStoreURL)
-                } label: {
-                    Text("Get Stripe Dashboard app")
-                        .font(.provider(.body, weight: .semibold))
-                        .foregroundStyle(Color.white)
-                        .frame(maxWidth: .infinity)
-                        .multilineTextAlignment(.center)
-                        .padding(.vertical, 12)
-                        .padding(.horizontal, 14)
-                        .background(
-                            Self.stripePurple,
-                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        )
+    private func faqRow(_ item: FAQItem) -> some View {
+        let isExpanded = expandedFAQID == item.id
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.28)) {
+                    expandedFAQID = isExpanded ? nil : item.id
                 }
-                .buttonStyle(.plain)
+            } label: {
+                HStack(alignment: .center, spacing: 12) {
+                    Text(item.title)
+                        .font(.provider(.subheadline, weight: .semibold))
+                        .foregroundStyle(Color.lavaShellCream)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.down")
+                        .font(.provider(.caption, weight: .semibold))
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 14)
+                .contentShape(Rectangle())
             }
-            .padding(14)
-            .background(Color.providerScheduleCardFill, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .strokeBorder(Color.providerScheduleCardStroke, lineWidth: 0.6)
-            )
+            .buttonStyle(.plain)
+            .accessibilityLabel(item.title)
+            .accessibilityHint(isExpanded ? "Collapse answer" : "Expand answer")
+            .accessibilityAddTraits(isExpanded ? [.isSelected] : [])
+
+            Text(item.body)
+                .font(.provider(.footnote))
+                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
+                .frame(maxHeight: isExpanded ? nil : 0, alignment: .top)
+                .opacity(isExpanded ? 1 : 0)
+                .clipped()
+                .allowsHitTesting(isExpanded)
+        }
+    }
+
+    private var expressAndAppRow: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Button {
+                Task { await openStripeExpress() }
+            } label: {
+                HStack(spacing: 8) {
+                    if connectBusy {
+                        ProgressView()
+                            .tint(.white)
+                    }
+                    Text(connectBusy ? "Opening…" : "Open Stripe Express")
+                        .font(.provider(.subheadline, weight: .semibold))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 12)
+                .background(Self.stripePurple, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(connectBusy)
+            .accessibilityLabel("Open Stripe Express")
+
+            Button {
+                openURL(Self.stripeDashboardAppStoreURL)
+            } label: {
+                Text("Get Stripe App")
+                    .font(.provider(.subheadline, weight: .semibold))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .foregroundStyle(Self.stripePurple)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(Self.stripePurple, lineWidth: 1.5)
+                    )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Get Stripe App")
+            .accessibilityHint("Optional. Opens the App Store.")
         }
     }
 

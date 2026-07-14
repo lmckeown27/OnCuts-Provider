@@ -28,8 +28,7 @@ struct ProviderAdminUserDetailView: View {
         .providerNavigationStackDestinationBackdrop()
         .refreshable { await loadBookings() }
         .task { await loadBookings() }
-        .navigationTitle(user.displayName)
-        .navigationBarTitleDisplayMode(.inline)
+        .providerPageNavigationTitle(user.displayName)
         .providerLavaScreenChrome()
     }
 

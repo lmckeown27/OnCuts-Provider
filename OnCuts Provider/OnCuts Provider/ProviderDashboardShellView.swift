@@ -13,7 +13,6 @@ struct ProviderDashboardShellView: View {
     @State private var navigator = ProviderShellNavigator()
     @State private var stripeOnboardingGate = ProviderStripeOnboardingGate()
     @State private var showingRequestsInbox = false
-    @State private var showingPayoutSettings = false
     @State private var bookingsInboxPresentationID = UUID()
     @State private var pendingInboxBookingDetailId: String?
     /// Number of *conversations* that have ≥ 1 unread inbound message — not the running total of
@@ -75,9 +74,6 @@ struct ProviderDashboardShellView: View {
                 Task { await refreshHeaderCounts() }
                 NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .providerPresentPayoutSettings)) { _ in
-                showingPayoutSettings = true
-            }
     }
 
     private var shellWithLifecycle: some View {
@@ -116,10 +112,6 @@ struct ProviderDashboardShellView: View {
                 Task { await refreshHeaderCounts() }
             }) {
                 requestsInboxSheet
-            }
-            .sheet(isPresented: $showingPayoutSettings) {
-                ProviderPayoutSettingsView()
-                    .presentationDragIndicator(.visible)
             }
             .fullScreenCover(isPresented: Binding(
                 get: { showsPaymentsOnboardingGate },
@@ -538,6 +530,10 @@ struct ProviderDashboardShellView: View {
                 .providerShellBackToolbar()
         case .weeklyScheduleEditor:
             ProviderAvailabilityEditorView(presentation: .weeklyEditorOnly)
+                .providerPushedDestinationChrome(for: route)
+                .providerShellBackToolbar()
+        case .payoutSettings:
+            ProviderPayoutSettingsView()
                 .providerPushedDestinationChrome(for: route)
                 .providerShellBackToolbar()
         case .adminDashboard:

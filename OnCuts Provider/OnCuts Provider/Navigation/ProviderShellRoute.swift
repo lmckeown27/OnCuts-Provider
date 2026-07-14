@@ -12,6 +12,8 @@ enum ProviderShellRoute: Hashable {
     case availability
     /// Weekly availability editor only (day toggles + intervals) — not the full Availability hub.
     case weeklyScheduleEditor
+    /// Payout Settings (Stripe Connect / Express + in-page Analytics) from the schedule hub **Payouts** control.
+    case payoutSettings
     /// Native Admin dashboard (platform stats, campuses, barbers, users). Surfaced only when
     /// `AuthMeUser.hasAdminPrivileges` is true. Barber / user detail pushes happen inside the
     /// dashboard's own `NavigationStack`, not as separate shell stack entries.
@@ -36,8 +38,6 @@ extension Notification.Name {
     static let providerAvailabilityChanged = Notification.Name("ProviderAvailabilityChanged")
     /// Posted when the public discovery pin / manual-location toggle changes (Account settings).
     static let providerDiscoveryLocationChanged = Notification.Name("ProviderDiscoveryLocationChanged")
-    /// Opens the Payout Settings sheet from the schedule hub **Payouts** control.
-    static let providerPresentPayoutSettings = Notification.Name("ProviderPresentPayoutSettings")
 }
 
 extension Notification.Name {
