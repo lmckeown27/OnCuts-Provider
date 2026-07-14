@@ -18,7 +18,7 @@ enum ServiceLedgerCategory: String, Hashable {
         case .beardAndGrooming: "Beard & Grooming"
         case .textureAndDesign: "Texture & Design"
         case .colorAndTreatments: "Color & Treatments"
-        case .other: "Other Services"
+        case .other: "Beauty"
         }
     }
 
@@ -85,5 +85,46 @@ enum ServiceLedgerRowOrdering {
 
     private static func isHaircutBuzzCutPair(_ lhs: String, _ rhs: String) -> Bool {
         Set([normalizedSlug(lhs), normalizedSlug(rhs)]) == ["haircut", "buzz-cut"]
+    }
+}
+
+/// Filters platform catalog rows by operator profession (`barber` / `beauty`).
+/// Prefer explicit `providerType`; fall back to known Beauty names when the API omits types.
+enum AdminServiceCatalogFiltering {
+    static let knownBeautyServiceNames: Set<String> = [
+        "braids", "lashes", "makeup", "nails", "tanning",
+    ]
+
+    static func filtered(
+        _ items: [AdminServiceCatalogItem],
+        providerType: String?
+    ) -> [AdminServiceCatalogItem] {
+        guard let providerType else { return items }
+        let key = providerType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty else { return items }
+
+        let typed = items.filter {
+            ($0.providerType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == key
+        }
+        if !typed.isEmpty { return typed }
+
+        let anyTyped = items.contains {
+            !($0.providerType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard !anyTyped else { return typed }
+
+        if key == "beauty" {
+            return items.filter {
+                knownBeautyServiceNames.contains(
+                    $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                )
+            }
+        }
+
+        return items.filter {
+            !knownBeautyServiceNames.contains(
+                $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            )
+        }
     }
 }

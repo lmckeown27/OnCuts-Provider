@@ -57,9 +57,7 @@ struct ProviderRequestsInboxContent: View {
     @State private var isBookingRequestsExpanded = true
 
     @State private var acceptConfirmItem: RequestTriageItem?
-    @State private var declineReasonPickerItem: RequestTriageItem?
-    @State private var selectedDeclineReason: ProviderDeclineReason?
-    @State private var declineOtherReasonText = ""
+    @State private var declineConfirmItem: RequestTriageItem?
     @State private var openingMessageRequestId: String?
     @State private var messageOpenErrorText: String?
     @State private var showMessageOpenError = false
@@ -86,15 +84,22 @@ struct ProviderRequestsInboxContent: View {
                 .navigationTitle("Bookings")
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationDestination(for: String.self) { bookingId in
-                    bookingDetailDestination(bookingId: bookingId)
+                    // One destination type — branching ProgressView → detail inside
+                    // `navigationDestination` often never re-evaluates after load (notification deep links).
+                    ProviderBookingDetailDestination(
+                        bookingId: bookingId,
+                        knownBooking: bookingItems.first(where: { $0.id == bookingId }),
+                        onResolved: { booking in
+                            replaceBookingInItems(booking)
+                        },
+                        onChanged: {
+                            await loadBookings(isUserPullToRefresh: false)
+                        }
+                    )
                 }
         }
         .task(id: presentationID) {
-            if mode == .requestsOnly {
-                await loadRequests(settlesPresentation: true)
-            } else {
-                await loadAll(isUserPullToRefresh: false)
-            }
+            await loadInitialPresentation()
         }
         .onChange(of: session.barberProfile?.id) { _, newBarberId in
             guard hasSettledInboxPresentation, !(newBarberId ?? "").isEmpty else { return }
@@ -137,21 +142,12 @@ struct ProviderRequestsInboxContent: View {
                 }
             )
         }
-        .sheet(item: $declineReasonPickerItem, onDismiss: {
-            declineReasonPickerItem = nil
-            selectedDeclineReason = nil
-            declineOtherReasonText = ""
-        }) { item in
-            ProviderDeclineReasonPickerSheet(
-                selectedReason: $selectedDeclineReason,
-                otherReasonText: $declineOtherReasonText,
-                onDecline: {
-                    declineReasonPickerItem = nil
-                    Task {
-                        await reject(item)
-                        selectedDeclineReason = nil
-                        declineOtherReasonText = ""
-                    }
+        .sheet(item: $declineConfirmItem, onDismiss: { declineConfirmItem = nil }) { item in
+            ProviderSubmitDeclineConfirmSheet(
+                customerName: item.confirmCustomerName,
+                onSubmit: {
+                    declineConfirmItem = nil
+                    Task { await reject(item) }
                 }
             )
         }
@@ -365,9 +361,7 @@ struct ProviderRequestsInboxContent: View {
             onReschedule: { Task { await beginReschedule(for: item) } },
             onAccept: { acceptConfirmItem = item },
             onDecline: {
-                selectedDeclineReason = nil
-                declineOtherReasonText = ""
-                declineReasonPickerItem = item
+                declineConfirmItem = item
             },
             isOpeningMessage: openingMessageRequestId == item.id,
             onMessage: { Task { await openMessageThread(for: item) } }
@@ -398,23 +392,6 @@ struct ProviderRequestsInboxContent: View {
             )
     }
 
-    @ViewBuilder
-    private func bookingDetailDestination(bookingId: String) -> some View {
-        if let booking = bookingItems.first(where: { $0.id == bookingId }) {
-            BookingDetailScreen(booking: booking) {
-                await loadBookings(isUserPullToRefresh: false)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(uiColor: ProviderAppearance.shellBase))
-        } else {
-            ProgressView()
-                .tint(.providerOlive)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(uiColor: ProviderAppearance.shellBase))
-                .task { await loadBookings(isUserPullToRefresh: false) }
-        }
-    }
-
     private func nestedContentWidth(containerWidth: CGFloat) -> CGFloat {
         let leading = Self.bookingsPageLeadingInset + ProviderBookingsDropdownListContent.nestedIndent
         let trailing = Self.bookingsPageLeadingInset
@@ -431,7 +408,7 @@ struct ProviderRequestsInboxContent: View {
 
     private func openPendingBookingDetailIfPossible(_ bookingId: String?) {
         guard let bookingId, !bookingId.isEmpty else { return }
-        guard bookingItems.contains(where: { $0.id == bookingId }) else { return }
+        // Push immediately — destination resolves the booking (list may still be loading).
         detailPath = NavigationPath()
         detailPath.append(bookingId)
         pendingBookingDetailId = nil
@@ -517,10 +494,17 @@ struct ProviderRequestsInboxContent: View {
 
     // MARK: - Networking
 
-    private func loadAll(isUserPullToRefresh: Bool) async {
-        if !isUserPullToRefresh {
-            hasSettledInboxPresentation = false
+    private func loadInitialPresentation() async {
+        if mode == .requestsOnly {
+            await loadRequests(settlesPresentation: true)
+        } else {
+            await loadAll(isUserPullToRefresh: false)
         }
+    }
+
+    private func loadAll(isUserPullToRefresh: Bool) async {
+        // Do not flip the gate back to loading on every refresh — remount / notification races
+        // were leaving the inbox stuck on the full-screen ProgressView.
         defer {
             if !isUserPullToRefresh {
                 hasSettledInboxPresentation = true
@@ -636,21 +620,76 @@ struct ProviderRequestsInboxContent: View {
 
     private func reject(_ item: RequestTriageItem) async {
         guard let bid = session.barberProfile?.id else { return }
-        guard let selectedDeclineReason,
-              let reasonText = selectedDeclineReason.apiReason(customOtherText: declineOtherReasonText)
-        else { return }
         isRequestsLoading = true
         defer { isRequestsLoading = false }
         do {
             try await ProviderBookingRequestsService.reject(
                 bookingId: item.row.bookingId,
-                barberTableId: bid,
-                reason: reasonText
+                barberTableId: bid
             )
             NotificationCenter.default.post(name: .providerRequestsListShouldRefresh, object: nil)
             await loadRequests(settlesPresentation: false)
         } catch {
             requestsErrorText = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+        }
+    }
+}
+
+/// Resolves a booking for Bookings deep links without relying on `navigationDestination`
+/// to swap ProgressView → detail after parent `bookingItems` updates.
+private struct ProviderBookingDetailDestination: View {
+    let bookingId: String
+    let knownBooking: SimpleBookingDTO?
+    let onResolved: (SimpleBookingDTO) -> Void
+    let onChanged: () async -> Void
+
+    @State private var booking: SimpleBookingDTO?
+    @State private var errorText: String?
+
+    private var resolvedBooking: SimpleBookingDTO? {
+        booking ?? knownBooking
+    }
+
+    var body: some View {
+        Group {
+            if let resolvedBooking {
+                BookingDetailScreen(booking: resolvedBooking, onChanged: onChanged)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(uiColor: ProviderAppearance.shellBase))
+            } else if let errorText {
+                ContentUnavailableView(
+                    "Couldn't open booking",
+                    systemImage: "calendar.badge.exclamationmark",
+                    description: Text(errorText)
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(uiColor: ProviderAppearance.shellBase))
+            } else {
+                ProgressView()
+                    .tint(.providerOlive)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(uiColor: ProviderAppearance.shellBase))
+            }
+        }
+        .task(id: bookingId) {
+            await resolveBooking()
+        }
+    }
+
+    private func resolveBooking() async {
+        if let knownBooking {
+            booking = knownBooking
+            onResolved(knownBooking)
+            return
+        }
+
+        do {
+            let fetched = try await ProviderBookingsService.fetchBooking(id: bookingId)
+            booking = fetched
+            onResolved(fetched)
+        } catch {
+            if providerAllBookingsIsBenignCancellation(error) { return }
+            errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }
 }

@@ -301,6 +301,19 @@ export const getMyBarberProfile = async (req: AuthRequest, res: Response, next: 
       throw new ApiError(401, 'Unauthorized');
     }
 
+    // Production / migrated DBs have `provider_type`; older local schemas may not.
+    const providerTypeCol = await pool.query(
+      `SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'barbers'
+         AND column_name = 'provider_type'
+       LIMIT 1`
+    );
+    const selectProviderType = providerTypeCol.rows.length > 0
+      ? ', b.provider_type'
+      : ", NULL::text AS provider_type";
+
     const barberResult = await pool.query(
       `SELECT 
         b.id,
@@ -313,7 +326,8 @@ export const getMyBarberProfile = async (req: AuthRequest, res: Response, next: 
         b."totalBookings" as total_bookings,
         b."isActive" as is_active,
         b."createdAt" as created_at,
-        b."weeklySchedule" as weekly_schedule,
+        b."weeklySchedule" as weekly_schedule
+        ${selectProviderType},
         u.email,
         u.first_name,
         u.last_name,
@@ -381,6 +395,19 @@ export const getBarberByUserId = async (req: AuthRequest, res: Response, next: N
   try {
     const { userId } = req.params;
 
+    // Production / migrated DBs have `provider_type`; older local schemas may not.
+    const providerTypeCol = await pool.query(
+      `SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'barbers'
+         AND column_name = 'provider_type'
+       LIMIT 1`
+    );
+    const selectProviderType = providerTypeCol.rows.length > 0
+      ? ', b.provider_type'
+      : ", NULL::text AS provider_type";
+
     let barberResult = await pool.query(
       `SELECT 
         b.id,
@@ -393,7 +420,8 @@ export const getBarberByUserId = async (req: AuthRequest, res: Response, next: N
         b."totalBookings" as total_bookings,
         b."isActive" as is_active,
         b."createdAt" as created_at,
-        b."weeklySchedule" as weekly_schedule,
+        b."weeklySchedule" as weekly_schedule
+        ${selectProviderType},
         u.email,
         u.first_name,
         u.last_name,

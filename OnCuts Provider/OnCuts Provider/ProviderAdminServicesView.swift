@@ -1,8 +1,23 @@
 import SwiftUI
 
 /// Admin **Services** tab: same ledger layout as `ProviderBarberServicesView`, but toggling a
-/// service adds/removes it from the campus catalog and sets **price / duration ranges** barbers choose within.
+/// service adds/removes it from the campus catalog and sets **price / duration ranges** operators choose within.
 struct ProviderAdminServicesView: View {
+    private enum ProfessionFilter: String, CaseIterable, Identifiable {
+        case barber
+        case beauty
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .barber: "Barber"
+            case .beauty: "Beauty"
+            }
+        }
+    }
+
+    @State private var professionFilter: ProfessionFilter = .barber
     @State private var rows: [CampusCatalogEditRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
@@ -55,9 +70,17 @@ struct ProviderAdminServicesView: View {
                             .background(Color.providerOlive.opacity(0.45), in: Capsule())
                     }
 
-                    Text("Add or remove services barbers can offer, and set the price and duration ranges they may choose within.")
+                    Text("Add or remove \(professionFilter.title.lowercased()) services operators can offer, and set the price and duration ranges they may choose within.")
                         .font(.provider(.subheadline))
                         .foregroundStyle(Color.lavaShellCream.opacity(0.8))
+
+                    Picker("Profession", selection: $professionFilter) {
+                        ForEach(ProfessionFilter.allCases) { filter in
+                            Text(filter.title).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityLabel("Service profession filter")
 
                     HStack {
                         Text("Show removed")
@@ -94,7 +117,7 @@ struct ProviderAdminServicesView: View {
                     }
 
                     if rows.isEmpty {
-                        Text("No services yet. Add a service to make it available for barbers on your campus.")
+                        Text("No \(professionFilter.title.lowercased()) services yet. Add a service to make it available for operators.")
                             .font(.provider(.footnote))
                             .foregroundStyle(Color.lavaShellCreamSecondary)
                     } else {
@@ -103,12 +126,12 @@ struct ProviderAdminServicesView: View {
                 }
             }
         }
-        .task { await load() }
+        .task(id: professionFilter) { await load() }
         .onChange(of: showDeletedServices) { _, _ in
             Task { await load() }
         }
         .confirmationDialog(
-            "Remove “\(servicePendingRemoval?.name ?? "")”? Barbers will no longer be able to select this service until you add it back.",
+            "Remove “\(servicePendingRemoval?.name ?? "")”? Operators will no longer be able to select this service until you add it back.",
             isPresented: Binding(
                 get: { servicePendingRemoval != nil },
                 set: { if !$0 { servicePendingRemoval = nil } }
@@ -424,7 +447,8 @@ struct ProviderAdminServicesView: View {
 
         do {
             let catalog = try await ProviderAdminService.listPlatformServices(
-                includeInactive: showDeletedServices
+                includeInactive: showDeletedServices,
+                providerType: professionFilter.rawValue
             )
             rows = Self.mappedRows(from: catalog)
         } catch {
@@ -449,7 +473,7 @@ struct ProviderAdminServicesView: View {
         do {
             if available {
                 try await ProviderAdminService.setPlatformServiceActive(id: row.id, isActive: true)
-                toast = "\(row.name) is now available for barbers."
+                toast = "\(row.name) is now available for operators."
             } else {
                 try await ProviderAdminService.deactivatePlatformService(id: row.id)
                 toast = "\(row.name) was removed from the catalog."

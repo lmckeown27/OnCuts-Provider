@@ -453,6 +453,7 @@ async function handleCheckoutSessionCompleted(
            tip_amount_cents = $2,
            "tipAmountCents" = $2,
            "totalPaidCents" = $3,
+           "paymentMethod" = COALESCE("paymentMethod", 'card'),
            "updatedAt" = NOW()
        WHERE id = $4
        RETURNING *`,
@@ -642,6 +643,7 @@ async function handlePaymentIntentSucceeded(
            tip_amount_cents = $2,
            "tipAmountCents" = $2,
            "totalPaidCents" = $3,
+           "paymentMethod" = COALESCE("paymentMethod", 'card'),
            "updatedAt" = NOW()
        WHERE id = $4
        RETURNING *`,

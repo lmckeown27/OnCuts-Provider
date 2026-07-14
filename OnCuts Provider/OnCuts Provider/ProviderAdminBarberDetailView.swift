@@ -3,27 +3,43 @@ import SwiftUI
 /// Detail view for a single barber as seen from the Admin or Campus-Manager dashboard.
 ///
 /// Shows the barber's profile summary, a "visible to consumers" toggle (Admin / CM can hide a barber),
-/// and the most-recent bookings from `/admin/barbers/:id/bookings`.
+/// per-provider payment / commission settings, and the most-recent bookings from
+/// `/admin/barbers/:id/bookings`.
 struct ProviderAdminBarberDetailView: View {
     @State private var barber: AdminBarberDTO
     @State private var bookings: [AdminBarberBookingDTO] = []
     @State private var isLoading = true
     @State private var isToggling = false
     @State private var isMessaging = false
+    @State private var isSavingCommission = false
+    @State private var commissionFeePercentInput = ""
+    @State private var commissionFreeRemainingInput = "0"
+    @State private var commissionSaveMessage: String?
     @State private var errorText: String?
 
     init(barber: AdminBarberDTO) {
         _barber = State(initialValue: barber)
+        _commissionFeePercentInput = State(initialValue: Self.feePercentInput(from: barber))
+        _commissionFreeRemainingInput = State(
+            initialValue: String(barber.commissionFreeBookingsRemaining ?? 0)
+        )
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 profileCard
+                paymentSettingsCard
                 if let errorText {
                     Text(errorText)
                         .font(.provider(.footnote))
                         .foregroundStyle(.red)
+                        .padding(.horizontal, 12)
+                }
+                if let commissionSaveMessage {
+                    Text(commissionSaveMessage)
+                        .font(.provider(.footnote))
+                        .foregroundStyle(Color.green.opacity(0.9))
                         .padding(.horizontal, 12)
                 }
                 bookingsCard
@@ -38,6 +54,9 @@ struct ProviderAdminBarberDetailView: View {
         .navigationTitle(barber.displayName)
         .navigationBarTitleDisplayMode(.inline)
         .providerLavaScreenChrome()
+        .onChange(of: barber.id) { _, _ in
+            syncCommissionFormFromBarber()
+        }
     }
 
     private var profileCard: some View {
@@ -52,7 +71,9 @@ struct ProviderAdminBarberDetailView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(barber.displayName)
                             .font(.provider(.title3, weight: .semibold))
-                        if let cn = barber.campusName { Text(cn).font(.provider(.caption)).foregroundStyle(Color.lavaShellCreamSecondary) }
+                        Text(barber.publicLocationDisplay)
+                            .font(.provider(.caption))
+                            .foregroundStyle(Color.lavaShellCreamSecondary)
                         HStack(spacing: 6) {
                             if barber.hasStripeSetup == true {
                                 tag(text: "Payouts on", tint: Color.green.opacity(0.55))
@@ -67,6 +88,108 @@ struct ProviderAdminBarberDetailView: View {
                 }
                 visibilityRow
                 messageBarberButton
+            }
+        }
+    }
+
+    private var paymentSettingsCard: some View {
+        sectionCard(
+            title: "Payment settings",
+            subtitle: "Default commission 15% · tips never commissioned"
+        ) {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Commission rate (%)")
+                        .font(.provider(.caption))
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                    TextField("15 (default)", text: $commissionFeePercentInput)
+                        .font(.provider(.subheadline))
+                        .foregroundStyle(Color.lavaShellCream)
+                        .keyboardType(.decimalPad)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            Color.providerScheduleActionBackground,
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Color.providerScheduleActionBorder, lineWidth: 0.8)
+                        )
+                        .disabled(isSavingCommission)
+                    Text("Leave blank to use the platform default (15%)")
+                        .font(.provider(.caption2))
+                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Commission-free bookings remaining")
+                        .font(.provider(.caption))
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                    TextField("0", text: $commissionFreeRemainingInput)
+                        .font(.provider(.subheadline))
+                        .foregroundStyle(Color.lavaShellCream)
+                        .keyboardType(.numberPad)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            Color.providerScheduleActionBackground,
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Color.providerScheduleActionBorder, lineWidth: 0.8)
+                        )
+                        .disabled(isSavingCommission)
+                    Text("Next N card bookings take $0 platform fee, then the rate above applies")
+                        .font(.provider(.caption2))
+                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                }
+
+                Button {
+                    Task { await savePaymentSettings() }
+                } label: {
+                    Group {
+                        if isSavingCommission {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(Color.providerOnOliveFill)
+                        } else {
+                            Text("Save payment settings")
+                                .font(.provider(.subheadline, weight: .semibold))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.providerOlive)
+                .disabled(isSavingCommission || barber.barberRecordId == nil)
+
+                HStack(spacing: 8) {
+                    Button {
+                        commissionFreeRemainingInput = "5"
+                    } label: {
+                        Text("Set 5 free")
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isSavingCommission)
+
+                    Button {
+                        commissionFeePercentInput = ""
+                        commissionFreeRemainingInput = "0"
+                    } label: {
+                        Text("Reset to default")
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isSavingCommission)
+                }
             }
         }
     }
@@ -229,29 +352,105 @@ struct ProviderAdminBarberDetailView: View {
         guard let recordId = barber.barberRecordId else { return }
         let previous = barber.isActive ?? false
         // Optimistic update so the Toggle reflects the intent immediately; revert on failure.
-        barber = withIsActive(barber, newValue: newValue)
+        barber = copyBarber(barber, isActive: newValue)
         isToggling = true
         defer { isToggling = false }
         do {
             try await ProviderAdminService.setBarberActive(barberRecordId: recordId, isActive: newValue)
         } catch let OnCutsHTTPError.httpStatus(code, msg) {
-            barber = withIsActive(barber, newValue: previous)
+            barber = copyBarber(barber, isActive: previous)
             errorText = msg ?? "Visibility update failed (\(code))."
         } catch {
-            barber = withIsActive(barber, newValue: previous)
+            barber = copyBarber(barber, isActive: previous)
             errorText = error.localizedDescription
         }
     }
 
-    private func withIsActive(_ b: AdminBarberDTO, newValue: Bool) -> AdminBarberDTO {
-        AdminBarberDTO(
+    private func savePaymentSettings() async {
+        guard let recordId = barber.barberRecordId else {
+            errorText = "Missing provider profile id."
+            return
+        }
+
+        let feeRaw = commissionFeePercentInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let platformFeePercent: Double?
+        if feeRaw.isEmpty {
+            platformFeePercent = nil
+        } else {
+            guard let pct = Double(feeRaw), pct >= 0, pct <= 100 else {
+                errorText = "Commission rate must be 0–100, or blank for default 15%."
+                return
+            }
+            platformFeePercent = (pct * 100).rounded() / 100
+        }
+
+        let freeRaw = commissionFreeRemainingInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let freeRemaining = Int(freeRaw), freeRemaining >= 0 else {
+            errorText = "Commission-free bookings must be a whole number ≥ 0."
+            return
+        }
+
+        isSavingCommission = true
+        errorText = nil
+        commissionSaveMessage = nil
+        defer { isSavingCommission = false }
+        do {
+            let updated = try await ProviderAdminService.updateBarberCommission(
+                barberRecordId: recordId,
+                platformFeePercent: platformFeePercent,
+                commissionFreeBookingsRemaining: freeRemaining
+            )
+            barber = copyBarber(
+                barber,
+                platformFeePercent: updated.platformFeePercent,
+                commissionFreeBookingsRemaining: updated.commissionFreeBookingsRemaining ?? freeRemaining,
+                clearPlatformFeePercent: updated.platformFeePercent == nil
+            )
+            syncCommissionFormFromBarber()
+            commissionSaveMessage = "Payment settings saved."
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
+            errorText = msg ?? "Failed to save payment settings (\(code))."
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    private func syncCommissionFormFromBarber() {
+        commissionFeePercentInput = Self.feePercentInput(from: barber)
+        commissionFreeRemainingInput = String(barber.commissionFreeBookingsRemaining ?? 0)
+    }
+
+    private static func feePercentInput(from barber: AdminBarberDTO) -> String {
+        guard let pct = barber.platformFeePercent, pct.isFinite else { return "" }
+        if pct.rounded() == pct {
+            return String(Int(pct))
+        }
+        return String(pct)
+    }
+
+    private func copyBarber(
+        _ b: AdminBarberDTO,
+        isActive: Bool? = nil,
+        platformFeePercent: Double? = nil,
+        commissionFreeBookingsRemaining: Int? = nil,
+        clearPlatformFeePercent: Bool = false
+    ) -> AdminBarberDTO {
+        let fee: Double?
+        if clearPlatformFeePercent {
+            fee = nil
+        } else if let platformFeePercent {
+            fee = platformFeePercent
+        } else {
+            fee = b.platformFeePercent
+        }
+        return AdminBarberDTO(
             id: b.id,
             barberRecordId: b.barberRecordId,
             firstName: b.firstName,
             lastName: b.lastName,
             email: b.email,
             profileImageUrl: b.profileImageUrl,
-            isActive: newValue,
+            isActive: isActive ?? b.isActive,
             isBanned: b.isBanned,
             isCampusManager: b.isCampusManager,
             campusId: b.campusId,
@@ -262,7 +461,9 @@ struct ProviderAdminBarberDetailView: View {
             completedBookings: b.completedBookings,
             totalVolumeCents: b.totalVolumeCents,
             serviceLocationLabel: b.serviceLocationLabel,
-            hasServiceLocation: b.hasServiceLocation
+            hasServiceLocation: b.hasServiceLocation,
+            platformFeePercent: fee,
+            commissionFreeBookingsRemaining: commissionFreeBookingsRemaining ?? b.commissionFreeBookingsRemaining
         )
     }
 
@@ -290,10 +491,10 @@ struct ProviderAdminBarberDetailView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.08))
+                .fill(Color.providerScheduleCardFill)
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5)
+                        .strokeBorder(Color.providerScheduleCardStroke, lineWidth: 0.6)
                 )
         )
     }
@@ -306,26 +507,27 @@ struct ProviderAdminBarberDetailView: View {
             .background(tint.opacity(0.6), in: Capsule())
     }
 
+    @ViewBuilder
     private func statusBadge(_ status: String) -> some View {
-        let tint: Color = switch status {
-        case "COMPLETED", "PAID": Color.providerOlive
-        case "CANCELLED", "REFUNDED", "DISPUTED": Color.red.opacity(0.7)
-        case "PENDING": Color.orange.opacity(0.75)
-        case "ACCEPTED", "IN_PROGRESS": Color.blue.opacity(0.7)
-        default: Color.gray.opacity(0.6)
-        }
-        return Text(status.replacingOccurrences(of: "_", with: " "))
-            .font(.provider(.caption2, weight: .semibold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(tint, in: Capsule())
+        let tint: Color = {
+            switch status {
+            case "COMPLETED", "PAID": return .green
+            case "CANCELLED": return .red
+            case "PENDING", "CONFIRMED": return .orange
+            default: return Color.white.opacity(0.25)
+            }
+        }()
+        Text(status.prefix(1) + status.dropFirst().lowercased())
+            .font(.provider(.caption2, weight: .bold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(tint.opacity(0.25), in: Capsule())
     }
 
     private func dollarStringFromCents(_ cents: Int) -> String {
-        let dollars = Double(cents) / 100.0
         let f = NumberFormatter()
         f.numberStyle = .currency
         f.currencyCode = "USD"
-        return f.string(from: NSNumber(value: dollars)) ?? "$\(dollars)"
+        return f.string(from: NSNumber(value: Double(cents) / 100.0)) ?? "$\(Double(cents) / 100.0)"
     }
 }

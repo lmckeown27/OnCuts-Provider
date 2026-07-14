@@ -71,6 +71,10 @@ struct ProviderAvailabilityEditorView: View {
         !weeklyEditorReady
     }
 
+    private var showsWeeklyEditorBlockTimeButton: Bool {
+        presentation == .weeklyEditorOnly && session.hasProviderProfile && !isLoadingContent
+    }
+
     private var showsTimeBlocksSection: Bool {
         presentation == .hub && !timeBlocks.isEmpty
     }
@@ -87,6 +91,9 @@ struct ProviderAvailabilityEditorView: View {
                 LazyVStack(spacing: 22) {
                     if let savedToast {
                         inlineBanner(text: savedToast, tint: .green)
+                    }
+                    if showsWeeklyEditorBlockTimeButton {
+                        blockTimeEntryButton
                     }
                     if session.hasProviderProfile, !isLoadingContent, showsAvailabilityActionsRow {
                         availabilityActionsRow
@@ -199,6 +206,25 @@ struct ProviderAvailabilityEditorView: View {
             availabilityActionButton(title: "Block Time", action: { showingAddBlock = true })
         }
         .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    /// Full-width entry on **Edit Schedule** — opens the Block Time sheet (hub CTA removed).
+    private var blockTimeEntryButton: some View {
+        Button {
+            showingAddBlock = true
+        } label: {
+            Text("Block Time")
+                .font(.provider(.subheadline, weight: .semibold))
+                .foregroundStyle(Color.lavaShellCream)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.providerOlive.opacity(0.85))
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Block Time")
     }
 
     private func availabilityActionButton(title: String, action: @escaping () -> Void) -> some View {

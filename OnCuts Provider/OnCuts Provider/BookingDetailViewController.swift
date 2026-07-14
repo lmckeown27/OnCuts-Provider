@@ -1173,8 +1173,7 @@ final class BookingDetailViewController: UIViewController {
                 self.run(optimisticStatus: "REJECTED") {
                     try await ProviderBookingRequestsService.reject(
                         bookingId: self.current.id,
-                        barberTableId: barberTableId,
-                        reason: "Declined by provider"
+                        barberTableId: barberTableId
                     )
                 } onSuccess: {
                     NotificationCenter.default.post(name: .providerRequestsListShouldRefresh, object: nil)

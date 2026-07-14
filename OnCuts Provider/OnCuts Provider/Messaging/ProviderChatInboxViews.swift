@@ -113,7 +113,7 @@ struct ProviderChatThreadCard: View {
 
         if thread.hasUnread {
             label
-                .foregroundStyle(Color.providerMessageUnreadAccent)
+                .foregroundStyle(Color.lavaShellCream)
         } else {
             label
                 .foregroundStyle(Color.lavaShellCreamSecondary)

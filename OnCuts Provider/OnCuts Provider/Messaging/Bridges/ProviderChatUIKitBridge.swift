@@ -164,30 +164,24 @@ struct ProviderMessagesInboxView: View {
                 }
             }
             .navigationDestination(for: Int.self) { conversationId in
-                if let conversation = conversation(for: conversationId) {
-                    ProviderChatDetailHost(
-                        conversation: conversation,
-                        barberTableId: session.barberProfile?.id,
-                        onNavigateBack: {
-                            guard !navigator.messagesDetailPath.isEmpty else { return }
-                            navigator.messagesDetailPath.removeLast()
-                        },
-                        onBlocked: {
-                            navigator.messagesDetailPath = []
-                            inboxReloadToken = UUID()
-                        }
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.providerNeutralPushedBackdrop)
-                    .toolbar(.hidden, for: .navigationBar)
-                } else {
-                    ProgressView()
-                        .tint(.providerOlive)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color.providerNeutralPushedBackdrop)
-                        .toolbar(.hidden, for: .navigationBar)
-                        .task { await loadConversationsForDeepLink(conversationId: conversationId) }
-                }
+                // Always use one destination type. Branching ProgressView → ChatDetail inside
+                // `navigationDestination` often never re-evaluates after deep-link load (Bookings → Message).
+                ProviderMessagingConversationDestination(
+                    conversationId: conversationId,
+                    knownConversation: conversation(for: conversationId),
+                    barberTableId: session.barberProfile?.id,
+                    onResolved: { row in
+                        supplementalConversations[row.id] = row
+                    },
+                    onNavigateBack: {
+                        guard !navigator.messagesDetailPath.isEmpty else { return }
+                        navigator.messagesDetailPath.removeLast()
+                    },
+                    onBlocked: {
+                        navigator.messagesDetailPath = []
+                        inboxReloadToken = UUID()
+                    }
+                )
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .providerMessagingUnreadCountShouldRefresh)) { _ in
@@ -230,26 +224,77 @@ struct ProviderMessagesInboxView: View {
         conversations.first(where: { $0.id == conversationId })
             ?? supplementalConversations[conversationId]
     }
+}
 
-    private func loadConversationsForDeepLink(conversationId: Int) async {
+/// Resolves a conversation id for Messages deep links (e.g. Bookings → Message) without
+/// relying on `navigationDestination` to swap ProgressView → chat after parent state updates.
+private struct ProviderMessagingConversationDestination: View {
+    let conversationId: Int
+    let knownConversation: ConversationRow?
+    let barberTableId: String?
+    let onResolved: (ConversationRow) -> Void
+    let onNavigateBack: () -> Void
+    let onBlocked: () -> Void
+
+    @State private var conversation: ConversationRow?
+
+    private var resolvedConversation: ConversationRow? {
+        conversation ?? knownConversation
+    }
+
+    var body: some View {
+        Group {
+            if let resolvedConversation {
+                ProviderChatDetailHost(
+                    conversation: resolvedConversation,
+                    barberTableId: barberTableId,
+                    onNavigateBack: onNavigateBack,
+                    onBlocked: onBlocked
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.providerNeutralPushedBackdrop)
+                .toolbar(.hidden, for: .navigationBar)
+            } else {
+                ProgressView()
+                    .tint(.providerOlive)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.providerNeutralPushedBackdrop)
+                    .toolbar(.hidden, for: .navigationBar)
+            }
+        }
+        .task(id: conversationId) {
+            await resolveConversation()
+        }
+    }
+
+    private func resolveConversation() async {
+        if let knownConversation {
+            conversation = knownConversation
+            onResolved(knownConversation)
+            return
+        }
+
         ProviderConversationMessagesPrefetch.prefetch(conversationId: conversationId)
 
         if let row = try? await ProviderMessagesService.fetchConversation(conversationId: conversationId) {
-            supplementalConversations[conversationId] = row
+            conversation = row
+            onResolved(row)
             return
         }
 
         do {
             let rows = try await ProviderMessagesService.listConversations()
-            conversations = rows
             if let match = rows.first(where: { $0.id == conversationId }) {
-                supplementalConversations[conversationId] = match
+                conversation = match
+                onResolved(match)
                 return
             }
         } catch {
-            // Fall through — still open a placeholder thread so send/load can proceed.
+            // Fall through to placeholder so booking deep links still open.
         }
 
-        supplementalConversations[conversationId] = .placeholder(id: conversationId)
+        let placeholder = ConversationRow.placeholder(id: conversationId)
+        conversation = placeholder
+        onResolved(placeholder)
     }
 }

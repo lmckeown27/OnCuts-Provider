@@ -19,8 +19,8 @@ enum ProviderWeeklyScheduleGridMetrics {
     static let defaultBookingDurationMinutes = 60
     /// Inset above the first time label and grid rows.
     static let timeGutterTopPadding: CGFloat = 8
-    /// Extra space below the last row so the final time label can scroll into view.
-    static let bottomScrollPadding: CGFloat = 80
+    /// Extra space below the last row so the final time label and late-day slots can scroll into view.
+    static let bottomScrollPadding: CGFloat = 160
     /// Snap dragged bookings to this minute increment.
     static let moveSnapStepMinutes = 15
 

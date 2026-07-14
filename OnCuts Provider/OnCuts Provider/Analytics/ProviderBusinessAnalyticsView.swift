@@ -1,7 +1,11 @@
 import SwiftUI
 
-/// Barber-facing **Business Analytics** sheet: Performance metrics + Clients directory.
+/// Barber-facing **Business Analytics**: Performance metrics + Clients directory.
+/// Standalone sheet or nested inside Payout Settings (`embedsOwnNavigationStack: false`).
 struct ProviderBusinessAnalyticsView: View {
+    /// When `false`, content is hosted in a parent `NavigationStack` (Payout Settings nesting).
+    var embedsOwnNavigationStack: Bool = true
+
     @Environment(ProviderSession.self) private var session
 
     private enum Tab: String, CaseIterable, Identifiable {
@@ -20,6 +24,7 @@ struct ProviderBusinessAnalyticsView: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
+    /// Timeline-scoped summary (Volume / Bookings / Clients) for the chart window.
     private var snapshot: BarberBusinessAnalyticsSnapshot {
         let scopedBookings = ProviderBarberBusinessAnalyticsEngine.bookings(
             in: metricsTimeline,
@@ -31,68 +36,89 @@ struct ProviderBusinessAnalyticsView: View {
         )
     }
 
-    var body: some View {
-        NavigationStack {
-            Group {
-                if isLoading {
-                    ProgressView("Loading analytics…")
-                        .tint(.providerOlive)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let loadError {
-                    ContentUnavailableView(
-                        "Couldn't load analytics",
-                        systemImage: "chart.bar.xaxis",
-                        description: Text(loadError)
-                    )
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 18) {
-                            sectionTabPicker
+    /// All-time Card vs Cash — parity with Admin Performance (`status IN COMPLETED/PAID`).
+    private var paymentMethodsSnapshot: BarberBusinessAnalyticsSnapshot {
+        ProviderBarberBusinessAnalyticsEngine.buildSnapshot(
+            bookings: ProviderBarberBusinessAnalyticsEngine.paidBookings(from: bookings),
+            period: .all
+        )
+    }
 
-                            switch tab {
-                            case .performance:
-                                ProviderBusinessAnalyticsPerformanceView(
-                                    bookings: bookings,
-                                    snapshot: snapshot,
-                                    metricsTimeline: $metricsTimeline
-                                )
-                            case .clients:
-                                ProviderBusinessAnalyticsClientsView(clients: clients) { client in
-                                    selectedClient = client
-                                }
+    var body: some View {
+        Group {
+            if embedsOwnNavigationStack {
+                NavigationStack {
+                    analyticsRoot
+                }
+            } else {
+                analyticsRoot
+            }
+        }
+    }
+
+    private var analyticsRoot: some View {
+        Group {
+            if isLoading {
+                ProgressView("Loading analytics…")
+                    .tint(.providerOlive)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let loadError {
+                ContentUnavailableView(
+                    "Couldn't load analytics",
+                    systemImage: "chart.bar.xaxis",
+                    description: Text(loadError)
+                )
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        sectionTabPicker
+
+                        switch tab {
+                        case .performance:
+                            ProviderBusinessAnalyticsPerformanceView(
+                                bookings: bookings,
+                                snapshot: snapshot,
+                                paymentMethodsSnapshot: paymentMethodsSnapshot,
+                                metricsTimeline: $metricsTimeline
+                            )
+                        case .clients:
+                            ProviderBusinessAnalyticsClientsView(clients: clients) { client in
+                                selectedClient = client
                             }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .padding(.bottom, 28)
                     }
-                    .scrollIndicators(.hidden)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .padding(.bottom, 28)
                 }
+                .scrollIndicators(.hidden)
             }
-            .providerNavigationStackDestinationBackdrop()
-            .navigationTitle("Business Analytics")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+        }
+        .providerNavigationStackDestinationBackdrop()
+        .navigationTitle("Business Analytics")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if embedsOwnNavigationStack {
                 ToolbarItem(placement: .principal) {
                     Text("Business Analytics")
                         .font(.provider(.headline, weight: .semibold))
                 }
             }
-            .foregroundStyle(Color.lavaShellCream)
-            .tint(.providerOlive)
-            .providerLavaScreenChrome()
-            .task { await load() }
-            .refreshable { await load(forceRefresh: true) }
-            .sheet(item: $selectedClient) { client in
-                ProviderBusinessAnalyticsClientBookingsView(
-                    client: client,
-                    bookings: ProviderBarberBusinessAnalyticsEngine.bookings(
-                        forClientId: client.id,
-                        from: bookings
-                    )
+        }
+        .foregroundStyle(Color.lavaShellCream)
+        .tint(.providerOlive)
+        .providerLavaScreenChrome()
+        .task { await load() }
+        .refreshable { await load(forceRefresh: true) }
+        .sheet(item: $selectedClient) { client in
+            ProviderBusinessAnalyticsClientBookingsView(
+                client: client,
+                bookings: ProviderBarberBusinessAnalyticsEngine.bookings(
+                    forClientId: client.id,
+                    from: bookings
                 )
-                .presentationDragIndicator(.visible)
-            }
+            )
+            .presentationDragIndicator(.visible)
         }
     }
 

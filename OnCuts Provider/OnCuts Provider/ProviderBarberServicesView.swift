@@ -118,31 +118,32 @@ struct ProviderBarberServicesView: View {
     @ViewBuilder
     private func serviceLedgerRow(row: Binding<ServiceEditRow>) -> some View {
         let r = row.wrappedValue
-        let isActive = r.isOffered
+        let isOffered = r.isOffered
 
         HStack(alignment: .center, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
                 Button {
                     Task { await toggleOffered(slug: r.slug) }
                 } label: {
-                    Image(systemName: isActive ? "checkmark.square.fill" : "square")
+                    Image(systemName: isOffered ? "checkmark.square.fill" : "square")
                         .font(.provider(.title3))
-                        .foregroundStyle(isActive ? Color.providerOlive : Color.lavaShellCream.opacity(0.4))
+                        .foregroundStyle(isOffered ? Color.providerOlive : Color.lavaShellCream.opacity(0.55))
                 }
                 .buttonStyle(.plain)
                 .disabled(saving)
+                .accessibilityLabel(isOffered ? "\(r.name), offered" : "\(r.name), not offered")
 
                 Text(r.name)
                     .font(.provider(.body, weight: .bold))
-                    .foregroundStyle(isActive ? Color.lavaShellCream : Color.lavaShellCream.opacity(0.55))
+                    .foregroundStyle(Color.lavaShellCream)
                     .lineLimit(2)
                     .minimumScaleFactor(0.9)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 8) {
-                priceInputSlot(row: row, isActive: isActive)
-                durationInputSlot(row: row, isActive: isActive)
+                priceInputSlot(row: row, isOffered: isOffered)
+                durationInputSlot(row: row, isOffered: isOffered)
             }
             .layoutPriority(1)
         }
@@ -150,53 +151,49 @@ struct ProviderBarberServicesView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(isActive ? Color.providerOlive.opacity(0.14) : Color.white.opacity(0.04))
+                .fill(Color.providerOlive.opacity(0.14))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(
-                    isActive ? Color.providerOlive.opacity(0.72) : Color.lavaShellCream.opacity(0.14),
-                    lineWidth: 2
-                )
+                .strokeBorder(Color.providerOlive.opacity(0.72), lineWidth: 2)
         )
-        .opacity(isActive ? 1 : 0.45)
-        .animation(.easeInOut(duration: 0.2), value: isActive)
+        .animation(.easeInOut(duration: 0.2), value: isOffered)
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .onTapGesture {
-            if !isActive, !saving {
+            if !isOffered, !saving {
                 Task { await toggleOffered(slug: r.slug) }
             }
         }
     }
 
     @ViewBuilder
-    private func priceInputSlot(row: Binding<ServiceEditRow>, isActive: Bool) -> some View {
+    private func priceInputSlot(row: Binding<ServiceEditRow>, isOffered: Bool) -> some View {
         let r = row.wrappedValue
         HStack(alignment: .center, spacing: 6) {
             Text("Price:")
                 .font(.provider(.caption, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream.opacity(isActive ? 0.62 : 0.38))
+                .foregroundStyle(Color.lavaShellCream.opacity(0.62))
                 .frame(width: ProviderServicesLedgerStyle.fieldLabelWidth, alignment: .trailing)
 
             HStack(spacing: 4) {
                 Text("$")
                     .font(.provider(.subheadline, weight: .bold))
-                    .foregroundStyle(Color.lavaShellCream.opacity(isActive ? 0.55 : 0.35))
+                    .foregroundStyle(Color.lavaShellCream.opacity(0.55))
 
                 TextField("0", text: row.priceText)
                     .keyboardType(.numberPad)
                     .font(.provider(.headline, weight: .bold))
-                    .foregroundStyle(isActive ? Color.lavaShellCream : Color.lavaShellCream.opacity(0.45))
+                    .foregroundStyle(Color.lavaShellCream)
                     .multilineTextAlignment(.trailing)
                     .frame(width: ProviderServicesLedgerStyle.fieldInputWidth)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
-                    .background(serviceInputBackground(isActive: isActive, needsCommit: r.priceNeedsCommit))
-                    .overlay(serviceInputBorder(isActive: isActive, needsCommit: r.priceNeedsCommit))
-                    .disabled(!isActive || saving)
+                    .background(serviceInputBackground(needsCommit: r.priceNeedsCommit))
+                    .overlay(serviceInputBorder(needsCommit: r.priceNeedsCommit))
+                    .disabled(!isOffered || saving)
                     .accessibilityLabel("Price for \(r.name)")
 
-                if isActive, r.priceNeedsCommit {
+                if isOffered, r.priceNeedsCommit {
                     serviceFieldCommitButtons(
                         onConfirm: { Task { await commitPrice(slug: r.slug) } },
                         onCancel: { resetPriceDraft(slug: r.slug) },
@@ -209,33 +206,33 @@ struct ProviderBarberServicesView: View {
     }
 
     @ViewBuilder
-    private func durationInputSlot(row: Binding<ServiceEditRow>, isActive: Bool) -> some View {
+    private func durationInputSlot(row: Binding<ServiceEditRow>, isOffered: Bool) -> some View {
         let r = row.wrappedValue
         HStack(alignment: .center, spacing: 6) {
             Text("Time:")
                 .font(.provider(.caption, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream.opacity(isActive ? 0.62 : 0.38))
+                .foregroundStyle(Color.lavaShellCream.opacity(0.62))
                 .frame(width: ProviderServicesLedgerStyle.fieldLabelWidth, alignment: .trailing)
 
             HStack(spacing: 4) {
                 TextField("0", text: row.durationText)
                     .keyboardType(.numberPad)
                     .font(.provider(.headline, weight: .bold))
-                    .foregroundStyle(isActive ? Color.lavaShellCream : Color.lavaShellCream.opacity(0.45))
+                    .foregroundStyle(Color.lavaShellCream)
                     .multilineTextAlignment(.trailing)
                     .frame(width: ProviderServicesLedgerStyle.fieldInputWidth)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
-                    .background(serviceInputBackground(isActive: isActive, needsCommit: r.durationNeedsCommit))
-                    .overlay(serviceInputBorder(isActive: isActive, needsCommit: r.durationNeedsCommit))
-                    .disabled(!isActive || saving)
+                    .background(serviceInputBackground(needsCommit: r.durationNeedsCommit))
+                    .overlay(serviceInputBorder(needsCommit: r.durationNeedsCommit))
+                    .disabled(!isOffered || saving)
                     .accessibilityLabel("Duration in minutes for \(r.name)")
 
                 Text("min")
                     .font(.provider(.caption, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCream.opacity(isActive ? 0.55 : 0.35))
+                    .foregroundStyle(Color.lavaShellCream.opacity(0.55))
 
-                if isActive, r.durationNeedsCommit {
+                if isOffered, r.durationNeedsCommit {
                     serviceFieldCommitButtons(
                         onConfirm: { Task { await commitDuration(slug: r.slug) } },
                         onCancel: { resetDurationDraft(slug: r.slug) },
@@ -247,19 +244,15 @@ struct ProviderBarberServicesView: View {
         }
     }
 
-    private func serviceInputBackground(isActive: Bool, needsCommit: Bool) -> some View {
+    private func serviceInputBackground(needsCommit: Bool) -> some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(
-                isActive
-                    ? Color.white.opacity(needsCommit ? 0.18 : 0.12)
-                    : Color.white.opacity(0.03)
-            )
+            .fill(Color.white.opacity(needsCommit ? 0.18 : 0.12))
     }
 
-    private func serviceInputBorder(isActive: Bool, needsCommit: Bool) -> some View {
+    private func serviceInputBorder(needsCommit: Bool) -> some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
             .strokeBorder(
-                needsCommit ? Color.providerOlive : Color.lavaShellCream.opacity(isActive ? 0.22 : 0.1),
+                needsCommit ? Color.providerOlive : Color.lavaShellCream.opacity(0.22),
                 lineWidth: needsCommit ? 2 : 1
             )
     }
@@ -302,10 +295,10 @@ struct ProviderBarberServicesView: View {
         }
 
         do {
-            async let catalogTask = ProviderBarberServicesService.fetchServiceCatalog()
-            async let barberTask = ProviderBarberServicesService.fetchBarberUserProfile(userId: userId)
-            let (catalog, barber) = try await (catalogTask, barberTask)
+            let barber = try await ProviderBarberServicesService.fetchBarberUserProfile(userId: userId)
             barberRecordIdForSave = barber.id
+            let providerType = barber.resolvedProviderType
+            let catalog = try await ProviderBarberServicesService.fetchServiceCatalog(providerType: providerType)
             rows = Self.mergedRows(catalog: catalog, barber: barber)
         } catch {
             loadError = error.localizedDescription

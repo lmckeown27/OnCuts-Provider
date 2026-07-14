@@ -136,10 +136,10 @@ enum ProviderBookingStatusDisplay {
         }
     }
 
-    /// Finished appointments still shown on the main schedule.
+    /// Finished appointments still shown on the main schedule (paid appointments are omitted entirely).
     static func isScheduleCompleted(status raw: String?) -> Bool {
         switch normalized(raw) {
-        case "completed", "paid": return true
+        case "completed": return true
         default: return false
         }
     }
@@ -151,18 +151,22 @@ enum ProviderBookingStatusDisplay {
         return nil
     }
 
-    /// Weekly grid appointment block fill — completed vs upcoming.
+    /// Weekly grid appointment block fill — pending (yellow), completed, or upcoming.
     static func scheduleAppointmentFill(for booking: SimpleBookingDTO) -> Color {
-        if isScheduleCompleted(status: booking.status) {
+        switch normalized(booking.status) {
+        case "pending":
+            return Color(uiColor: ProviderChatDesignTokens.Color.statusYellow)
+        case "completed":
             return Color.providerScheduleCompletedAppointmentFill
+        default:
+            return Color.providerScheduleUpcomingAppointmentFill
         }
-        return Color.providerScheduleUpcomingAppointmentFill
     }
 
-    /// Cancelled bookings are omitted from the main schedule entirely.
+    /// Cancelled and paid bookings are omitted from the main schedule entirely.
     static func isVisibleOnMainSchedule(status raw: String?) -> Bool {
         switch normalized(raw) {
-        case "cancelled", "canceled": return false
+        case "cancelled", "canceled", "paid": return false
         default: return true
         }
     }
@@ -228,7 +232,8 @@ extension SimpleBookingDTO {
     }
 
     var isVisibleOnMainSchedule: Bool {
-        ProviderBookingStatusDisplay.isVisibleOnMainSchedule(status: status)
+        if paidAt != nil { return false }
+        return ProviderBookingStatusDisplay.isVisibleOnMainSchedule(status: status)
     }
 
     var scheduleAppointmentFillColor: Color {

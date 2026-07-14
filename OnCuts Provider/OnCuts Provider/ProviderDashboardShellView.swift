@@ -13,7 +13,7 @@ struct ProviderDashboardShellView: View {
     @State private var navigator = ProviderShellNavigator()
     @State private var stripeOnboardingGate = ProviderStripeOnboardingGate()
     @State private var showingRequestsInbox = false
-    @State private var showingBusinessAnalytics = false
+    @State private var showingPayoutSettings = false
     @State private var bookingsInboxPresentationID = UUID()
     @State private var pendingInboxBookingDetailId: String?
     /// Number of *conversations* that have ≥ 1 unread inbound message — not the running total of
@@ -75,6 +75,9 @@ struct ProviderDashboardShellView: View {
                 Task { await refreshHeaderCounts() }
                 NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .providerPresentPayoutSettings)) { _ in
+                showingPayoutSettings = true
+            }
     }
 
     private var shellWithLifecycle: some View {
@@ -114,8 +117,8 @@ struct ProviderDashboardShellView: View {
             }) {
                 requestsInboxSheet
             }
-            .sheet(isPresented: $showingBusinessAnalytics) {
-                ProviderBusinessAnalyticsView()
+            .sheet(isPresented: $showingPayoutSettings) {
+                ProviderPayoutSettingsView()
                     .presentationDragIndicator(.visible)
             }
             .fullScreenCover(isPresented: Binding(
@@ -279,16 +282,14 @@ struct ProviderDashboardShellView: View {
                 .background(ProviderOliveChromeStyle.headerPillFill(colorScheme), in: Capsule())
                 .overlay(alignment: .topTrailing) {
                     if unreadConversationCount > 0 {
-                        Text(unreadConversationCount > 99 ? "99+" : "\(unreadConversationCount)")
-                            .font(.provider(.caption2, weight: .bold))
-                            .padding(4)
-                            .background(Color.red.opacity(0.92), in: Capsule())
-                            .offset(x: 6, y: -6)
+                        headerAttentionCountBadge(unreadConversationCount)
+                            .offset(x: 5, y: -5)
                     }
                 }
             }
             .buttonStyle(.plain)
             .foregroundStyle(ProviderOliveChromeStyle.headerPillForeground(colorScheme))
+            .accessibilityLabel(chatsButtonAccessibilityLabel)
 
             Spacer(minLength: 8)
 
@@ -349,7 +350,7 @@ struct ProviderDashboardShellView: View {
         .overlay(alignment: .topTrailing) {
             ZStack(alignment: .topTrailing) {
                 if bookingsTrayAttentionCount > 0 {
-                    requestsPendingCountBadge(bookingsTrayAttentionCount)
+                    headerAttentionCountBadge(bookingsTrayAttentionCount)
                         .offset(x: hasAwaitingPaymentAttention ? -10 : 5, y: -5)
                 }
                 if hasAwaitingPaymentAttention {
@@ -359,6 +360,14 @@ struct ProviderDashboardShellView: View {
             }
         }
         .accessibilityLabel(bookingsTrayAccessibilityLabel)
+    }
+
+    private var chatsButtonAccessibilityLabel: String {
+        if unreadConversationCount <= 0 {
+            return "Chats"
+        }
+        let noun = unreadConversationCount == 1 ? "conversation" : "conversations"
+        return "Chats, \(unreadConversationCount) unread \(noun)"
     }
 
     private var bookingsTrayAccessibilityLabel: String {
@@ -390,9 +399,9 @@ struct ProviderDashboardShellView: View {
             .accessibilityLabel("Awaiting payment")
     }
 
-    /// Circular ticker for pending booking requests on the header tray control.
+    /// Circular ticker shared by Chats and Bookings header controls.
     @ViewBuilder
-    private func requestsPendingCountBadge(_ count: Int) -> some View {
+    private func headerAttentionCountBadge(_ count: Int) -> some View {
         let label = count > 99 ? "99+" : "\(count)"
         let text = Text(label)
             .font(.provider(size: 11, weight: .bold))
@@ -423,14 +432,6 @@ struct ProviderDashboardShellView: View {
             Section(session.displayName) {
                 profileMenuActionButton("Account") {
                     navigator.pushRoute(ProviderShellRoute.account)
-                }
-                if session.hasProviderProfile {
-                    profileMenuActionButton("Business Analytics") {
-                        showingBusinessAnalytics = true
-                    }
-                    profileMenuActionButton("Payout Settings") {
-                        navigator.pushRoute(ProviderShellRoute.payoutSettings)
-                    }
                 }
             }
             if session.authUser?.hasAdminPrivileges == true {
@@ -537,10 +538,6 @@ struct ProviderDashboardShellView: View {
                 .providerShellBackToolbar()
         case .weeklyScheduleEditor:
             ProviderAvailabilityEditorView(presentation: .weeklyEditorOnly)
-                .providerPushedDestinationChrome(for: route)
-                .providerShellBackToolbar()
-        case .payoutSettings:
-            ProviderPayoutSettingsView()
                 .providerPushedDestinationChrome(for: route)
                 .providerShellBackToolbar()
         case .adminDashboard:
@@ -655,6 +652,13 @@ struct ProviderDashboardShellView: View {
     }
 
     private func presentBookingsInbox() {
+        // Remounting an already-presented sheet (new `.id`) can leave the inbox stuck on its
+        // initial ProgressView gate when `.task` doesn't re-run cleanly. Refresh in place instead.
+        if showingRequestsInbox {
+            NotificationCenter.default.post(name: .providerBookingsListShouldRefresh, object: nil)
+            NotificationCenter.default.post(name: .providerRequestsListShouldRefresh, object: nil)
+            return
+        }
         bookingsInboxPresentationID = UUID()
         showingRequestsInbox = true
     }

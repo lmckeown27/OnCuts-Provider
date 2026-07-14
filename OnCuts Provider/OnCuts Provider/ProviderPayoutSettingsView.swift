@@ -1,15 +1,22 @@
 import SwiftUI
 
-/// Stripe Connect payouts — hub for operators who are fully onboarded, or the
-/// Payments Onboarding Guide when Connect is still incomplete.
+/// Stripe Connect payouts — sheet opened from the schedule hub **Payouts** button.
+/// Connected operators: status → Analytics → Stripe Express → Stripe App.
+/// Business Analytics is nested in this sheet (back chevron returns here; Close dismisses all).
 struct ProviderPayoutSettingsView: View {
+    private enum Destination: Hashable {
+        case analytics
+    }
+
     @Environment(ProviderSession.self) private var session
     @Environment(\.openURL) private var openURL
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var stripeGate = ProviderStripeOnboardingGate()
     @State private var connectBusy = false
     @State private var errorAlert: String?
+    @State private var path: [Destination] = []
 
     private static let stripePurple = Color(red: 99 / 255, green: 91 / 255, blue: 255 / 255)
     private static let stripeDashboardAppStoreURL = URL(string: "https://apps.apple.com/app/id978516833")!
@@ -19,6 +26,51 @@ struct ProviderPayoutSettingsView: View {
     }
 
     var body: some View {
+        NavigationStack(path: $path) {
+            payoutRoot
+                .navigationTitle("Payout Settings")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { payoutToolbar(showsBack: false) }
+                .navigationDestination(for: Destination.self) { destination in
+                    switch destination {
+                    case .analytics:
+                        ProviderBusinessAnalyticsView(embedsOwnNavigationStack: false)
+                            .navigationTitle("Business Analytics")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .navigationBarBackButtonHidden(true)
+                            .toolbar { payoutToolbar(showsBack: true) }
+                    }
+                }
+        }
+        .tint(.providerOlive)
+    }
+
+    @ToolbarContentBuilder
+    private func payoutToolbar(showsBack: Bool) -> some ToolbarContent {
+        if showsBack {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    path.removeAll()
+                } label: {
+                    Image(systemName: "chevron.backward")
+                        .fontWeight(.semibold)
+                }
+                .accessibilityLabel("Back to Payout Settings")
+            }
+        }
+        ToolbarItem(placement: .principal) {
+            Text(showsBack ? "Business Analytics" : "Payout Settings")
+                .font(.provider(.headline, weight: .semibold))
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("Close") {
+                dismiss()
+            }
+            .font(.provider(.body, weight: .semibold))
+        }
+    }
+
+    private var payoutRoot: some View {
         Group {
             if !session.hasProviderProfile {
                 ContentUnavailableView(
@@ -55,16 +107,7 @@ struct ProviderPayoutSettingsView: View {
             }
         }
         .providerNavigationStackDestinationBackdrop()
-        .navigationTitle("Payout Settings")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("Payout Settings")
-                    .font(.provider(.headline, weight: .semibold))
-            }
-        }
         .foregroundStyle(Color.lavaShellCream)
-        .tint(.providerOlive)
         .providerLavaScreenChrome()
         .task {
             if session.hasProviderProfile {
@@ -91,6 +134,7 @@ struct ProviderPayoutSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 connectedStatusCard
+                analyticsSection
                 openExpressSection
                 stripeMobileAppSection
             }
@@ -126,6 +170,40 @@ struct ProviderPayoutSettingsView: View {
                         .strokeBorder(Color.green.opacity(0.45), lineWidth: 1)
                 )
         )
+    }
+
+    private var analyticsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Analytics")
+                .font(.provider(.title2, weight: .semibold))
+                .foregroundStyle(Color.lavaShellCream)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Review card vs cash volume, take-home estimates, and your clients.")
+                    .font(.provider(.body))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    path.append(.analytics)
+                } label: {
+                    Text("Open Business Analytics")
+                        .font(.provider(.headline, weight: .semibold))
+                        .foregroundStyle(Color.lavaShellCream)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 16)
+                        .background(Color.providerOlive, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(14)
+            .background(Color.providerScheduleCardFill, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(Color.providerScheduleCardStroke, lineWidth: 0.6)
+            )
+        }
     }
 
     private var openExpressSection: some View {

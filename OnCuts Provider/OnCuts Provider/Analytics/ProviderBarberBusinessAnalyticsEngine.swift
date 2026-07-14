@@ -18,12 +18,13 @@ enum ProviderBarberBusinessAnalyticsEngine {
     ) -> BarberBusinessAnalyticsSnapshot {
         let interval = periodInterval(period, calendar: calendar, now: now)
         let inPeriod = bookings.filter { booking in
-            guard let date = booking.scheduledTime ?? booking.paidAt else { return period == .all }
+            guard let date = analyticsAnchorDate(for: booking) else { return period == .all }
             guard let interval else { return true }
             return interval.contains(date)
         }
 
-        let paidInPeriod = inPeriod.filter { paidStatuses.contains($0.statusUpper) && $0.paidAt != nil }
+        // Card / cash uses the same population as admin: COMPLETED + PAID (no paidAt gate).
+        let paidInPeriod = inPeriod.filter(\.isPaidForRevenueAnalytics)
         let grossVolumeCents = paidInPeriod.reduce(0) { $0 + revenueCents(for: $1) }
 
         var cardVolumeCents = 0
@@ -32,10 +33,11 @@ enum ProviderBarberBusinessAnalyticsEngine {
         var cashCompletionCount = 0
         for booking in paidInPeriod {
             let cents = revenueCents(for: booking)
-            if isCashPayment(booking) {
+            if booking.isCashPayment {
                 cashVolumeCents += cents
                 cashCompletionCount += 1
             } else {
+                // Explicit card *or* null method (legacy Stripe) — matches admin SQL.
                 cardVolumeCents += cents
                 cardCompletionCount += 1
             }
@@ -63,7 +65,7 @@ enum ProviderBarberBusinessAnalyticsEngine {
             grossVolumeCents: grossVolumeCents,
             bookingCount: paidInPeriod.count,
             uniqueClientCount: uniqueClients,
-            chartPoints: chartPoints(from: inPeriod, period: period, calendar: calendar, now: now),
+            chartPoints: chartPoints(from: paidInPeriod, period: period, calendar: calendar, now: now),
             cardVolumeCents: cardVolumeCents,
             cardCompletionCount: cardCompletionCount,
             cashVolumeCents: cashVolumeCents,
@@ -100,7 +102,9 @@ enum ProviderBarberBusinessAnalyticsEngine {
             let sorted = bucket.bookings.sorted {
                 ($0.scheduledTime ?? .distantPast) > ($1.scheduledTime ?? .distantPast)
             }
-            let volume = bucket.bookings.reduce(0) { $0 + revenueCents(for: $1) }
+            let volume = bucket.bookings
+                .filter(\.isPaidForRevenueAnalytics)
+                .reduce(0) { $0 + revenueCents(for: $1) }
             return BarberClient(
                 id: id,
                 name: bucket.name,
@@ -127,8 +131,8 @@ enum ProviderBarberBusinessAnalyticsEngine {
         var totalsByBucket: [Date: (revenueDollars: Double, bookings: Int)] = [:]
 
         for booking in paid {
-            guard let paidAt = booking.paidAt else { continue }
-            let bucket = bucketStart(for: paidAt, timeline: timeline, calendar: calendar)
+            guard let anchor = analyticsAnchorDate(for: booking) else { continue }
+            let bucket = bucketStart(for: anchor, timeline: timeline, calendar: calendar)
             let existing = totalsByBucket[bucket] ?? (0, 0)
             totalsByBucket[bucket] = (
                 revenueDollars: existing.revenueDollars + Double(revenueCents(for: booking)) / 100.0,
@@ -154,7 +158,7 @@ enum ProviderBarberBusinessAnalyticsEngine {
         }
     }
 
-    /// Paid bookings whose `paidAt` falls in the chart window for the selected timeline.
+    /// Paid bookings whose settle/schedule date falls in the chart window for the selected timeline.
     static func paidBookings(
         in timeline: BarberPerformanceTimeline,
         from bookings: [SimpleBookingDTO],
@@ -163,8 +167,8 @@ enum ProviderBarberBusinessAnalyticsEngine {
     ) -> [SimpleBookingDTO] {
         let bucketDates = Set(chartBucketDates(for: timeline, calendar: calendar, now: now))
         return paidBookings(from: bookings).filter { booking in
-            guard let paidAt = booking.paidAt else { return false }
-            let bucket = bucketStart(for: paidAt, timeline: timeline, calendar: calendar)
+            guard let anchor = analyticsAnchorDate(for: booking) else { return false }
+            let bucket = bucketStart(for: anchor, timeline: timeline, calendar: calendar)
             return bucketDates.contains(bucket)
         }
     }
@@ -179,8 +183,9 @@ enum ProviderBarberBusinessAnalyticsEngine {
         paidBookings(in: timeline, from: bookings, calendar: calendar, now: now)
     }
 
+    /// All settled bookings used for Card vs Cash / admin-parity revenue totals.
     static func paidBookings(from bookings: [SimpleBookingDTO]) -> [SimpleBookingDTO] {
-        bookings.filter { paidStatuses.contains($0.statusUpper) && $0.paidAt != nil }
+        bookings.filter(\.isPaidForRevenueAnalytics)
     }
 
     static func bookings(forClientId clientId: String, from bookings: [SimpleBookingDTO]) -> [SimpleBookingDTO] {
@@ -230,8 +235,9 @@ enum ProviderBarberBusinessAnalyticsEngine {
         return 0
     }
 
-    private static func isCashPayment(_ booking: SimpleBookingDTO) -> Bool {
-        booking.isCashPayment
+    /// Prefer `paidAt` for revenue bucketing (admin charts), fall back to scheduled time.
+    private static func analyticsAnchorDate(for booking: SimpleBookingDTO) -> Date? {
+        booking.paidAt ?? booking.scheduledTime
     }
 
     private static func avatarURL(from booking: SimpleBookingDTO) -> URL? {
@@ -299,7 +305,7 @@ enum ProviderBarberBusinessAnalyticsEngine {
 
         var buckets: [Date: (volume: Int, count: Int)] = [:]
         for booking in bookings {
-            guard let date = booking.scheduledTime ?? booking.paidAt else { continue }
+            guard let date = analyticsAnchorDate(for: booking) else { continue }
             let bucketStart: Date
             if bucketUnit == .day {
                 bucketStart = calendar.startOfDay(for: date)

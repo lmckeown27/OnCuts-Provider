@@ -6,9 +6,9 @@ import SwiftUI
 /// Tabs mirror the daily-driver flows of the web `AdminDashboard.tsx`:
 ///   * **Performance** — platform totals, **time-series chart** (daily / weekly / monthly / yearly), plus
 ///     **campus search** (typeahead) to scope or clear to aggregate headline revenue / bookings / payout metrics.
-///   * **Barbers** — **Current** providers with Visible/Hidden, Stripe, and (All Campuses)
-///     Location filters. Campus scope uses pin proximity (~8km). Row location shows
-///     `serviceLocationLabel` (never nearest campus name). **Applications** — approve / reject.
+///   * **Operators** — **Current** providers with Visible/Hidden, Stripe, and (All Campuses)
+///     Location filters (opened from a filter button). Campus scope uses pin proximity (~8km).
+///     Row location shows `serviceLocationLabel` (never nearest campus name). **Applications** — approve / reject.
 ///   * **Users** — every platform user (optionally scoped by campus) with simple in-memory search; tap →
 ///     push the admin user-detail screen (consumer bookings).
 ///   * **Services** — platform service catalog (price / duration bounds, activate / deactivate).
@@ -22,7 +22,7 @@ struct ProviderAdminDashboardView: View {
 
     enum Tab: String, CaseIterable, Identifiable {
         case performance = "Performance"
-        case barbers = "Barbers"
+        case barbers = "Operators"
         case users = "Users"
         case services = "Services"
         case safety = "Safety"
@@ -42,7 +42,7 @@ struct ProviderAdminDashboardView: View {
         var tabLabel: String {
             switch self {
             case .performance: "Perf."
-            case .barbers: "Barbers"
+            case .barbers: "Operators"
             case .users: "Users"
             case .services: "Services"
             case .safety: "Safety"
@@ -50,7 +50,7 @@ struct ProviderAdminDashboardView: View {
         }
     }
 
-    /// Sub-selectors inside the Barbers tab (web: Barbers vs Applications peers).
+    /// Sub-selectors inside the Operators tab (Current roster vs Applications).
     enum BarbersSubTab: String, CaseIterable, Identifiable {
         case current = "Current"
         case applications = "Applications"
@@ -132,6 +132,7 @@ struct ProviderAdminDashboardView: View {
     @State private var barberVisibilityFilter: BarberVisibilityFilter = .visible
     @State private var barberStripeFilter: BarberStripeFilter = .all
     @State private var barberLocationFilter: BarberLocationFilter = .all
+    @State private var showingOperatorsFilters = false
     @State private var campuses: [AdminCampusDTO] = []
     @State private var selectedCampusId: String? = nil
     @State private var stats: AdminPlatformStatsDTO?
@@ -1096,7 +1097,7 @@ struct ProviderAdminDashboardView: View {
                     LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 10) {
                         metricCell(title: "Users", value: "\(s.totalUsers ?? 0)")
                         metricCell(title: "Bookings", value: "\(s.totalBookings ?? 0)")
-                        metricCell(title: "Barbers", value: "\(s.totalBarbers ?? 0)")
+                        metricCell(title: "Operators", value: "\(s.totalBarbers ?? 0)")
                         metricCell(title: "Campuses", value: "\(s.totalCampuses ?? 0)")
                     }
                 } else {
@@ -1107,7 +1108,7 @@ struct ProviderAdminDashboardView: View {
                     let userCount = (p.totalConsumers ?? 0) + (p.totalBarbers ?? 0)
                     metricCell(title: "Users", value: "\(userCount)")
                     metricCell(title: "Bookings", value: "\(p.totalBookings ?? 0)")
-                    metricCell(title: "Barbers", value: "\(p.totalBarbers ?? 0)")
+                    metricCell(title: "Operators", value: "\(p.totalBarbers ?? 0)")
                     metricCell(title: "Consumers", value: "\(p.totalConsumers ?? 0)")
                 }
             } else {
@@ -1126,11 +1127,11 @@ struct ProviderAdminDashboardView: View {
                     metricCell(title: "Total bookings", value: "\(p.totalBookings ?? 0)")
                     metricCell(title: "Completed", value: "\(p.completedBookings ?? 0)")
                     metricCell(title: "Cancelled", value: "\(p.cancelledBookings ?? 0)")
-                    metricCell(title: "Active barbers", value: "\(p.activeBarbers ?? 0) / \(p.totalBarbers ?? 0)")
+                    metricCell(title: "Active operators", value: "\(p.activeBarbers ?? 0) / \(p.totalBarbers ?? 0)")
                     metricCell(title: "Total revenue", value: dollarString(centsLike: p.totalRevenue))
                     metricCell(title: "Platform fees", value: dollarString(centsLike: p.totalPlatformFees))
                     metricCell(title: "Net platform", value: dollarString(centsLike: p.netPlatformRevenue))
-                    metricCell(title: "Barber earnings", value: dollarString(centsLike: p.totalBarberEarnings))
+                    metricCell(title: "Operator earnings", value: dollarString(centsLike: p.totalBarberEarnings))
                     metricCell(title: "Card revenue", value: dollarString(centsLike: p.cardRevenue))
                     metricCell(title: "Cash revenue", value: dollarString(centsLike: p.cashRevenue))
                     metricCell(title: "Tips", value: dollarString(centsLike: p.totalTips))
@@ -1188,7 +1189,7 @@ struct ProviderAdminDashboardView: View {
         return "\(v)"
     }
 
-    // MARK: - Barbers tab
+    // MARK: - Operators tab
 
     private var filteredCurrentBarbers: [AdminBarberDTO] {
         barbers.filter { barber in
@@ -1239,21 +1240,39 @@ struct ProviderAdminDashboardView: View {
 
     private var currentBarbersEmptyMessage: String {
         if isLoading, barbers.isEmpty {
-            return "Loading barbers…"
+            return "Loading operators…"
         }
         if barbers.isEmpty {
             if selectedCampusId != nil {
                 return "No operators with a public pin near this campus."
             }
-            return "No barbers found for this scope."
+            return "No operators found for this scope."
         }
-        return "No barbers match these filters."
+        return "No operators match these filters."
+    }
+
+    private var operatorsFiltersAreNonDefault: Bool {
+        if barberVisibilityFilter != .visible { return true }
+        if barberVisibilityFilter == .visible, barberStripeFilter != .all { return true }
+        if selectedCampusId == nil, barberLocationFilter != .all { return true }
+        return false
+    }
+
+    private var operatorsFilterSummary: String {
+        var parts: [String] = [barberVisibilityFilter.segmentTitle]
+        if barberVisibilityFilter == .visible, barberStripeFilter != .all {
+            parts.append(barberStripeFilter.segmentTitle)
+        }
+        if selectedCampusId == nil, barberLocationFilter != .all {
+            parts.append(barberLocationFilter.segmentTitle)
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var barbersTab: some View {
-        sectionCard(title: "Barbers", subtitle: barbersTabSubtitle) {
+        sectionCard(title: "Operators", subtitle: barbersTabSubtitle) {
             VStack(alignment: .leading, spacing: 12) {
-                Picker("Barbers section", selection: $barbersSubTab) {
+                Picker("Operators section", selection: $barbersSubTab) {
                     ForEach(BarbersSubTab.allCases) { sub in
                         Text(sub.rawValue).tag(sub)
                     }
@@ -1272,12 +1291,15 @@ struct ProviderAdminDashboardView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingOperatorsFilters) {
+            operatorsFiltersSheet
+        }
     }
 
     @ViewBuilder
     private var currentBarbersList: some View {
         VStack(alignment: .leading, spacing: 10) {
-            currentBarbersFilterControls
+            operatorsFilterButton
 
             if filteredCurrentBarbers.isEmpty {
                 Text(currentBarbersEmptyMessage)
@@ -1291,33 +1313,125 @@ struct ProviderAdminDashboardView: View {
         }
     }
 
-    @ViewBuilder
-    private var currentBarbersFilterControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Picker("Visibility", selection: $barberVisibilityFilter) {
-                ForEach(BarberVisibilityFilter.allCases) { filter in
-                    Text(filter.segmentTitle).tag(filter)
+    private var operatorsFilterButton: some View {
+        Button {
+            showingOperatorsFilters = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                Text(operatorsFiltersAreNonDefault ? "Filters: \(operatorsFilterSummary)" : "Filters")
+                    .font(.provider(.subheadline, weight: .medium))
+                    .foregroundStyle(Color.lavaShellCream)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if operatorsFiltersAreNonDefault {
+                    Text("Edit")
+                        .font(.provider(.caption, weight: .semibold))
+                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.provider(.caption, weight: .semibold))
+                    .foregroundStyle(Color.lavaShellCreamTertiary)
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.providerScheduleTrackFill)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(Color.providerScheduleTrackStroke, lineWidth: 0.5)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Operator filters")
+        .accessibilityValue(operatorsFilterSummary)
+    }
+
+    private var operatorsFiltersSheet: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                currentBarbersFilterControls
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color.providerFormGroupedBackground.ignoresSafeArea())
+            .navigationTitle("Filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Reset") {
+                        barberVisibilityFilter = .visible
+                        barberStripeFilter = .all
+                        barberLocationFilter = .all
+                    }
+                    .disabled(!operatorsFiltersAreNonDefault)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        showingOperatorsFilters = false
+                    }
+                    .fontWeight(.semibold)
                 }
             }
-            .pickerStyle(.segmented)
+        }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+        .tint(.providerOlive)
+    }
 
-            if barberVisibilityFilter == .visible {
-                Picker("Stripe", selection: $barberStripeFilter) {
-                    ForEach(BarberStripeFilter.allCases) { filter in
+    @ViewBuilder
+    private var currentBarbersFilterControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            filterControlGroup(title: "Visibility") {
+                Picker("Visibility", selection: $barberVisibilityFilter) {
+                    ForEach(BarberVisibilityFilter.allCases) { filter in
                         Text(filter.segmentTitle).tag(filter)
                     }
                 }
                 .pickerStyle(.segmented)
+                .onChange(of: barberVisibilityFilter) { _, newValue in
+                    if newValue != .visible {
+                        barberStripeFilter = .all
+                    }
+                }
+            }
+
+            if barberVisibilityFilter == .visible {
+                filterControlGroup(title: "Stripe") {
+                    Picker("Stripe", selection: $barberStripeFilter) {
+                        ForEach(BarberStripeFilter.allCases) { filter in
+                            Text(filter.segmentTitle).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
             }
 
             if selectedCampusId == nil {
-                Picker("Location", selection: $barberLocationFilter) {
-                    ForEach(BarberLocationFilter.allCases) { filter in
-                        Text(filter.segmentTitle).tag(filter)
+                filterControlGroup(title: "Location") {
+                    Picker("Location", selection: $barberLocationFilter) {
+                        ForEach(BarberLocationFilter.allCases) { filter in
+                            Text(filter.segmentTitle).tag(filter)
+                        }
                     }
+                    .pickerStyle(.segmented)
                 }
-                .pickerStyle(.segmented)
             }
+        }
+    }
+
+    private func filterControlGroup<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.provider(.caption, weight: .semibold))
+                .foregroundStyle(Color.lavaShellCreamSecondary)
+            content()
         }
     }
 
@@ -2433,9 +2547,9 @@ struct ProviderAdminDashboardView: View {
                         barbers = try await ProviderAdminService.allBarbers()
                     }
                 } catch let OnCutsHTTPError.httpStatus(code, msg) {
-                    applicationsError = msg ?? "Approved, but could not refresh barbers (\(code))."
+                    applicationsError = msg ?? "Approved, but could not refresh operators (\(code))."
                 } catch {
-                    applicationsError = "Approved, but could not refresh barbers: \(error.localizedDescription)"
+                    applicationsError = "Approved, but could not refresh operators: \(error.localizedDescription)"
                 }
             }
         } catch let OnCutsHTTPError.httpStatus(code, msg) {

@@ -408,8 +408,8 @@ struct ProviderScheduleDashboardView: View {
 
             ZStack {
                 Text(shareDeviceLocation
-                      ? "Toggle off to enter a location"
-                      : "Toggle on to track your location")
+                      ? "Toggle off to turn off device tracking"
+                      : "Toggle on to track your device")
                     .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
                     .lineLimit(1)
@@ -498,12 +498,12 @@ struct ProviderScheduleDashboardView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(
-                Color.white.opacity(0.10),
+                Color.providerScheduleActionBackground,
                 in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.8)
+                    .strokeBorder(Color.providerScheduleActionBorder, lineWidth: 0.8)
             )
 
             if isManualPlaceFieldFocused, !placeSearch.suggestionsSuppressed, !placeSearch.results.isEmpty {
@@ -533,17 +533,17 @@ struct ProviderScheduleDashboardView: View {
 
                         if index < placeSearch.results.count - 1 {
                             Divider()
-                                .overlay(Color.white.opacity(0.12))
+                                .overlay(Color.providerElevatedSurfaceStroke)
                         }
                     }
                 }
                 .background(
-                    Color.providerElevatedSurface.opacity(0.92),
+                    Color.providerElevatedSurface,
                     in: RoundedRectangle(cornerRadius: 10, style: .continuous)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+                        .strokeBorder(Color.providerElevatedSurfaceStroke, lineWidth: 0.8)
                 )
             }
         }
@@ -694,9 +694,8 @@ struct ProviderScheduleDashboardView: View {
                 }
                 shellNavigator.pushRoute(.weeklyScheduleEditor)
             }
-            scheduleActionButton(title: "Block Time") {
-                prepareBlockSheetForSelectedWeek()
-                showingBlockTimeSheet = true
+            schedulePayoutsActionButton {
+                NotificationCenter.default.post(name: .providerPresentPayoutSettings, object: nil)
             }
             scheduleActionButton(title: "Services Offered") {
                 shellNavigator.pushRoute(.services)
@@ -724,6 +723,26 @@ struct ProviderScheduleDashboardView: View {
                 }
         }
         .buttonStyle(.plain)
+    }
+
+    /// Stripe-branded hub CTA (web `#635BFF`) — opens Payout Settings.
+    private func schedulePayoutsActionButton(action: @escaping () -> Void) -> some View {
+        let stripePurple = Color(red: 99 / 255, green: 91 / 255, blue: 255 / 255)
+        return Button(action: action) {
+            Text("Payouts")
+                .font(.provider(size: 14, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .lineLimit(1)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(stripePurple)
+                        .shadow(color: stripePurple.opacity(0.35), radius: 2, x: 0, y: 1)
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Payouts")
     }
 
     private var scheduleChromeTrackBackground: some View {
@@ -812,24 +831,6 @@ struct ProviderScheduleDashboardView: View {
         blockSheetDayStart = day
         blockSheetStart = dateTime(on: day, hhmm: startHHMM)
         blockSheetEnd = dateTime(on: day, hhmm: endHHMM)
-        blockSheetPresentationID = UUID()
-    }
-
-    private func prepareBlockSheetForSelectedWeek() {
-        blockSheetBlocksEntireDay = false
-        let day = weekOffset == 0 ? todayAnchor : weekStartMonday
-        blockSheetDayStart = day
-        let defaultStart = mondayCalendar.date(byAdding: .hour, value: 1, to: .now) ?? .now
-        blockSheetStart = ProviderTimeBlockEditorSheet.blockStart(
-            on: day,
-            defaultStartFromNow: defaultStart,
-            calendar: mondayCalendar
-        )
-        blockSheetEnd = ProviderTimeBlockEditorSheet.endTime(
-            following: blockSheetStart,
-            preferredEnd: nil,
-            calendar: mondayCalendar
-        )
         blockSheetPresentationID = UUID()
     }
 

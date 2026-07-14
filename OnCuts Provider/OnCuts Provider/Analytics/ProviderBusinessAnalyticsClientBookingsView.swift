@@ -114,7 +114,7 @@ struct ProviderBusinessAnalyticsClientBookingsView: View {
     }
 
     private func paymentLabel(for booking: SimpleBookingDTO) -> String? {
-        guard booking.paidAt != nil else { return nil }
+        guard booking.isPaidForRevenueAnalytics else { return nil }
         return booking.isCashPayment ? "Cash" : "Card"
     }
 }

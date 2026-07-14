@@ -1,13 +1,9 @@
 import SwiftUI
-#if canImport(UIKit)
-import UIKit
-#endif
 
-// MARK: - Layout metrics (280pt / 320pt compact sheets)
+// MARK: - Layout metrics (compact confirmation sheets)
 
 enum ProviderRequestSheetMetrics {
     static let approveHeight: CGFloat = 280
-    static let declinePickerHeight: CGFloat = 320
     static let submitDeclineHeight: CGFloat = 280
     static let dragWidth: CGFloat = 36
     static let dragHeight: CGFloat = 5
@@ -25,10 +21,8 @@ enum ProviderRequestSheetMetrics {
 enum ProviderRequestSheetColors {
     static let approveGreen = Color(red: 52 / 255, green: 199 / 255, blue: 89 / 255) // #34C759
     static let lavaRed = Color(red: 1, green: 69 / 255, blue: 58 / 255) // #FF453A
-    static let declineOrange = Color(red: 1, green: 0.58, blue: 0)
     static let titleText = Color.lavaShellCream
     static let bodyText = Color.lavaShellCream.opacity(0.9)
-    static let mutedText = Color.lavaShellCream.opacity(0.78)
 
     static func panelFill(colorScheme: ColorScheme) -> Color {
         colorScheme == .dark
@@ -40,33 +34,6 @@ enum ProviderRequestSheetColors {
         colorScheme == .dark
             ? Color.lavaShellCream.opacity(0.24)
             : Color.black.opacity(0.12)
-    }
-
-    static func capsuleFill(colorScheme: ColorScheme, selected: Bool) -> Color {
-        if selected {
-            return declineOrange.opacity(colorScheme == .dark ? 0.28 : 0.18)
-        }
-        return colorScheme == .dark
-            ? Color.black.opacity(0.42)
-            : Color.black.opacity(0.06)
-    }
-}
-
-enum ProviderDeclineReason: String, CaseIterable, Identifiable {
-    case scheduleConflict = "Schedule Conflict"
-    case personalTimeOff = "Personal Time Off"
-    case serviceMismatch = "Service Mismatch"
-    case other = "Other"
-
-    var id: String { rawValue }
-
-    /// Text sent to the reject API — preset labels, or trimmed custom copy for **Other**.
-    func apiReason(customOtherText: String) -> String? {
-        if self == .other {
-            let trimmed = customOtherText.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        }
-        return rawValue
     }
 }
 
@@ -221,172 +188,7 @@ struct ProviderApproveBookingConfirmSheet: View {
   }
 }
 
-// MARK: - Blueprint 2: Decline reason picker (320pt)
-
-struct ProviderDeclineReasonPickerSheet: View {
-  @Binding var selectedReason: ProviderDeclineReason?
-  @Binding var otherReasonText: String
-  let onDecline: () -> Void
-  @Environment(\.colorScheme) private var colorScheme
-  @FocusState private var otherFieldFocused: Bool
-
-  private let gridRows: [[ProviderDeclineReason]] = [
-    [.scheduleConflict, .personalTimeOff],
-    [.serviceMismatch, .other],
-  ]
-
-  private var canContinue: Bool {
-    guard let selectedReason else { return false }
-    if selectedReason == .other {
-      return !otherReasonText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-    return true
-  }
-
-  private var sheetHeight: CGFloat {
-    selectedReason == .other
-      ? ProviderRequestSheetMetrics.declinePickerHeight + 56
-      : ProviderRequestSheetMetrics.declinePickerHeight
-  }
-
-  var body: some View {
-    ProviderRequestCompactSheetChrome(detentHeight: sheetHeight) {
-      VStack(alignment: .leading, spacing: 0) {
-        ScaledSheetText(
-          text: "Select Reason for Decline",
-          font: .provider(size: 17, weight: .semibold),
-          color: ProviderRequestSheetColors.titleText,
-          lineLimit: 2
-        )
-        .padding(.horizontal, ProviderRequestSheetMetrics.horizontalPadding)
-        .padding(.top, 4)
-        .padding(.bottom, 10)
-
-        if selectedReason == .other {
-          otherReasonEntry
-            .padding(.horizontal, ProviderRequestSheetMetrics.horizontalPadding)
-            .transition(.opacity.combined(with: .move(edge: .top)))
-        } else {
-          VStack(spacing: 8) {
-            ForEach(Array(gridRows.enumerated()), id: \.offset) { _, row in
-              HStack(spacing: 8) {
-                ForEach(row) { reason in
-                  declineReasonCapsule(reason)
-                }
-              }
-            }
-          }
-          .padding(.horizontal, ProviderRequestSheetMetrics.horizontalPadding)
-          .transition(.opacity)
-        }
-
-        Spacer(minLength: 8)
-
-        Button(action: onDecline) {
-          Text("Decline")
-            .font(.provider(size: 17, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: ProviderRequestSheetMetrics.buttonHeight)
-        }
-        .background(
-          RoundedRectangle(cornerRadius: ProviderRequestSheetMetrics.buttonCornerRadius, style: .continuous)
-            .fill(canContinue ? ProviderRequestSheetColors.lavaRed : ProviderRequestSheetColors.lavaRed.opacity(0.45))
-        )
-        .disabled(!canContinue)
-        .padding(.horizontal, ProviderRequestSheetMetrics.horizontalPadding)
-        .padding(.bottom, ProviderRequestSheetMetrics.bottomBasinPadding)
-      }
-      .animation(ProviderRequestSheetMetrics.sheetSpring, value: selectedReason)
-    }
-  }
-
-  private var otherReasonEntry: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      Button {
-        withAnimation(ProviderRequestSheetMetrics.sheetSpring) {
-          selectedReason = nil
-          otherReasonText = ""
-        }
-        ProviderRequestSheetHaptics.selection()
-      } label: {
-        HStack(spacing: 6) {
-          Image(systemName: "chevron.left")
-            .font(.provider(size: 13, weight: .semibold))
-          Text("Back to reasons")
-            .font(.provider(size: 14, weight: .medium))
-        }
-        .foregroundStyle(ProviderRequestSheetColors.bodyText)
-      }
-      .buttonStyle(.plain)
-
-      Text("Describe why you’re declining")
-        .font(.provider(size: 14, weight: .semibold))
-        .foregroundStyle(ProviderRequestSheetColors.titleText)
-
-      TextField("Type your reason…", text: $otherReasonText, axis: .vertical)
-        .lineLimit(3 ... 5)
-        .textFieldStyle(.plain)
-        .font(.provider(size: 15))
-        .foregroundStyle(ProviderRequestSheetColors.titleText)
-        .padding(12)
-        .frame(minHeight: 88, alignment: .topLeading)
-        .background(
-          RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(ProviderRequestSheetColors.capsuleFill(colorScheme: colorScheme, selected: false))
-        )
-        .overlay(
-          RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .strokeBorder(ProviderRequestSheetColors.panelStroke(colorScheme: colorScheme), lineWidth: 1)
-        )
-        .focused($otherFieldFocused)
-        .onAppear { otherFieldFocused = true }
-    }
-  }
-
-  private func declineReasonCapsule(_ reason: ProviderDeclineReason) -> some View {
-    let isSelected = selectedReason == reason
-    return Button {
-      withAnimation(ProviderRequestSheetMetrics.sheetSpring) {
-        selectedReason = reason
-        if reason != .other {
-          otherReasonText = ""
-        }
-      }
-      ProviderRequestSheetHaptics.selection()
-    } label: {
-      HStack(spacing: 6) {
-        ScaledSheetText(
-          text: reason.rawValue,
-          font: .provider(size: 13, weight: isSelected ? .semibold : .medium),
-          color: isSelected ? ProviderRequestSheetColors.declineOrange : ProviderRequestSheetColors.bodyText,
-          lineLimit: 2
-        )
-        Spacer(minLength: 0)
-        Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
-          .font(.provider(size: 14))
-          .foregroundStyle(isSelected ? ProviderRequestSheetColors.declineOrange : ProviderRequestSheetColors.mutedText)
-      }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 12)
-      .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
-      .background(
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-          .fill(ProviderRequestSheetColors.capsuleFill(colorScheme: colorScheme, selected: isSelected))
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-          .strokeBorder(
-            isSelected ? ProviderRequestSheetColors.declineOrange.opacity(0.75) : ProviderRequestSheetColors.panelStroke(colorScheme: colorScheme),
-            lineWidth: isSelected ? 1.5 : 1
-          )
-      )
-    }
-    .buttonStyle(.plain)
-  }
-}
-
-// MARK: - Blueprint 3: Submit decline (280pt)
+// MARK: - Decline confirm (280pt)
 
 struct ProviderSubmitDeclineConfirmSheet: View {
   let customerName: String
@@ -436,16 +238,6 @@ struct ProviderSubmitDeclineConfirmSheet: View {
         .padding(.bottom, ProviderRequestSheetMetrics.bottomBasinPadding)
       }
     }
-  }
-}
-
-// MARK: - Haptics
-
-enum ProviderRequestSheetHaptics {
-  static func selection() {
-    #if canImport(UIKit)
-    UISelectionFeedbackGenerator().selectionChanged()
-    #endif
   }
 }
 

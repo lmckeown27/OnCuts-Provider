@@ -2,7 +2,10 @@ import SwiftUI
 
 struct ProviderBusinessAnalyticsPerformanceView: View {
     let bookings: [SimpleBookingDTO]
+    /// Timeline-scoped summary strip metrics.
     let snapshot: BarberBusinessAnalyticsSnapshot
+    /// All-time Card vs Cash (admin parity).
+    let paymentMethodsSnapshot: BarberBusinessAnalyticsSnapshot
     @Binding var metricsTimeline: BarberPerformanceTimeline
 
     var body: some View {
@@ -47,24 +50,24 @@ struct ProviderBusinessAnalyticsPerformanceView: View {
     }
 
     private var cardVsCashCard: some View {
-        ProviderAnalyticsSectionCard(title: "Card vs cash", subtitle: nil) {
+        ProviderAnalyticsSectionCard(title: "Card vs cash", subtitle: "All time") {
             VStack(spacing: 12) {
                 paymentTypeBlock(
                     title: "Card",
-                    volumeCents: snapshot.cardVolumeCents,
-                    completionCount: snapshot.cardCompletionCount,
-                    platformCutCents: snapshot.platformCutCents,
-                    takeHomeCents: snapshot.cardTakeHomeCents
+                    volumeCents: paymentMethodsSnapshot.cardVolumeCents,
+                    completionCount: paymentMethodsSnapshot.cardCompletionCount,
+                    platformCutCents: paymentMethodsSnapshot.platformCutCents,
+                    takeHomeCents: paymentMethodsSnapshot.cardTakeHomeCents
                 )
 
                 Divider().overlay(Color.lavaShellCream.opacity(0.12))
 
                 paymentTypeBlock(
                     title: "Cash",
-                    volumeCents: snapshot.cashVolumeCents,
-                    completionCount: snapshot.cashCompletionCount,
+                    volumeCents: paymentMethodsSnapshot.cashVolumeCents,
+                    completionCount: paymentMethodsSnapshot.cashCompletionCount,
                     platformCutCents: 0,
-                    takeHomeCents: snapshot.cashTakeHomeCents
+                    takeHomeCents: paymentMethodsSnapshot.cashTakeHomeCents
                 )
             }
         }
@@ -122,11 +125,11 @@ struct ProviderBusinessAnalyticsPerformanceView: View {
             HStack(spacing: 0) {
                 takeHomeComparisonCell(
                     title: "Card",
-                    value: ProviderAnalyticsFormatting.currency(cents: snapshot.cardTakeHomeCents)
+                    value: ProviderAnalyticsFormatting.currency(cents: paymentMethodsSnapshot.cardTakeHomeCents)
                 )
                 takeHomeComparisonCell(
                     title: "Cash",
-                    value: ProviderAnalyticsFormatting.currency(cents: snapshot.cashTakeHomeCents)
+                    value: ProviderAnalyticsFormatting.currency(cents: paymentMethodsSnapshot.cashTakeHomeCents)
                 )
             }
 

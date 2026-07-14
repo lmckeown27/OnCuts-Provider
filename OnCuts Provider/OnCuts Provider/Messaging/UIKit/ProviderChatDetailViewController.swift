@@ -972,7 +972,7 @@ extension ProviderChatDetailViewController: ProviderChatBookingRequestCellDelega
                         message: nil
                     )
                 } else {
-                    try await ProviderBookingRequestsService.reject(bookingId: bookingId, barberTableId: barberTableId, reason: "Declined in chat")
+                    try await ProviderBookingRequestsService.reject(bookingId: bookingId, barberTableId: barberTableId)
                 }
                 loadMessages()
             } catch {

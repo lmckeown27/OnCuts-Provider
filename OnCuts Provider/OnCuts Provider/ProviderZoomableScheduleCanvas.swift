@@ -1662,16 +1662,16 @@ private struct SchedulePreciseTimelineCanvas: View {
             return Color.lavaShellCreamSecondary.opacity(0.22)
         }
 
-        if ProviderBookingStatusDisplay.isScheduleCompleted(status: booking.status) {
-            return Color.providerScheduleCompletedAppointmentFill
-        }
-        if ProviderBookingStatusDisplay.isScheduleBooked(status: booking.status) {
-            return Color.providerScheduleUpcomingAppointmentFill
-        }
         if isParkedForMove {
-            return Color.providerScheduleUpcomingAppointmentFill.opacity(0.75)
+            return booking.scheduleAppointmentFillColor.opacity(0.75)
         }
-        return Color.providerScheduleCardFill
+
+        switch ProviderBookingStatusDisplay.normalized(booking.status) {
+        case "pending", "accepted", "booked", "in_progress", "completed":
+            return booking.scheduleAppointmentFillColor
+        default:
+            return Color.providerScheduleCardFill
+        }
     }
 
     private func minutesFromHHMM(_ hhmm: String) -> Int {

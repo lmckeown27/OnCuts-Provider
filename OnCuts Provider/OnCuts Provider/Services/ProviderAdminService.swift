@@ -118,12 +118,27 @@ enum ProviderAdminService {
 
     // MARK: - Platform service catalog (`/admin/services`)
 
-    static func listPlatformServices(includeInactive: Bool) async throws -> [AdminServiceCatalogItem] {
-        let q = includeInactive ? "?includeInactive=true" : ""
+    static func listPlatformServices(
+        includeInactive: Bool,
+        providerType: String? = nil
+    ) async throws -> [AdminServiceCatalogItem] {
+        var parts: [String] = []
+        if includeInactive {
+            parts.append("includeInactive=true")
+        }
+        if let providerType {
+            let trimmed = providerType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if !trimmed.isEmpty,
+               let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+                parts.append("providerType=\(encoded)")
+            }
+        }
+        let q = parts.isEmpty ? "" : "?\(parts.joined(separator: "&"))"
         let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "admin/services\(q)")
         let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(AdminServicesListEnvelope.self, from: data)
-        return env.data ?? []
+        let list = env.data ?? []
+        return AdminServiceCatalogFiltering.filtered(list, providerType: providerType)
     }
 
     static func createPlatformService(
@@ -218,6 +233,35 @@ enum ProviderAdminService {
             method: "PUT",
             jsonBody: ["is_active": isActive]
         )
+    }
+
+    // MARK: - Barber commission (admin)
+
+    /// `PUT /admin/barbers/:barberRecordId/commission`
+    ///
+    /// Pass `platformFeePercent: nil` to clear a custom rate and use the platform default (15%).
+    static func updateBarberCommission(
+        barberRecordId: String,
+        platformFeePercent: Double?,
+        commissionFreeBookingsRemaining: Int
+    ) async throws -> AdminBarberCommissionDTO {
+        var body: [String: Any] = [
+            "commissionFreeBookingsRemaining": commissionFreeBookingsRemaining,
+        ]
+        if let platformFeePercent {
+            body["platformFeePercent"] = platformFeePercent
+        } else {
+            body["platformFeePercent"] = NSNull()
+        }
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "admin/barbers/\(barberRecordId)/commission",
+            method: "PUT",
+            jsonBody: body
+        )
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
+        let env = try dec.decode(AdminBarberCommissionEnvelope.self, from: data)
+        if let nested = env.data { return nested }
+        return try dec.decode(AdminBarberCommissionDTO.self, from: data)
     }
 
     // MARK: - Safety (admin moderation)

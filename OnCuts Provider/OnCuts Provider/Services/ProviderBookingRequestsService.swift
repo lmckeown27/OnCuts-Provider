@@ -75,11 +75,18 @@ enum ProviderBookingRequestsService {
         try await accept(bookingId: bookingId, barberTableId: barberTableId, message: message)
     }
 
-    static func reject(bookingId: String, barberTableId: String, reason: String) async throws {
+    static func reject(bookingId: String, barberTableId: String, reason: String? = nil) async throws {
+        var body: [String: Any] = ["barberId": barberTableId]
+        if let reason {
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                body["reason"] = trimmed
+            }
+        }
         _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "booking-requests/\(bookingId)/reject",
             method: "POST",
-            jsonBody: ["barberId": barberTableId, "reason": reason]
+            jsonBody: body
         )
     }
 }

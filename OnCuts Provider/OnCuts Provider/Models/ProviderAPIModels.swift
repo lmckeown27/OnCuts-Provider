@@ -76,9 +76,17 @@ struct BarberMeProfile: Decodable, Hashable {
     /// Backend field `profile_picture_url` (sourced from `users."avatarUrl"`). Snake-case decoder turns it
     /// into `profilePictureUrl`. Used by the dashboard header to render the live provider avatar.
     let profilePictureUrl: String?
+    /// Operator profession (`barber` / `beauty`) from `barbers.provider_type`.
+    let providerType: String?
 
     var avatarURL: URL? {
         ProviderAvatarURL.resolve(profilePictureUrl)
+    }
+
+    /// Normalized profession key for catalog filtering; defaults to barber when unset.
+    var resolvedProviderType: String {
+        let trimmed = (providerType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return trimmed.isEmpty ? "barber" : trimmed
     }
 
     /// Best display string for editor seeding (parity with web `BarberProfileEditor` load).
@@ -133,6 +141,14 @@ struct BarberUserProfileDTO: Decodable {
     let id: String
     let specialties: [String]?
     let pricing: [BarberPricingEntryDTO]?
+    /// Operator profession (`barber` / `beauty`) from `barbers.provider_type`.
+    let providerType: String?
+
+    /// Normalized profession key for catalog filtering; defaults to barber when unset.
+    var resolvedProviderType: String {
+        let trimmed = (providerType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return trimmed.isEmpty ? "barber" : trimmed
+    }
 }
 
 /// One priced service row from `barbers.pricing` JSONB (`name`, `price`, optional `duration_minutes`).
@@ -228,6 +244,7 @@ struct SimpleBookingDetailPayload: Decodable {
     let paymentRequestedAt: Date?
     let tipAmountCents: Int?
     let totalPaidCents: Int?
+    let paymentMethod: String?
     let reviewRating: Double?
     let reviewComment: String?
     let reviewedAt: Date?
@@ -257,7 +274,7 @@ struct SimpleBookingDetailPayload: Decodable {
             paymentRequestedAt: paymentRequestedAt,
             tipAmountCents: tipAmountCents,
             totalPaidCents: totalPaidCents,
-            paymentMethod: nil,
+            paymentMethod: paymentMethod,
             pendingRescheduleRequest: pendingRescheduleRequest,
             consumer: consumer,
             consumerName: nil,
@@ -604,8 +621,32 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
 
     var statusUpper: String { (status ?? "").uppercased() }
 
+    /// Normalized payment method (`cash`, `card`, or `nil` when unset).
+    var normalizedPaymentMethod: String? {
+        guard let raw = paymentMethod?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !raw.isEmpty else { return nil }
+        return raw
+    }
+
+    /// Explicit cash settlement (`paymentMethod = cash`). Matches admin SQL `LOWER("paymentMethod") = 'cash'`.
     var isCashPayment: Bool {
-        paymentMethod?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "cash"
+        normalizedPaymentMethod == "cash"
+    }
+
+    /// Card / Stripe (or legacy null method). Matches admin SQL `card OR paymentMethod IS NULL`.
+    var isCardPayment: Bool {
+        !isCashPayment
+    }
+
+    /// Settled booking for revenue analytics — parity with admin
+    /// `status IN ('COMPLETED', 'PAID')`.
+    var isPaidForRevenueAnalytics: Bool {
+        switch statusUpper {
+        case "COMPLETED", "PAID":
+            return true
+        default:
+            return paidAt != nil
+        }
     }
 
     /// Completed visit where the provider requested payment and the consumer has not paid yet.
@@ -1014,6 +1055,10 @@ struct AdminBarberDTO: Decodable, Hashable, Identifiable {
     let totalVolumeCents: Int?
     let serviceLocationLabel: String?
     let hasServiceLocation: Bool?
+    /// Custom platform fee percent (`null` / omitted = default 15%).
+    let platformFeePercent: Double?
+    /// Remaining card bookings that take $0 platform fee before the rate applies.
+    let commissionFreeBookingsRemaining: Int?
 
     var displayName: String {
         let f = firstName ?? ""
@@ -1061,6 +1106,20 @@ struct AdminBarbersEnvelope: Decodable {
 
 struct AdminBarbersData: Decodable {
     let barbers: [AdminBarberDTO]?
+}
+
+/// `PUT /admin/barbers/:barberRecordId/commission` response payload.
+struct AdminBarberCommissionDTO: Decodable, Hashable {
+    let barberRecordId: String?
+    let platformFeePercent: Double?
+    let commissionFreeBookingsRemaining: Int?
+    let defaultPlatformFeePercent: Double?
+}
+
+struct AdminBarberCommissionEnvelope: Decodable {
+    let success: Bool?
+    let data: AdminBarberCommissionDTO?
+    let message: String?
 }
 
 /// `/admin/barbers/:id/bookings` row (parity with web `BarberBooking` interface).

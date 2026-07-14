@@ -481,31 +481,157 @@ private struct ProviderShellInteractiveSlideModifier: ViewModifier {
 
     let containerWidth: CGFloat
 
-    @State private var dragAnchorProgress: CGFloat?
-    @State private var dragIsHorizontal: Bool?
-
     func body(content: Content) -> some View {
-        // Keep a stable view tree — toggling between `content` and
-        // `content.simultaneousGesture(...)` recreates embedded UIKit hosts (Messages inbox)
-        // when conversation pushes bump `embeddedStackDepth`.
-        content.simultaneousGesture(shellDragGesture)
+        // UIKit pan installs onto the host view so swipe-back works from scroll
+        // content / labels (non-controls), matching Messages and other shell pages.
+        // `simultaneousGesture` alone often loses to UIScrollView pans.
+        content.background {
+            ProviderShellInteractiveBackPanInstaller(
+                containerWidth: containerWidth,
+                navigator: navigator,
+                popBridge: popBridge
+            )
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
+/// Attaches a shell back-pan to the nearest host view so horizontal swipes on
+/// non-interactive content dismiss the pushed shell page.
+private struct ProviderShellInteractiveBackPanInstaller: UIViewRepresentable {
+    let containerWidth: CGFloat
+    let navigator: ProviderShellNavigator
+    let popBridge: ProviderShellNavigationPopBridge
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(navigator: navigator, popBridge: popBridge)
     }
 
-    private var shellDragGesture: some Gesture {
-        DragGesture(minimumDistance: 4, coordinateSpace: .global)
-            .onChanged { value in
-                guard !popBridge.shouldDeferShellDismissGesture else { return }
-                guard containerWidth > 0, !navigator.stack.isEmpty else { return }
+    func makeUIView(context: Context) -> UIView {
+        let probe = UIView(frame: .zero)
+        probe.isUserInteractionEnabled = false
+        probe.backgroundColor = .clear
+        return probe
+    }
 
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.containerWidth = containerWidth
+        context.coordinator.navigator = navigator
+        context.coordinator.popBridge = popBridge
+        context.coordinator.scheduleAttach(from: uiView)
+    }
+
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        coordinator.teardown()
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var containerWidth: CGFloat = 0
+        var navigator: ProviderShellNavigator
+        var popBridge: ProviderShellNavigationPopBridge
+
+        private weak var hostView: UIView?
+        private weak var panRecognizer: UIPanGestureRecognizer?
+        private var attachWorkItem: DispatchWorkItem?
+        private var dragAnchorProgress: CGFloat?
+        private var dragIsHorizontal: Bool?
+
+        private static let recognizerName = "ProviderShellInteractiveBackPan"
+
+        init(navigator: ProviderShellNavigator, popBridge: ProviderShellNavigationPopBridge) {
+            self.navigator = navigator
+            self.popBridge = popBridge
+        }
+
+        func scheduleAttach(from probe: UIView) {
+            attachWorkItem?.cancel()
+            let work = DispatchWorkItem { [weak self, weak probe] in
+                guard let self, let probe else { return }
+                self.attachIfNeeded(from: probe)
+            }
+            attachWorkItem = work
+            DispatchQueue.main.async(execute: work)
+        }
+
+        func teardown() {
+            attachWorkItem?.cancel()
+            attachWorkItem = nil
+            detachPan()
+            dragAnchorProgress = nil
+            dragIsHorizontal = nil
+        }
+
+        private func detachPan() {
+            if let panRecognizer, let hostView {
+                hostView.removeGestureRecognizer(panRecognizer)
+            }
+            panRecognizer = nil
+            hostView = nil
+        }
+
+        private func attachIfNeeded(from probe: UIView) {
+            guard let host = Self.resolveHostView(from: probe) else { return }
+            if hostView === host, panRecognizer != nil { return }
+
+            detachPan()
+
+            let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+            pan.name = Self.recognizerName
+            pan.delegate = self
+            pan.cancelsTouchesInView = false
+            pan.maximumNumberOfTouches = 1
+            host.addGestureRecognizer(pan)
+            hostView = host
+            panRecognizer = pan
+        }
+
+        private static func resolveHostView(from probe: UIView) -> UIView? {
+            var responder: UIResponder? = probe
+            while let current = responder {
+                if let viewController = current as? UIViewController {
+                    if let navigationController = viewController.navigationController {
+                        return navigationController.view
+                    }
+                    return viewController.view
+                }
+                responder = current.next
+            }
+
+            var ancestor: UIView? = probe.superview
+            while let view = ancestor {
+                if view.bounds.width > 120, view.bounds.height > 120 {
+                    return view
+                }
+                ancestor = view.superview
+            }
+            return probe.window
+        }
+
+        @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
+            let width = max(containerWidth, recognizer.view?.bounds.width ?? 0)
+            guard width > 0 else { return }
+
+            switch recognizer.state {
+            case .began:
+                dragIsHorizontal = nil
+                dragAnchorProgress = nil
+
+            case .changed:
+                guard !popBridge.shouldDeferShellDismissGesture else { return }
+                guard !navigator.stack.isEmpty else { return }
+
+                let translation = recognizer.translation(in: recognizer.view)
                 if dragIsHorizontal == nil {
-                    let horizontal = abs(value.translation.width)
-                    let vertical = abs(value.translation.height)
+                    let horizontal = abs(translation.x)
+                    let vertical = abs(translation.y)
                     guard horizontal > 4 || vertical > 4 else { return }
                     dragIsHorizontal = horizontal >= vertical * 0.85
                 }
 
                 guard dragIsHorizontal == true else { return }
-                guard value.translation.width >= 0 else { return }
+                guard translation.x >= 0 else { return }
 
                 if dragAnchorProgress == nil {
                     dragAnchorProgress = navigator.slideProgress
@@ -513,26 +639,59 @@ private struct ProviderShellInteractiveSlideModifier: ViewModifier {
                 }
 
                 navigator.updateInteractiveDrag(
-                    translationX: value.translation.width,
-                    containerWidth: containerWidth,
+                    translationX: translation.x,
+                    containerWidth: width,
                     anchorProgress: dragAnchorProgress ?? navigator.slideProgress
                 )
-            }
-            .onEnded { value in
+
+            case .ended, .cancelled, .failed:
                 defer {
                     dragAnchorProgress = nil
                     dragIsHorizontal = nil
                 }
-
                 guard dragIsHorizontal == true else { return }
-                guard !popBridge.shouldDeferShellDismissGesture else { return }
+                guard !popBridge.shouldDeferShellDismissGesture else {
+                    if navigator.isInteractiveDragging {
+                        navigator.finishInteractiveDrag(translationX: 0, containerWidth: width)
+                    }
+                    return
+                }
                 guard !navigator.stack.isEmpty else { return }
 
+                let translation = recognizer.translation(in: recognizer.view)
                 navigator.finishInteractiveDrag(
-                    translationX: value.translation.width,
-                    containerWidth: containerWidth
+                    translationX: translation.x,
+                    containerWidth: width
                 )
+
+            default:
+                break
             }
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldReceive touch: UITouch
+        ) -> Bool {
+            guard !popBridge.shouldDeferShellDismissGesture else { return false }
+            guard !navigator.stack.isEmpty else { return false }
+
+            var view: UIView? = touch.view
+            while let current = view {
+                if current is UIControl { return false }
+                if current is UITextField || current is UITextView { return false }
+                if current is UISlider || current is UISwitch { return false }
+                view = current.superview
+            }
+            return true
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
     }
 }
 #endif

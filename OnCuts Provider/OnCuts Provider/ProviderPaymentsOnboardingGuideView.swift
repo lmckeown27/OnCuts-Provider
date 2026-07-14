@@ -61,6 +61,22 @@ struct ProviderPaymentsOnboardingGuideView: View {
             guard phase == .active else { return }
             Task { await refreshFromStripe() }
         }
+        .onChange(of: isChecklistOpen) { _, open in
+            #if os(iOS)
+            if open {
+                ProviderShellNavigationPopBridge.shared.beginShellDismissGestureSuppression()
+            } else {
+                ProviderShellNavigationPopBridge.shared.endShellDismissGestureSuppression()
+            }
+            #endif
+        }
+        .onDisappear {
+            #if os(iOS)
+            if isChecklistOpen {
+                ProviderShellNavigationPopBridge.shared.endShellDismissGestureSuppression()
+            }
+            #endif
+        }
         .alert("Something went wrong", isPresented: Binding(
             get: { errorAlert != nil },
             set: { if !$0 { errorAlert = nil } }
@@ -161,49 +177,61 @@ struct ProviderPaymentsOnboardingGuideView: View {
     }
 
     private var mainScroll: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if gate.isLoading && !gate.hasLoadedOnce {
-                    HStack(spacing: 10) {
-                        ProgressView()
-                            .tint(Color.providerBrandGold)
-                        Text("Checking Stripe Connect…")
-                            .font(.provider(.subheadline))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
-                } else {
-                    welcomeCopy
-                    if let bannerMessage {
-                        Text(bannerMessage)
-                            .font(.provider(.footnote))
-                            .foregroundStyle(Color.orange.opacity(0.95))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if showConnectedToast {
-                        Text("You’re fully connected. Payouts and card charges are enabled.")
-                            .font(.provider(.subheadline, weight: .semibold))
-                            .foregroundStyle(Color.green)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    primaryCTA
-                    if !isConnected {
-                        whySeeingGuideBanner
-                    }
-                    if !blocking, !isConnected {
-                        secondaryRecheckButton
-                    }
+        Group {
+            if embedded {
+                // Parent Payout Settings owns scrolling so shell swipe-back is not trapped
+                // by a nested UIScrollView.
+                guideBody
+            } else {
+                ScrollView {
+                    guideBody
+                }
+                .scrollIndicators(.hidden)
+                .scrollDismissesKeyboard(.interactively)
+                .background(Color.clear)
+            }
+        }
+    }
+
+    private var guideBody: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            if gate.isLoading && !gate.hasLoadedOnce {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .tint(Color.providerBrandGold)
+                    Text("Checking Stripe Connect…")
+                        .font(.provider(.subheadline))
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+            } else {
+                welcomeCopy
+                if let bannerMessage {
+                    Text(bannerMessage)
+                        .font(.provider(.footnote))
+                        .foregroundStyle(Color.orange.opacity(0.95))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if showConnectedToast {
+                    Text("You’re fully connected. Payouts and card charges are enabled.")
+                        .font(.provider(.subheadline, weight: .semibold))
+                        .foregroundStyle(Color.green)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                primaryCTA
+                if !isConnected {
+                    whySeeingGuideBanner
+                }
+                if !blocking, !isConnected {
+                    secondaryRecheckButton
                 }
             }
-            .padding(embedded ? 16 : 20)
-            .frame(maxWidth: contentMaxWidth)
-            .frame(maxWidth: .infinity)
-            .padding(.bottom, embedded ? 8 : 28)
         }
-        .scrollIndicators(.hidden)
-        .scrollDismissesKeyboard(.interactively)
-        .background(Color.clear)
+        .padding(embedded ? 16 : 20)
+        .frame(maxWidth: contentMaxWidth)
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, embedded ? 8 : 28)
     }
 
     // MARK: - Copy
