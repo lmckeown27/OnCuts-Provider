@@ -4,14 +4,13 @@ import SwiftUI
 struct ProviderPendingRequestScheduleEditor: View {
     let barberId: String
     let bookingId: String
-    let customerName: String
-    let serviceType: String
-    var bookingStatus: String? = "pending"
     @Binding var selectedDateTime: Date
     @Binding var hasConflict: Bool
     var showsSelectedDayHeadline: Bool = true
+    /// When true, keep the initial slot until the provider picks a new day/time
+    /// (avoids auto-snap away from the current appointment on Reschedule).
+    var preserveSelectionUntilEdited: Bool = false
 
-    @Environment(\.colorScheme) private var colorScheme
     @State private var dayAvailability: BarberAvailabilityDayData?
     @State private var dayBookings: [SimpleBookingDTO] = []
     @State private var isLoading = false
@@ -19,6 +18,7 @@ struct ProviderPendingRequestScheduleEditor: View {
     @State private var allowedDayStarts: Set<Date> = []
     @State private var isLoadingAllowedDays = false
     @State private var visibleMonth = Date()
+    @State private var hasUserEditedSelection = false
 
     private var calendar: Calendar {
         var cal = Calendar(identifier: .gregorian)
@@ -42,7 +42,7 @@ struct ProviderPendingRequestScheduleEditor: View {
                 .frame(minHeight: 320)
             }
             .padding(10)
-            .background(scheduleChromeBackground(cornerRadius: 12, style: .neutral))
+            .background(scheduleChromeBackground(cornerRadius: 12))
 
             if showsSelectedDayHeadline {
                 Text(selectedDateTime, format: .dateTime.weekday(.wide).month(.wide).day())
@@ -50,9 +50,11 @@ struct ProviderPendingRequestScheduleEditor: View {
                     .foregroundStyle(Color.lavaShellCream)
             }
 
-            Text("Scroll the wheel to choose an available time")
+            Text("Scroll the wheel below to choose an available time")
                 .font(.provider(.caption))
                 .foregroundStyle(Color.lavaShellCreamTertiary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
 
             if isLoading {
                 HStack(spacing: 8) {
@@ -87,6 +89,10 @@ struct ProviderPendingRequestScheduleEditor: View {
         return "\(month.year ?? 0)-\(month.month ?? 0)"
     }
 
+    private var shouldPreserveInitialSelection: Bool {
+        preserveSelectionUntilEdited && !hasUserEditedSelection
+    }
+
     /// Writable binding to the selected calendar day (start-of-day); preserves time-of-day.
     private var dayOnlyBinding: Binding<Date> {
         Binding(
@@ -94,6 +100,10 @@ struct ProviderPendingRequestScheduleEditor: View {
             set: { newDay in
                 let dayStart = calendar.startOfDay(for: newDay)
                 guard allowedDayStarts.contains(dayStart) else { return }
+                let currentDay = calendar.startOfDay(for: selectedDateTime)
+                if dayStart != currentDay {
+                    hasUserEditedSelection = true
+                }
                 mergeSelectedDay(dayStart)
             }
         )
@@ -118,52 +128,24 @@ struct ProviderPendingRequestScheduleEditor: View {
                 .font(.provider(.footnote))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
         } else {
-            VStack(alignment: .leading, spacing: 12) {
-                selectedTimeSummary
-
-                VStack(spacing: 0) {
-                    Picker("Available time", selection: wheelMinutesBinding) {
-                        ForEach(times, id: \.self) { startMinutes in
-                            Text(Self.format12h(minutes: startMinutes))
-                                .font(.provider(.body, weight: .medium))
-                                .tag(startMinutes)
-                        }
+            VStack(spacing: 0) {
+                Picker("Available time", selection: wheelMinutesBinding) {
+                    ForEach(times, id: \.self) { startMinutes in
+                        Text(Self.format12h(minutes: startMinutes))
+                            .font(.provider(.body, weight: .medium))
+                            .tag(startMinutes)
                     }
-                    .pickerStyle(.wheel)
-                    .labelsHidden()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 180)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(scheduleChromeBackground(cornerRadius: 14, style: .neutral))
-                .id(dayTaskKey)
+                .pickerStyle(.wheel)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
+                .frame(height: 180)
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(scheduleChromeBackground(cornerRadius: 14))
+            .id(dayTaskKey)
         }
-    }
-
-    private var selectedTimeSummary: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(selectedDateTime.formatted(date: .omitted, time: .shortened))
-                    .font(.provider(.subheadline, weight: .semibold))
-                    .foregroundStyle(onOliveChromePrimary)
-                Spacer()
-                proposedSlotStatusPill
-            }
-            Text(customerName)
-                .font(.provider(.title3, weight: .semibold))
-                .foregroundStyle(onOliveChromePrimary)
-            Text(serviceType)
-                .font(.provider(.subheadline))
-                .foregroundStyle(onOliveChromeSecondary)
-            Text("45-minute appointment")
-                .font(.provider(.caption2))
-                .foregroundStyle(onOliveChromeTertiary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(scheduleChromeBackground(cornerRadius: 14, style: .selected))
     }
 
     private var wheelMinutesBinding: Binding<Int> {
@@ -174,107 +156,53 @@ struct ProviderPendingRequestScheduleEditor: View {
                 if times.contains(current) { return current }
                 return times.first ?? current
             },
-            set: { selectStartTime($0) }
+            set: { newMinutes in
+                if newMinutes != selectedMinutesOfDay {
+                    hasUserEditedSelection = true
+                }
+                selectStartTime(newMinutes)
+            }
         )
     }
 
     private var allSelectableStartTimes: [Int] {
         let intervals = dayAvailability?.intervals ?? []
-        guard !intervals.isEmpty else { return [] }
-
         var times: [Int] = []
         var seen = Set<Int>()
-        for interval in intervals {
-            let intervalStart = ProviderScheduleHourlySlot.minutesFromHHMM(interval.start)
-            let intervalEnd = ProviderScheduleHourlySlot.minutesFromHHMM(interval.end)
-            var minute = intervalStart
-            while minute + ProviderScheduleHourlySlot.bookableSlotMinutes <= intervalEnd {
-                if !seen.contains(minute), isValidStartTime(minute) {
-                    seen.insert(minute)
-                    times.append(minute)
+
+        if !intervals.isEmpty {
+            for interval in intervals {
+                let intervalStart = ProviderScheduleHourlySlot.minutesFromHHMM(interval.start)
+                let intervalEnd = ProviderScheduleHourlySlot.minutesFromHHMM(interval.end)
+                var minute = intervalStart
+                while minute + ProviderScheduleHourlySlot.bookableSlotMinutes <= intervalEnd {
+                    if !seen.contains(minute), isValidStartTime(minute) {
+                        seen.insert(minute)
+                        times.append(minute)
+                    }
+                    minute += Self.scheduleStepMinutes
                 }
-                minute += Self.scheduleStepMinutes
             }
         }
+
+        // Keep the current appointment visible/selectable until the provider edits.
+        if shouldPreserveInitialSelection {
+            let current = selectedMinutesOfDay
+            if !seen.contains(current) {
+                times.append(current)
+            }
+        }
+
         return times.sorted()
     }
 
-    @ViewBuilder
-    private func scheduleChromeBackground(cornerRadius: CGFloat, style: Chrome) -> some View {
-        switch style {
-        case .neutral:
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(Color.providerScheduleCardFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.providerScheduleCardStroke, lineWidth: 0.6)
-                )
-        case .booked:
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(Color.providerOlive.opacity(0.44))
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.providerOlive.opacity(0.68), lineWidth: 0.6)
-                )
-        case .selected:
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(selectedChromeFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.providerOlive.opacity(colorScheme == .dark ? 0.75 : 0.85), lineWidth: 0.6)
-                )
-        }
-    }
-
-    private var selectedChromeFill: Color {
-        colorScheme == .dark
-            ? Color.providerOlive.opacity(0.52)
-            : Color.providerOlive.opacity(0.92)
-    }
-
-    private var onOliveChromePrimary: Color {
-        colorScheme == .dark ? Color.lavaShellCream : Color.providerOnOliveFill
-    }
-
-    private var onOliveChromeSecondary: Color {
-        colorScheme == .dark ? Color.lavaShellCreamSecondary : Color.providerOnOliveFillSecondary
-    }
-
-    private var onOliveChromeTertiary: Color {
-        colorScheme == .dark ? Color.lavaShellCreamTertiary : Color.providerOnOliveFillTertiary
-    }
-
-    private enum Chrome {
-        case neutral, booked, selected
-    }
-
-    private var isPendingBooking: Bool {
-        ProviderBookingStatusDisplay.normalized(bookingStatus) == "pending"
-    }
-
-    private var proposedSlotStatusPill: some View {
-        Group {
-            if isPendingBooking {
-                bookingStatusPill(bookingStatus)
-            } else {
-                Text("Selected")
-                    .font(.provider(.caption2, weight: .bold))
-                    .foregroundStyle(onOliveChromePrimary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.providerOlive.opacity(colorScheme == .dark ? 0.35 : 0.55), in: Capsule())
-            }
-        }
-    }
-
-    private func bookingStatusPill(_ status: String?) -> some View {
-        let colors = ProviderBookingStatusDisplay.detailPillColors(for: status)
-        return Text(ProviderBookingStatusDisplay.title(for: status))
-            .font(.provider(.caption2, weight: .bold))
-            .foregroundStyle(colors.foreground)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(colors.background, in: Capsule())
+    private func scheduleChromeBackground(cornerRadius: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(Color.providerScheduleCardFill)
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.providerScheduleCardStroke, lineWidth: 0.6)
+            )
     }
 
     // MARK: - Data
@@ -322,10 +250,15 @@ struct ProviderPendingRequestScheduleEditor: View {
             }
         }
 
+        if shouldPreserveInitialSelection {
+            openDays.insert(calendar.startOfDay(for: selectedDateTime))
+        }
         allowedDayStarts = openDays
 
         let selectedDay = calendar.startOfDay(for: selectedDateTime)
-        if !openDays.isEmpty, !openDays.contains(selectedDay) {
+        if !shouldPreserveInitialSelection,
+           !openDays.isEmpty,
+           !openDays.contains(selectedDay) {
             if let nearest = openDays.filter({ $0 >= today }).sorted().first {
                 mergeSelectedDay(nearest)
             }
@@ -345,6 +278,7 @@ struct ProviderPendingRequestScheduleEditor: View {
     }
 
     private func snapToSelectableTimeIfNeeded() {
+        if shouldPreserveInitialSelection { return }
         let times = allSelectableStartTimes
         guard !times.isEmpty else { return }
         if times.contains(selectedMinutesOfDay) { return }

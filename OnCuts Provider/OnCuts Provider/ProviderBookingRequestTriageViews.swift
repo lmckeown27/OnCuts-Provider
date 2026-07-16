@@ -218,10 +218,19 @@ struct ProviderExpandableRequestTriageCard: View {
             miniScheduleSection
 
             HStack(spacing: 12) {
-                Button("Reschedule", action: onReschedule)
-                    .buttonStyle(.bordered)
-                    .tint(Color(uiColor: ProviderChatDesignTokens.Color.statusYellow))
-                    .frame(maxWidth: .infinity)
+                Button(action: onReschedule) {
+                    Text("Reschedule")
+                        .font(.provider(.body, weight: .semibold))
+                        .foregroundStyle(rescheduleButtonForeground)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(rescheduleButtonBackground, in: Capsule(style: .continuous))
+                        .overlay(
+                            Capsule(style: .continuous)
+                                .strokeBorder(rescheduleButtonBorder, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
 
                 Button(action: onMessage) {
                     Text(isOpeningMessage ? "Opening…" : "Message")
@@ -229,9 +238,9 @@ struct ProviderExpandableRequestTriageCard: View {
                         .foregroundStyle(messageButtonForeground)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 9)
-                        .background(messageButtonBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .background(messageButtonBackground, in: Capsule(style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            Capsule(style: .continuous)
                                 .strokeBorder(messageButtonBorder, lineWidth: 1)
                         )
                 }
@@ -243,10 +252,18 @@ struct ProviderExpandableRequestTriageCard: View {
                 .overlay(Color(uiColor: ProviderAppearance.separator))
 
             HStack(spacing: 12) {
-                Button("Decline", role: .destructive, action: onDecline)
-                    .buttonStyle(.bordered)
-                    .tint(ProviderRequestSheetColors.lavaRed)
-                    .frame(maxWidth: .infinity)
+                Button(action: onDecline) {
+                    Text("Decline")
+                        .font(.provider(.body, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(
+                            ProviderRequestSheetColors.lavaRed,
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+                }
+                .buttonStyle(.plain)
 
                 Button(action: onAccept) {
                     Text("Approve")
@@ -269,14 +286,32 @@ struct ProviderExpandableRequestTriageCard: View {
         }
     }
 
+    private var statusYellow: Color {
+        Color(uiColor: ProviderChatDesignTokens.Color.statusYellow)
+    }
+
+    private var rescheduleButtonForeground: Color {
+        colorScheme == .dark ? Color.lavaShellCream : Color(white: 0.1)
+    }
+
+    private var rescheduleButtonBackground: Color {
+        colorScheme == .dark
+            ? statusYellow.opacity(0.28)
+            : statusYellow.opacity(0.52)
+    }
+
+    private var rescheduleButtonBorder: Color {
+        statusYellow.opacity(colorScheme == .dark ? 0.4 : 0.32)
+    }
+
     private var messageButtonForeground: Color {
-        colorScheme == .dark ? Color.lavaShellCream : Color.providerOlive
+        colorScheme == .dark ? Color.lavaShellCream : Color(white: 0.1)
     }
 
     private var messageButtonBackground: Color {
         colorScheme == .dark
-            ? Color.providerOliveLight.opacity(0.28)
-            : Color.providerOliveLight.opacity(0.52)
+            ? Color.providerOlive.opacity(0.28)
+            : Color.providerOlive.opacity(0.52)
     }
 
     private var messageButtonBorder: Color {
@@ -284,9 +319,7 @@ struct ProviderExpandableRequestTriageCard: View {
     }
 
     private var approveButtonBackground: Color {
-        colorScheme == .dark
-            ? Color.providerOlive
-            : ProviderRequestSheetColors.approveGreen
+        ProviderRequestSheetColors.approveGreen
     }
 }
 

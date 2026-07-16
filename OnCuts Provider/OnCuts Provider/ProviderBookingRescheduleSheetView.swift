@@ -22,9 +22,9 @@ struct ProviderBookingRescheduleSheetView: View {
         self.barberId = barberId
         self.onSave = onSave
         self.onCancel = onCancel
-        _selectedDateTime = State(
-            initialValue: booking.providerPendingScheduleTime(originalSubmission: nil) ?? Date()
-        )
+        // Default "Changing to" to the current appointment so Save is a no-op exit
+        // if the provider opened Reschedule by accident and didn't pick a new slot.
+        _selectedDateTime = State(initialValue: booking.scheduledTime ?? Date())
     }
 
     var body: some View {
@@ -36,12 +36,10 @@ struct ProviderBookingRescheduleSheetView: View {
                     ProviderPendingRequestScheduleEditor(
                         barberId: barberId,
                         bookingId: booking.id,
-                        customerName: booking.consumerDisplayName,
-                        serviceType: booking.serviceDisplayName,
-                        bookingStatus: booking.status,
                         selectedDateTime: $selectedDateTime,
                         hasConflict: $hasConflict,
-                        showsSelectedDayHeadline: false
+                        showsSelectedDayHeadline: false,
+                        preserveSelectionUntilEdited: true
                     )
                 }
                 .padding(.horizontal, 16)
@@ -57,10 +55,14 @@ struct ProviderBookingRescheduleSheetView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        onSave(selectedDateTime)
+                        if isUnchangedFromCurrentAppointment {
+                            onCancel()
+                        } else {
+                            onSave(selectedDateTime)
+                        }
                     }
                     .font(.provider(.body, weight: .semibold))
-                    .disabled(hasConflict)
+                    .disabled(hasConflict && !isUnchangedFromCurrentAppointment)
                 }
             }
         }
@@ -123,12 +125,20 @@ struct ProviderBookingRescheduleSheetView: View {
         return "Current appointment: \(formattedScheduleLine(for: current))"
     }
 
+    private var isUnchangedFromCurrentAppointment: Bool {
+        guard let scheduled = booking.scheduledTime else { return false }
+        return Calendar.current.isDate(scheduled, equalTo: selectedDateTime, toGranularity: .minute)
+    }
+
     private var proposedChangeFootnote: String? {
-        guard let reference = consumerReferenceDate else { return nil }
-        guard !Calendar.current.isDate(reference, equalTo: selectedDateTime, toGranularity: .minute) else {
-            return "Same as \(booking.hasPendingRescheduleRequest ? "consumer request" : "current appointment")"
+        if isUnchangedFromCurrentAppointment {
+            return "Same as current appointment"
         }
-        return nil
+        guard let reference = consumerReferenceDate else { return nil }
+        guard Calendar.current.isDate(reference, equalTo: selectedDateTime, toGranularity: .minute) else {
+            return nil
+        }
+        return booking.hasPendingRescheduleRequest ? "Same as consumer request" : "Same as current appointment"
     }
 
     private func scheduleSnapshotCard(

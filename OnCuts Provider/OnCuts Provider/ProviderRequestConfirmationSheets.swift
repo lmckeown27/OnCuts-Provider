@@ -150,13 +150,15 @@ struct ProviderApproveBookingConfirmSheet: View {
   var body: some View {
     ProviderRequestCompactSheetChrome(detentHeight: ProviderRequestSheetMetrics.approveHeight) {
       VStack(alignment: .leading, spacing: 0) {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .center, spacing: 6) {
           ScaledSheetText(
             text: "Confirm Appointment Slot",
             font: .provider(size: 20, weight: .bold),
             color: ProviderRequestSheetColors.titleText,
             lineLimit: 2
           )
+          .multilineTextAlignment(.center)
+          .frame(maxWidth: .infinity, alignment: .center)
           ScaledSheetText(
             text: "This locks \(customerName) into your calendar on \(scheduleSummary)",
             font: .provider(size: 14, weight: .regular),
@@ -172,8 +174,9 @@ struct ProviderApproveBookingConfirmSheet: View {
         Spacer(minLength: 8)
 
         Button(action: onApprove) {
-          ProviderBlackOutlinedText("Approve", fill: .white)
+          Text("Approve")
             .font(.provider(size: 17, weight: .bold))
+            .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .frame(height: ProviderRequestSheetMetrics.buttonHeight)
         }
@@ -196,35 +199,30 @@ struct ProviderSubmitDeclineConfirmSheet: View {
 
   var body: some View {
     ProviderRequestCompactSheetChrome(detentHeight: ProviderRequestSheetMetrics.submitDeclineHeight) {
-      VStack(alignment: .leading, spacing: 0) {
-        HStack(alignment: .top, spacing: 12) {
-          Image(systemName: "exclamationmark.triangle.fill")
-            .font(.provider(size: 26))
-            .foregroundStyle(ProviderRequestSheetColors.lavaRed)
-            .accessibilityHidden(true)
-
-          VStack(alignment: .leading, spacing: 6) {
-            ScaledSheetText(
-              text: "Submit Request Rejection?",
-              font: .provider(size: 20, weight: .bold),
-              color: ProviderRequestSheetColors.titleText,
-              lineLimit: 2
-            )
-            ScaledSheetText(
-              text: "This cancels the inquiry and alerts \(customerName) via SMS.",
-              font: .provider(size: 14, weight: .regular),
-              color: ProviderRequestSheetColors.bodyText,
-              lineLimit: 4
-            )
-          }
+      VStack(alignment: .center, spacing: 0) {
+        VStack(alignment: .center, spacing: 6) {
+          ScaledSheetText(
+            text: "Decline Booking?",
+            font: .provider(size: 20, weight: .bold),
+            color: ProviderRequestSheetColors.titleText,
+            lineLimit: 2
+          )
+          ScaledSheetText(
+            text: "This cancels the request and notifies \(customerName).",
+            font: .provider(size: 14, weight: .regular),
+            color: ProviderRequestSheetColors.bodyText,
+            lineLimit: 4
+          )
         }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity, alignment: .center)
         .padding(.horizontal, ProviderRequestSheetMetrics.horizontalPadding)
         .padding(.top, 14)
 
         Spacer(minLength: 12)
 
         Button(action: onSubmit) {
-          Text("Submit Rejection")
+          Text("Decline")
             .font(.provider(size: 17, weight: .bold))
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
