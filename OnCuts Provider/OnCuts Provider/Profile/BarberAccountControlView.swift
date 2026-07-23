@@ -25,6 +25,7 @@ struct BarberAccountControlView: View {
     @State private var showSignOutAlert = false
     @State private var showDeleteAccountAlert = false
     @State private var showDeletePasswordSheet = false
+    @State private var showingBlockedUsers = false
     @State private var deletePassword = ""
     @State private var isDeletingAccount = false
     @State private var alertTitle = ""
@@ -98,6 +99,23 @@ struct BarberAccountControlView: View {
         }
         .sheet(isPresented: $showDeletePasswordSheet) {
             deletePasswordSheet
+        }
+        .sheet(isPresented: $showingBlockedUsers) {
+            NavigationStack {
+                ProviderBlockedUsersHost()
+                    .providerPageNavigationTitle("Blocked Users")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") {
+                                showingBlockedUsers = false
+                            }
+                        }
+                    }
+            }
+            .foregroundStyle(Color.lavaShellCream)
+            .tint(.providerOlive)
+            .providerLavaScreenChrome()
+            .presentationDragIndicator(.visible)
         }
         .photosPicker(isPresented: $showPhotoLibraryPicker, selection: $selectedPhotoItem, matching: .images)
         #if canImport(UIKit)
@@ -214,16 +232,44 @@ struct BarberAccountControlView: View {
 
     private var visibilitySection: some View {
         Section {
-            Toggle(isOn: $isProfileVisible) {
-                VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .center, spacing: 12) {
+                Toggle(isOn: $isProfileVisible) {
                     Text(isProfileVisible ? "Visible to Public" : "Hidden from Public")
-                        .font(.provider(.body, weight: .semibold))
-                    Text("Hiding your profile stops public search discovery. Pending bookings are not affected.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .font(.provider(.subheadline, weight: .semibold))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.providerElevatedSurface)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Color.providerElevatedSurfaceStroke, lineWidth: 0.5)
+                        )
+                )
+
+                Button {
+                    showingBlockedUsers = true
+                } label: {
+                    Text("Blocked Users")
+                        .font(.provider(.subheadline, weight: .semibold))
+                        .foregroundStyle(Color.providerOnOliveFill)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            Color.providerOlive,
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+                }
+                .buttonStyle(.plain)
+                .fixedSize(horizontal: true, vertical: false)
             }
+            .listRowInsets(EdgeInsets(top: 5, leading: 14, bottom: 5, trailing: 14))
+            .listRowBackground(Color.clear)
         }
     }
 

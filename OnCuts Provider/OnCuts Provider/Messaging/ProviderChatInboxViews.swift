@@ -50,13 +50,25 @@ struct ProviderChatThreadCard: View {
     }
 
     private var nameHeader: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(thread.titleLine)
-                .font(.provider(.headline, weight: .bold))
-                .foregroundStyle(Color.primary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(alignment: .center, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(thread.clientName)
+                    .font(.provider(.headline, weight: .bold))
+                    .foregroundStyle(Color.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Capsule(style: .continuous)
+                    .fill(Color.primary.opacity(0.12))
+                    .frame(width: 1.5, height: 16)
+
+                Text(thread.serviceName)
+                    .font(.provider(.headline, weight: .regular))
+                    .foregroundStyle(Color.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if thread.hasUnread {
                 Text(thread.unreadBadgeLabel)
@@ -72,7 +84,7 @@ struct ProviderChatThreadCard: View {
 
     private var serviceDetailsSection: some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(thread.appointmentTime)
                     .font(.provider(.caption, weight: .semibold))
                     .foregroundStyle(thread.isToday ? Color.providerBrandAccent : Color.secondary)
@@ -83,13 +95,14 @@ struct ProviderChatThreadCard: View {
                     .font(.provider(.caption, weight: .semibold))
                     .foregroundStyle(Color.secondary)
             }
+            .lineLimit(1)
             .fixedSize(horizontal: true, vertical: true)
 
             Spacer(minLength: 8)
 
             Text(thread.bookingStatusTitle)
                 .font(.provider(.caption, weight: .semibold))
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(thread.bookingStatusColor)
                 .multilineTextAlignment(.trailing)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }

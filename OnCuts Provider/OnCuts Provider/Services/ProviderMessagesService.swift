@@ -316,10 +316,21 @@ enum ProviderMessagesService {
     }
 
     static func listBlockedUsers() async throws -> [BlockedConsumerRow] {
-        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "messages/blocks")
+        // Operator app must use `/blocks/accounts` (full account rows).
+        // `/blocks` is IDs only; `/blocks/service-providers` only returns blocked barbers.
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "messages/blocks/accounts")
         let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(BlockedConsumersEnvelope.self, from: data)
-        return env.data ?? []
+        return env.accounts
+    }
+
+    static func unblockUser(userId: String) async throws {
+        let trimmed = userId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "messages/blocks/\(trimmed)",
+            method: "DELETE"
+        )
     }
 }
 

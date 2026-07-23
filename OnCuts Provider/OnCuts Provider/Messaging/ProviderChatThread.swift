@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Provider inbox row — schedule-anchored chat summary (no studio/shop/chair fields).
 struct ProviderChatThread: Identifiable, Hashable {
@@ -9,6 +10,7 @@ struct ProviderChatThread: Identifiable, Hashable {
     let appointmentDayLabel: String
     let appointmentDateLabel: String
     let bookingStatusTitle: String
+    let bookingStatusRaw: String?
     let lastMessage: String
     let isToday: Bool
     let unreadCount: Int
@@ -24,6 +26,10 @@ struct ProviderChatThread: Identifiable, Hashable {
     var titleLine: String {
         "\(clientName): \(serviceName)"
     }
+
+    var bookingStatusColor: Color {
+        ProviderBookingStatusDisplay.inboxStatusLabelColor(for: bookingStatusRaw)
+    }
 }
 
 // MARK: - Mapping
@@ -37,6 +43,8 @@ extension ProviderChatThread {
         let scheduled = row.booking?.scheduledTime
         let schedule = appointmentSchedule(for: scheduled, calendar: calendar, now: now)
 
+        let statusRaw = row.booking?.status ?? (row.bookingId != nil ? "pending" : nil)
+
         return ProviderChatThread(
             conversationId: row.id,
             clientName: clientName(from: row),
@@ -45,6 +53,7 @@ extension ProviderChatThread {
             appointmentDayLabel: schedule.day,
             appointmentDateLabel: schedule.date,
             bookingStatusTitle: bookingStatusTitle(from: row),
+            bookingStatusRaw: statusRaw,
             lastMessage: lastMessagePreview(from: row),
             isToday: schedule.isToday,
             unreadCount: max(0, row.unreadCount ?? 0)

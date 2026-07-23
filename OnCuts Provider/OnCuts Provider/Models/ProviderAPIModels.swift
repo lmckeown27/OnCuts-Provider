@@ -1772,13 +1772,49 @@ extension ChatMessageMetadataDTO {
 
 struct BlockedConsumersEnvelope: Decodable {
     let success: Bool?
-    let data: [BlockedConsumerRow]?
+    let data: BlockedAccountsData?
+
+    struct BlockedAccountsData: Decodable {
+        let blockedAccounts: [BlockedConsumerRow]?
+    }
+
+    var accounts: [BlockedConsumerRow] {
+        data?.blockedAccounts ?? []
+    }
 }
 
+/// Row from `GET /messages/blocks/accounts` — people the signed-in user has blocked.
 struct BlockedConsumerRow: Decodable, Identifiable, Hashable {
-    let id: String
-    let displayName: String?
+    let blockedUserId: String
     let blockedAt: Date?
+    let firstName: String?
+    let lastName: String?
+    let displayName: String?
+    let avatarUrl: String?
+    let email: String?
+    let isServiceProvider: Bool?
+    /// Convenience display field from the API (`"Poly Blockchain"`).
+    let name: String?
+
+    var id: String { blockedUserId }
+
+    var resolvedDisplayName: String {
+        if let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            return name
+        }
+        if let displayName = displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !displayName.isEmpty {
+            return displayName
+        }
+        let joined = [firstName, lastName]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        if !joined.isEmpty { return joined }
+        if let email = email?.trimmingCharacters(in: .whitespacesAndNewlines), !email.isEmpty {
+            return email
+        }
+        return "Blocked user"
+    }
 }
 
 // MARK: - Barber Chats (peer + admin support rosters)

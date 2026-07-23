@@ -73,6 +73,22 @@ enum ProviderBookingStatusDisplay {
         }
     }
 
+    /// Conversation inbox status label — pending yellow, accepted olive, completed light green.
+    static func inboxStatusLabelColor(for raw: String?) -> Color {
+        switch normalized(raw) {
+        case "pending":
+            return Color(uiColor: ProviderChatDesignTokens.Color.statusYellow)
+        case "accepted", "booked", "in_progress":
+            return Color.providerOlive
+        case "completed", "paid":
+            return Color(uiColor: ProviderChatDesignTokens.Color.statusGreen)
+        case "cancelled", "canceled", "rejected", "refunded", "disputed":
+            return Color.lavaShellCreamSecondary
+        default:
+            return Color.lavaShellCreamSecondary
+        }
+    }
+
     /// Capsule backgrounds for booking status chips — olive + frosted glass (same family as schedule / header pills).
     static func swiftUITint(for raw: String?) -> Color {
         switch normalized(raw) {
