@@ -30,7 +30,17 @@ enum ProviderBookingStatusDisplay {
 
         func matches(_ booking: SimpleBookingDTO) -> Bool {
             guard self != .all else { return true }
-            return ProviderBookingStatusDisplay.normalized(booking.status) == rawValue
+            let norm = ProviderBookingStatusDisplay.normalized(booking.status)
+            switch self {
+            case .paid:
+                // Settled bookings — status PAID, or any row with a payment timestamp.
+                return norm == "paid" || booking.paidAt != nil
+            case .completed:
+                // Visit finished but not yet paid (cash/card still outstanding).
+                return norm == "completed" && booking.paidAt == nil
+            default:
+                return norm == rawValue
+            }
         }
     }
 

@@ -13,6 +13,7 @@ private func providerAdminServicesIsBenignRequestCancellation(_ error: Error) ->
 struct ProviderAdminServicesView: View {
     /// Parent Admin pull-to-refresh bumps this so catalog reloads after the prior `.task` is cancelled.
     var reloadToken: Int = 0
+    @Environment(\.colorScheme) private var colorScheme
 
     private enum ProfessionFilter: String, CaseIterable, Identifiable {
         case barber
@@ -32,6 +33,8 @@ struct ProviderAdminServicesView: View {
     @State private var rows: [CampusCatalogEditRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
+    /// Last profession / deleted filter successfully loaded — used to avoid blanking warm catalog on tab return.
+    @State private var loadedCatalogKey: String?
     @State private var showDeletedServices = false
     @State private var showAddForm = false
     @State private var addServiceName = ""
@@ -75,15 +78,14 @@ struct ProviderAdminServicesView: View {
                     if let toast {
                         Text(toast)
                             .font(.provider(.caption, weight: .semibold))
-                            .foregroundStyle(ProviderAdminChrome.primaryText)
+                            .foregroundStyle(ProviderOliveChromeStyle.adminAccentPillForeground(colorScheme))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
-                            .background(Color.providerOlive.opacity(0.45), in: Capsule())
+                            .background(
+                                ProviderOliveChromeStyle.adminAccentSoftFill(colorScheme),
+                                in: Capsule()
+                            )
                     }
-
-                    Text("Add or remove \(professionFilter.title.lowercased()) services operators can offer, and set the price and duration ranges they may choose within.")
-                        .font(.provider(.subheadline))
-                        .foregroundStyle(ProviderAdminChrome.primaryText.opacity(0.8))
 
                     Picker("Profession", selection: $professionFilter) {
                         ForEach(ProfessionFilter.allCases) { filter in
@@ -93,35 +95,57 @@ struct ProviderAdminServicesView: View {
                     .pickerStyle(.segmented)
                     .accessibilityLabel("Service profession filter")
 
-                    HStack {
-                        Text("Show removed")
-                            .font(.provider(.subheadline, weight: .medium))
-                        Spacer()
-                        Toggle("", isOn: $showDeletedServices)
-                            .labelsHidden()
-                            .tint(.providerOlive)
-                    }
-
-                    Button {
-                        if showAddForm {
-                            showAddForm = false
-                            clearAddForm()
-                        } else {
-                            addServiceError = nil
-                            showAddForm = true
+                    HStack(spacing: 10) {
+                        Button {
+                            if showAddForm {
+                                showAddForm = false
+                                clearAddForm()
+                            } else {
+                                addServiceError = nil
+                                showAddForm = true
+                            }
+                        } label: {
+                            Label(
+                                showAddForm ? "Cancel" : "Add service",
+                                systemImage: showAddForm ? "xmark.circle.fill" : "plus.circle.fill"
+                            )
+                            .font(.provider(.caption, weight: .semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .foregroundStyle(
+                                showAddForm
+                                    ? ProviderAdminChrome.primaryText
+                                    : ProviderOliveChromeStyle.adminAccentPillForeground(colorScheme)
+                            )
+                            .background(
+                                showAddForm
+                                    ? ProviderAdminChrome.mutedFill
+                                    : ProviderOliveChromeStyle.adminAccentPillFill(colorScheme),
+                                in: Capsule()
+                            )
+                            .overlay {
+                                if showAddForm {
+                                    Capsule()
+                                        .strokeBorder(ProviderAdminChrome.border, lineWidth: 1)
+                                }
+                            }
                         }
-                    } label: {
-                        Label(
-                            showAddForm ? "Cancel add" : "Add service",
-                            systemImage: showAddForm ? "xmark.circle.fill" : "plus.circle.fill"
-                        )
-                        .font(.provider(.subheadline, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.providerOlive.opacity(0.85), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .foregroundStyle(ProviderAdminChrome.primaryText)
+                        .buttonStyle(.plain)
+                        .fixedSize()
+
+                        Spacer(minLength: 8)
+
+                        HStack(spacing: 6) {
+                            Text("Show removed")
+                                .font(.provider(.caption, weight: .medium))
+                                .foregroundStyle(ProviderAdminChrome.primaryText)
+                            Toggle("", isOn: $showDeletedServices)
+                                .labelsHidden()
+                                .tint(.providerOlive)
+                                .controlSize(.small)
+                        }
+                        .fixedSize()
                     }
-                    .buttonStyle(.plain)
 
                     if showAddForm {
                         addServiceFormRow
@@ -238,9 +262,13 @@ struct ProviderAdminServicesView: View {
             } label: {
                 Text("Save service")
                     .font(.provider(.subheadline, weight: .semibold))
+                    .foregroundStyle(ProviderOliveChromeStyle.adminAccentPillForeground(colorScheme))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
-                    .background(Color.providerOlive.opacity(0.45), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .background(
+                        ProviderOliveChromeStyle.adminAccentSoftFill(colorScheme),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
             }
             .buttonStyle(.plain)
             .disabled(saving)
@@ -449,7 +477,11 @@ struct ProviderAdminServicesView: View {
     // MARK: - Data
 
     private func load() async {
-        isLoading = true
+        let catalogKey = "\(professionFilter.rawValue)-\(showDeletedServices)"
+        let showBlockingLoader = rows.isEmpty || loadedCatalogKey != catalogKey
+        if showBlockingLoader {
+            isLoading = true
+        }
         loadError = nil
         defer { isLoading = false }
 
@@ -459,10 +491,14 @@ struct ProviderAdminServicesView: View {
                 providerType: professionFilter.rawValue
             )
             rows = Self.mappedRows(from: catalog)
+            loadedCatalogKey = catalogKey
         } catch {
             guard !providerAdminServicesIsBenignRequestCancellation(error) else { return }
             loadError = error.localizedDescription
-            rows = []
+            if showBlockingLoader {
+                rows = []
+                loadedCatalogKey = nil
+            }
         }
     }
 

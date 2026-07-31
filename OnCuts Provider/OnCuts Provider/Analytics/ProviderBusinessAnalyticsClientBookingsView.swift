@@ -80,13 +80,14 @@ struct ProviderBusinessAnalyticsClientBookingsView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Scheduled \(booking.formattedSchedule())")
-                    .font(.provider(.caption))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
                 if let paidAt = booking.paidAt {
                     Text("Paid \(paidAt.formatted(.dateTime.month(.abbreviated).day().year().hour().minute()))")
-                        .font(.provider(.caption2))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .font(.provider(.caption))
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                } else {
+                    Text("Scheduled \(booking.formattedSchedule())")
+                        .font(.provider(.caption))
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
                 }
                 if let location = booking.location?.trimmingCharacters(in: .whitespacesAndNewlines), !location.isEmpty {
                     Text(location)

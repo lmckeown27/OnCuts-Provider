@@ -82,9 +82,14 @@ final class BookingDetailViewController: UIViewController {
 
     private let booking: SimpleBookingDTO
     private let barberTableId: String?
+    private let operatorUserId: String?
     private let showsOpenConversationButton: Bool
     private let onOpenConversation: ((Int) -> Void)?
     private let onChanged: () async -> Void
+    /// Remaining free slots for this operator — drives “Commissionless if paid”.
+    private var commissionFreeBookingsRemaining: Int
+    /// Optional: keep `ProviderSession` in sync when detail refreshes the free-slot count.
+    var onCommissionFreeRemainingUpdated: ((Int) -> Void)?
 
     /// Set while a `ProviderBookingsService` call is in flight; disables every action
     /// button and shows the centered spinner so the user can't double-trigger.
@@ -161,12 +166,16 @@ final class BookingDetailViewController: UIViewController {
     init(
         booking: SimpleBookingDTO,
         barberTableId: String?,
+        operatorUserId: String? = nil,
+        commissionFreeBookingsRemaining: Int = 0,
         showsOpenConversationButton: Bool = true,
         onOpenConversation: ((Int) -> Void)? = nil,
         onChanged: @escaping () async -> Void
     ) {
         self.booking = booking
         self.barberTableId = barberTableId
+        self.operatorUserId = operatorUserId
+        self.commissionFreeBookingsRemaining = max(0, commissionFreeBookingsRemaining)
         self.showsOpenConversationButton = showsOpenConversationButton
         self.onOpenConversation = onOpenConversation
         self.current = booking
@@ -229,6 +238,7 @@ final class BookingDetailViewController: UIViewController {
         setupConstraints()
         buildSections()
         scheduleDeferredRefresh()
+        Task { await refreshCommissionFreeRemaining() }
 
         NotificationCenter.default.addObserver(
             self,
@@ -236,6 +246,31 @@ final class BookingDetailViewController: UIViewController {
             name: .providerBookingsChanged,
             object: nil
         )
+    }
+
+    /// Keeps list/detail badges in sync when the SwiftUI host’s session count updates.
+    func setCommissionFreeBookingsRemaining(_ value: Int) {
+        let next = max(0, value)
+        guard next != commissionFreeBookingsRemaining else { return }
+        commissionFreeBookingsRemaining = next
+        onCommissionFreeRemainingUpdated?(next)
+        if isViewLoaded { applyCurrent() }
+    }
+
+    private func refreshCommissionFreeRemaining() async {
+        let userId = (operatorUserId ?? current.barberId)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !userId.isEmpty else { return }
+        do {
+            let remaining = try await ProviderBarberServicesService.fetchCommissionFreeBookingsRemaining(
+                userId: userId
+            )
+            await MainActor.run {
+                setCommissionFreeBookingsRemaining(remaining)
+            }
+        } catch {
+            // Keep last known count; transient errors should not hide a potential badge.
+        }
     }
 
     deinit {
@@ -405,7 +440,23 @@ final class BookingDetailViewController: UIViewController {
         let capsule = makeStatusCapsule(forStatus: current.statusUpper)
         capsule.translatesAutoresizingMaskIntoConstraints = false
 
-        let stack = UIStackView(arrangedSubviews: [titleRow, capsule])
+        var statusPills: [UIView] = [capsule]
+        if current.isCommissionless {
+            statusPills.append(
+                makeCommissionlessBadge(
+                    text: "Commissionless",
+                    accessibilityLabel: "Commissionless booking"
+                )
+            )
+        }
+
+        let statusRow = UIStackView(arrangedSubviews: statusPills)
+        statusRow.axis = .horizontal
+        statusRow.spacing = 8
+        statusRow.alignment = .center
+        statusRow.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = UIStackView(arrangedSubviews: [titleRow, statusRow])
         stack.axis = .vertical
         stack.spacing = 10
         stack.alignment = .center
@@ -474,18 +525,124 @@ final class BookingDetailViewController: UIViewController {
     // MARK: - Sections — Conversation
 
     private func makeOpenConversationSection() -> UIView? {
-        guard showsOpenConversationButton else { return nil }
+        var arranged: [UIView] = []
 
-        let host = UIHostingController(
-            rootView: MessageCustomerButtonView(
-                action: { [weak self] in self?.openConversationTapped() }
+        if showsOpenConversationButton {
+            let host = UIHostingController(
+                rootView: MessageCustomerButtonView(
+                    action: { [weak self] in self?.openConversationTapped() }
+                )
             )
+            host.view.backgroundColor = .clear
+            host.view.translatesAutoresizingMaskIntoConstraints = false
+            host.view.heightAnchor.constraint(equalToConstant: 48).isActive = true
+            messageCustomerControlView = host.view
+            arranged.append(host.view)
+        } else {
+            messageCustomerControlView = nil
+        }
+
+        if let note = makeCommissionlessNoteUnderMessage() {
+            arranged.append(note)
+        }
+
+        guard !arranged.isEmpty else { return nil }
+
+        let wrap = UIStackView(arrangedSubviews: arranged)
+        wrap.axis = .vertical
+        wrap.spacing = 8
+        wrap.alignment = .fill
+        return wrap
+    }
+
+    /// Potential commissionless copy sits under the message control.
+    /// Confirmed “Commissionless” is stacked next to the status pill in the header.
+    private func makeCommissionlessNoteUnderMessage() -> UIView? {
+        guard !current.isCommissionless,
+              current.showsPotentialCommissionless(
+                  remainingFreeSlots: commissionFreeBookingsRemaining
+              ) else {
+            return nil
+        }
+        return makeCommissionlessNoteLabel(remainingCount: commissionFreeBookingsRemaining)
+    }
+
+    private func makeCommissionlessNoteLabel(remainingCount: Int) -> UIView {
+        let noun = remainingCount == 1 ? "booking" : "bookings"
+        let oneToken = "1"
+        let countToken = "\(remainingCount)"
+        let prefix = "This booking will take up "
+        let middle = " of your "
+        let suffix = " commissionless \(noun)"
+        let full = prefix + oneToken + middle + countToken + suffix
+
+        // Match section headers like "Service" (secondary + semibold); emphasize only the counts.
+        let baseFont = UIFont.provider(size: 12, weight: .semibold)
+        let boldFont = UIFont.provider(size: 12, weight: .bold)
+        let attributed = NSMutableAttributedString(
+            string: full,
+            attributes: [
+                .font: baseFont,
+                .foregroundColor: Token.secondaryText,
+            ]
         )
-        host.view.backgroundColor = .clear
-        host.view.translatesAutoresizingMaskIntoConstraints = false
-        host.view.heightAnchor.constraint(equalToConstant: 48).isActive = true
-        messageCustomerControlView = host.view
-        return host.view
+        let boldAttrs: [NSAttributedString.Key: Any] = [
+            .font: boldFont,
+            // Primary adapts with appearance (darker in light mode, lighter in dark).
+            .foregroundColor: Token.primaryText,
+        ]
+        attributed.addAttributes(boldAttrs, range: NSRange(location: prefix.count, length: oneToken.count))
+        attributed.addAttributes(
+            boldAttrs,
+            range: NSRange(location: prefix.count + oneToken.count + middle.count, length: countToken.count)
+        )
+
+        let label = UILabel()
+        label.attributedText = attributed
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.accessibilityLabel = full
+
+        let wrap = UIView()
+        wrap.translatesAutoresizingMaskIntoConstraints = false
+        wrap.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: wrap.topAnchor, constant: 2),
+            label.bottomAnchor.constraint(equalTo: wrap.bottomAnchor, constant: -2),
+            label.leadingAnchor.constraint(equalTo: wrap.leadingAnchor, constant: 8),
+            label.trailingAnchor.constraint(equalTo: wrap.trailingAnchor, constant: -8),
+        ])
+        return wrap
+    }
+
+    private func makeCommissionlessBadge(text: String, accessibilityLabel: String) -> UIView {
+        let badge = UILabel()
+        badge.text = text
+        badge.font = .provider(size: 11, weight: .heavy)
+        badge.textColor = Token.statusGreen
+        badge.textAlignment = .center
+        badge.translatesAutoresizingMaskIntoConstraints = false
+        badge.setContentHuggingPriority(.required, for: .horizontal)
+        badge.setContentCompressionResistancePriority(.required, for: .horizontal)
+        badge.accessibilityLabel = accessibilityLabel
+
+        let badgeWrap = UIView()
+        badgeWrap.translatesAutoresizingMaskIntoConstraints = false
+        badgeWrap.backgroundColor = Token.statusGreen.withAlphaComponent(0.16)
+        badgeWrap.layer.cornerRadius = 12
+        badgeWrap.layer.masksToBounds = true
+        badgeWrap.setContentHuggingPriority(.required, for: .horizontal)
+        badgeWrap.setContentCompressionResistancePriority(.required, for: .horizontal)
+        badgeWrap.addSubview(badge)
+
+        NSLayoutConstraint.activate([
+            badge.topAnchor.constraint(equalTo: badgeWrap.topAnchor, constant: 6),
+            badge.bottomAnchor.constraint(equalTo: badgeWrap.bottomAnchor, constant: -6),
+            badge.leadingAnchor.constraint(equalTo: badgeWrap.leadingAnchor, constant: 10),
+            badge.trailingAnchor.constraint(equalTo: badgeWrap.trailingAnchor, constant: -10),
+        ])
+        return badgeWrap
     }
 
     @objc private func openConversationTapped() {
@@ -566,58 +723,10 @@ final class BookingDetailViewController: UIViewController {
         grid.distribution = .fillEqually
         grid.spacing = 12
 
-        var rows: [UIView] = [header, grid]
-        if current.commissionFreeApplied == true {
-            rows.append(makeCommissionlessIndicatorRow())
-        }
-
-        let wrap = UIStackView(arrangedSubviews: rows)
+        let wrap = UIStackView(arrangedSubviews: [header, grid])
         wrap.axis = .vertical
         wrap.spacing = 8
         return wrap
-    }
-
-    private func makeCommissionlessIndicatorRow() -> UIView {
-        let title = UILabel()
-        title.text = "Commission"
-        title.font = .provider(size: 14, weight: .medium)
-        title.textColor = Token.secondaryText
-        title.translatesAutoresizingMaskIntoConstraints = false
-
-        let badge = UILabel()
-        badge.text = "Commissionless"
-        badge.font = .provider(size: 12, weight: .semibold)
-        badge.textColor = Token.statusGreen
-        badge.textAlignment = .center
-        badge.translatesAutoresizingMaskIntoConstraints = false
-        badge.setContentHuggingPriority(.required, for: .horizontal)
-
-        let badgeWrap = UIView()
-        badgeWrap.translatesAutoresizingMaskIntoConstraints = false
-        badgeWrap.backgroundColor = Token.statusGreen.withAlphaComponent(0.16)
-        badgeWrap.layer.cornerRadius = 10
-        badgeWrap.layer.cornerCurve = .continuous
-        badgeWrap.addSubview(badge)
-
-        let row = UIView()
-        row.translatesAutoresizingMaskIntoConstraints = false
-        row.addSubview(title)
-        row.addSubview(badgeWrap)
-
-        NSLayoutConstraint.activate([
-            badge.topAnchor.constraint(equalTo: badgeWrap.topAnchor, constant: 4),
-            badge.bottomAnchor.constraint(equalTo: badgeWrap.bottomAnchor, constant: -4),
-            badge.leadingAnchor.constraint(equalTo: badgeWrap.leadingAnchor, constant: 10),
-            badge.trailingAnchor.constraint(equalTo: badgeWrap.trailingAnchor, constant: -10),
-
-            title.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 4),
-            title.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-            badgeWrap.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -4),
-            badgeWrap.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-            badgeWrap.leadingAnchor.constraint(greaterThanOrEqualTo: title.trailingAnchor, constant: 12),
-            row.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
-        ])
-        return row
     }
 
     // MARK: - Sections — When grid
@@ -1501,6 +1610,8 @@ struct BookingDetailHost: UIViewControllerRepresentable {
         let detail = BookingDetailViewController(
             booking: booking,
             barberTableId: session.barberProfile?.id,
+            operatorUserId: session.authUser?.id,
+            commissionFreeBookingsRemaining: session.commissionFreeBookingsRemaining,
             onOpenConversation: { conversationId in
                 NotificationCenter.default.post(
                     name: .onCutsOpenMessagingConversation,
@@ -1510,6 +1621,9 @@ struct BookingDetailHost: UIViewControllerRepresentable {
             },
             onChanged: onChanged
         )
+        detail.onCommissionFreeRemainingUpdated = { [session] remaining in
+            session.setCommissionFreeBookingsRemaining(remaining)
+        }
         #if os(iOS)
         return ProviderOpaqueScreenContainerViewController(
             content: detail,
@@ -1531,20 +1645,43 @@ struct BookingDetailHost: UIViewControllerRepresentable {
         #else
         detail = uiViewController as? BookingDetailViewController
         #endif
-        guard detail != nil else { return }
+        guard let detail else { return }
+        detail.setCommissionFreeBookingsRemaining(session.commissionFreeBookingsRemaining)
     }
 }
 
-/// Booking detail screen — title is rendered in-page; shell pushes show a leading exit chevron.
+/// Booking detail screen — title is rendered in-page; leading chevron exits when requested.
 struct BookingDetailScreen: View {
     let booking: SimpleBookingDTO
+    /// Nav bar visible for shell pushes that attach ``providerShellBackToolbar()``.
     var showsShellBackButton: Bool = false
+    /// Leading chevron that `dismiss()`-pops an inner `NavigationStack` (Bookings inbox).
+    var showsStackBackButton: Bool = false
     let onChanged: () async -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    private var showsNavigationBar: Bool {
+        showsShellBackButton || showsStackBackButton
+    }
 
     var body: some View {
         BookingDetailHost(booking: booking, onChanged: onChanged)
             .navigationBarBackButtonHidden(true)
-            .toolbar(showsShellBackButton ? .visible : .hidden, for: .navigationBar)
+            .toolbar(showsNavigationBar ? .visible : .hidden, for: .navigationBar)
+            .toolbar {
+                if showsStackBackButton {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "chevron.backward")
+                                .fontWeight(.semibold)
+                        }
+                        .accessibilityLabel("Back")
+                    }
+                }
+            }
     }
 }
 

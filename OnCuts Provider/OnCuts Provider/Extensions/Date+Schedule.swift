@@ -115,6 +115,17 @@ extension SimpleBookingDTO {
         return scheduledTime.formatted(style)
     }
 
+    /// Date shown on booking rows / summaries: payment time once settled, otherwise the appointment.
+    var providerListDisplayDate: Date? {
+        paidAt ?? scheduledTime
+    }
+
+    func formattedListDisplayDate(reference: Date = .now) -> String {
+        guard let time = providerListDisplayDate else { return "Time TBD" }
+        let style = Date.FormatStyle(date: .abbreviated, time: .shortened)
+        return time.formatted(style)
+    }
+
     func isSameCalendarDay(as date: Date, calendar: Calendar = .current) -> Bool {
         guard let scheduledTime else { return false }
         return calendar.isDate(scheduledTime, inSameDayAs: date)

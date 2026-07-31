@@ -82,6 +82,8 @@ extension View {
 }
 
 struct ProviderBookingsDropdownListContent: View {
+    @Environment(ProviderSession.self) private var session
+
     let items: [SimpleBookingDTO]
     @Binding var expandedFilters: Set<ProviderBookingStatusDisplay.Filter>
     @Binding var isRequestedChangesExpanded: Bool
@@ -194,7 +196,7 @@ struct ProviderBookingsDropdownListContent: View {
         VStack(spacing: 8) {
             ForEach(bookings(for: filter)) { booking in
                 bookingNavigationLink(booking) {
-                    bookingRow(booking)
+                    bookingRow(booking, filter: filter)
                 }
                 .bookingsListCardRow(
                     contentWidth: nestedBookingContentWidth,
@@ -226,11 +228,14 @@ struct ProviderBookingsDropdownListContent: View {
 
     private func bookingNavigationLink(_ booking: SimpleBookingDTO) -> some View {
         bookingNavigationLink(booking) {
-            bookingRow(booking)
+            bookingRow(booking, filter: nil)
         }
     }
 
-    private func bookingRow(_ booking: SimpleBookingDTO) -> some View {
+    private func bookingRow(
+        _ booking: SimpleBookingDTO,
+        filter: ProviderBookingStatusDisplay.Filter?
+    ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(booking.consumerDisplayName)
                 .font(.provider(.title3, weight: .semibold))
@@ -238,16 +243,48 @@ struct ProviderBookingsDropdownListContent: View {
             Text(booking.serviceDisplayName)
                 .font(.provider(.subheadline))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
-            HStack {
+            HStack(spacing: 8) {
                 ProviderBookingDetailStatusPill(status: booking.status)
+                if booking.isCommissionless {
+                    commissionlessIndicator(confirmed: true)
+                } else if booking.showsPotentialCommissionless(
+                    remainingFreeSlots: session.commissionFreeBookingsRemaining
+                ) {
+                    commissionlessIndicator(confirmed: false)
+                }
                 Spacer(minLength: 0)
-                Text(booking.formattedSchedule())
+                Text(dateLabel(for: booking, filter: filter))
                     .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
             }
         }
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Paid section shows when the booking was paid; other sections keep the appointment time.
+    private func dateLabel(
+        for booking: SimpleBookingDTO,
+        filter: ProviderBookingStatusDisplay.Filter?
+    ) -> String {
+        if filter == .paid {
+            return booking.formattedListDisplayDate()
+        }
+        return booking.formattedSchedule()
+    }
+
+    private func commissionlessIndicator(confirmed: Bool) -> some View {
+        Text("Commissionless")
+            .font(.provider(.caption2, weight: .semibold))
+            .foregroundStyle(Color.providerOlive)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.providerOlive.opacity(confirmed ? 0.22 : 0.14), in: Capsule())
+            .accessibilityLabel(
+                confirmed
+                    ? "Commissionless booking"
+                    : "Will be commissionless if customer pays while free slots remain"
+            )
     }
 
     private func rescheduleRequestBookingRow(_ booking: SimpleBookingDTO) -> some View {
@@ -280,13 +317,24 @@ struct ProviderBookingsDropdownListContent: View {
     }
 
     private func bookings(for filter: ProviderBookingStatusDisplay.Filter) -> [SimpleBookingDTO] {
-        sortedBookings(items.filter { filter.matches($0) && !$0.hasPendingRescheduleRequest })
+        let matched = items.filter { filter.matches($0) && !$0.hasPendingRescheduleRequest }
+        return sortedBookings(matched, preferPaidAt: filter == .paid)
     }
 
-    private func sortedBookings(_ bookings: [SimpleBookingDTO]) -> [SimpleBookingDTO] {
+    private func sortedBookings(
+        _ bookings: [SimpleBookingDTO],
+        preferPaidAt: Bool = false
+    ) -> [SimpleBookingDTO] {
         bookings.sorted { lhs, rhs in
-            let left = lhs.scheduledTime ?? .distantPast
-            let right = rhs.scheduledTime ?? .distantPast
+            let left: Date
+            let right: Date
+            if preferPaidAt {
+                left = lhs.providerListDisplayDate ?? .distantPast
+                right = rhs.providerListDisplayDate ?? .distantPast
+            } else {
+                left = lhs.scheduledTime ?? .distantPast
+                right = rhs.scheduledTime ?? .distantPast
+            }
             return left > right
         }
     }

@@ -100,7 +100,9 @@ enum ProviderBarberBusinessAnalyticsEngine {
 
         return grouped.map { id, bucket in
             let sorted = bucket.bookings.sorted {
-                ($0.scheduledTime ?? .distantPast) > ($1.scheduledTime ?? .distantPast)
+                let left = $0.paidAt ?? $0.scheduledTime ?? .distantPast
+                let right = $1.paidAt ?? $1.scheduledTime ?? .distantPast
+                return left > right
             }
             let volume = bucket.bookings
                 .filter(\.isPaidForRevenueAnalytics)
@@ -112,7 +114,7 @@ enum ProviderBarberBusinessAnalyticsEngine {
                 profileImageURL: bucket.avatar,
                 bookingCount: bucket.bookings.count,
                 lifetimeVolumeCents: volume,
-                lastBookingDate: sorted.first?.scheduledTime ?? sorted.first?.paidAt
+                lastBookingDate: sorted.first?.paidAt ?? sorted.first?.scheduledTime
             )
         }
         .sorted {
@@ -195,8 +197,8 @@ enum ProviderBarberBusinessAnalyticsEngine {
         return bookings
             .filter { $0.consumerId?.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedId }
             .sorted { lhs, rhs in
-                let left = lhs.scheduledTime ?? lhs.paidAt ?? .distantPast
-                let right = rhs.scheduledTime ?? rhs.paidAt ?? .distantPast
+                let left = lhs.paidAt ?? lhs.scheduledTime ?? .distantPast
+                let right = rhs.paidAt ?? rhs.scheduledTime ?? .distantPast
                 return left > right
             }
     }

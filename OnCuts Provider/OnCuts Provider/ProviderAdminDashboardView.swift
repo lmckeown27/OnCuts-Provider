@@ -29,12 +29,11 @@ struct ProviderAdminDashboardView: View {
         case user(AdminPlatformUserDTO)
     }
 
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var adminDetailPath = NavigationPath()
 
     enum Tab: String, CaseIterable, Identifiable {
-        case performance = "Performance"
+        case performance = "Statistics"
         case barbers = "Operators"
         case users = "Users"
         case services = "Services"
@@ -54,7 +53,7 @@ struct ProviderAdminDashboardView: View {
         /// Compact label under the tab icon — fits five segments on narrow phones.
         var tabLabel: String {
             switch self {
-            case .performance: "Perf."
+            case .performance: "Statistics"
             case .barbers: "Operators"
             case .users: "Users"
             case .services: "Services"
@@ -148,6 +147,11 @@ struct ProviderAdminDashboardView: View {
     }
 
     @State private var tab: Tab = .performance
+    /// Services stays mounted after first visit to avoid a cold reload flash — but must not
+    /// mount on first Admin open (that + Performance blew the stack: EXC_BAD_ACCESS code=2).
+    @State private var hasMountedServicesTab = false
+    /// Defer heavy tab trees until after the sheet has presented (avoids stack overflow on open).
+    @State private var isAdminContentReady = false
     @State private var operatorsHubTab: OperatorsHubTab = .operators
     @State private var barbersSubTab: BarbersSubTab = .current
     @State private var barberVisibilityFilter: BarberVisibilityFilter = .visible
@@ -155,6 +159,7 @@ struct ProviderAdminDashboardView: View {
     @State private var barberLocationFilter: BarberLocationFilter = .all
     @State private var showingOperatorsFilters = false
     @State private var operatorSearch = ""
+    @FocusState private var adminSearchFocus: AdminSearchFocus?
     @State private var campuses: [AdminCampusDTO] = []
     @State private var selectedCampusId: String? = nil
     @State private var stats: AdminPlatformStatsDTO?
@@ -166,12 +171,18 @@ struct ProviderAdminDashboardView: View {
     @State private var applicationsError: String?
     @State private var busyApplicationId: String?
     /// When set, the detail action row is in the inline "Are you sure?" Yes/No state for that kind.
-    @State private var applicationInlineConfirmKind: PendingBarberApplicationAction.Kind?
+    @State private var applicationInlineConfirmKind: ProviderAdminBarberApplicationConfirmKind?
     @State private var users: [AdminPlatformUserDTO] = []
     @State private var userSearch: String = ""
     @State private var usersVisibleCount = 25
     @State private var userRoleFilter: UserRoleFilter = .all
     @State private var showingUsersFilters = false
+
+    private enum AdminSearchFocus: Hashable {
+        case operators
+        case onboarding
+        case users
+    }
 
     @State private var isLoading = true
     @State private var errorText: String?
@@ -183,8 +194,11 @@ struct ProviderAdminDashboardView: View {
     @State private var metricsListSeries: MetricsListSeries = .bookings
     @State private var metricsListPeriod: MetricsListPeriod = .all
     @State private var listWindowOptions: [AdminMetricsListWindowOptionDTO] = []
-    @State private var listWindowCommitted: AdminMetricsListWindowDTO?
-    @State private var listParentWithin: AdminMetricsListWindowDTO?
+    @State private var listScope = MetricsListScope.empty
+    /// When true, the List timeframe pill is replaced by specific window selectors for the chosen period.
+    @State private var listPeriodPickerOpen = false
+    /// Period shown before the window picker opened — restored if the user dismisses with ✕.
+    @State private var listPeriodPickerSnapshot: MetricsListPeriod = .all
     @State private var isLoadingListWindowOptions = false
     @State private var metricsListBookings: [AdminMetricsBookingEventDTO] = []
     @State private var metricsListSignups: [AdminMetricsSignupEventDTO] = []
@@ -197,6 +211,7 @@ struct ProviderAdminDashboardView: View {
     @State private var platformFeePercent: Double = 15
     @State private var platformFeeInput = "15"
     @State private var isEditingPlatformFee = false
+    @FocusState private var isPlatformFeeFieldFocused: Bool
     @State private var isLoadingPlatformFee = false
     @State private var isSavingPlatformFee = false
 
@@ -217,6 +232,9 @@ struct ProviderAdminDashboardView: View {
     /// Bumped by Admin pull-to-refresh so the nested Services tab reloads instead of only
     /// having its in-flight `.task` cancelled.
     @State private var servicesReloadToken = 0
+    /// Invalidates in-flight Admin reloads so a cancelled pull-to-refresh cannot overwrite
+    /// newer results (or wipe lists) with empty/`cancelled` outcomes.
+    @State private var adminLoadGeneration = 0
 
     // MARK: Safety tab state
     //
@@ -246,21 +264,6 @@ struct ProviderAdminDashboardView: View {
         let action: AdminModerationResolveAction
     }
 
-    private struct PendingBarberApplicationAction: Identifiable, Equatable {
-        enum Kind: String, Equatable {
-            case approve
-            case reject
-        }
-
-        let id: UUID = UUID()
-        let application: BarberApplicationListRowDTO
-        let kind: Kind
-
-        var status: BarberApplicationStatus {
-            kind == .approve ? .approved : .rejected
-        }
-    }
-
     var body: some View {
         adminBodyWithDialogs
     }
@@ -276,6 +279,13 @@ struct ProviderAdminDashboardView: View {
 
     private var adminBodyWithOnChanges: some View {
         adminNavigationRoot
+            .onChange(of: tab) { _, newTab in
+                adminSearchFocus = nil
+                if newTab == .services {
+                    hasMountedServicesTab = true
+                }
+            }
+            .onChange(of: operatorsHubTab) { _, _ in adminSearchFocus = nil }
             .onChange(of: userSearch) { _, _ in usersVisibleCount = 25 }
             .onChange(of: userRoleFilter) { _, _ in usersVisibleCount = 25 }
             .onChange(of: metricsTimeline) { _, _ in
@@ -287,37 +297,55 @@ struct ProviderAdminDashboardView: View {
                 if mode == .list {
                     Task { await reloadMetricsListEvents() }
                 } else {
+                    listPeriodPickerOpen = false
                     Task { await reloadMetricsTimeline() }
                 }
             }
             .onChange(of: metricsListSeries) { _, series in
                 if series == .profit {
-                    listWindowCommitted = nil
+                    listScope = .empty
                     metricsListPeriod = .all
+                    listPeriodPickerOpen = false
                 } else {
                     Task { await reloadMetricsListEvents() }
                 }
             }
             .onChange(of: metricsListPeriod) { _, period in
                 if period == .all {
-                    listWindowCommitted = nil
-                    listParentWithin = nil
+                    listScope = .empty
                     listWindowOptions = []
+                    listPeriodPickerOpen = false
                     Task { await reloadMetricsListEvents() }
                 } else {
+                    // Window picker open/close is driven by select/dismiss so ✕ can restore
+                    // the prior period without the picker immediately reopening.
                     Task { await reloadListWindowOptions() }
                 }
             }
             .onChange(of: reportsStatusFilter) { _, _ in
-                Task { await loadModerationReports() }
+                adminLoadGeneration &+= 1
+                let loadID = adminLoadGeneration
+                Task { await loadModerationReports(loadID: loadID) }
             }
             .onChange(of: bannedCategoryFilter) { _, _ in
-                Task { await loadBannedUsers() }
+                adminLoadGeneration &+= 1
+                let loadID = adminLoadGeneration
+                Task { await loadBannedUsers(loadID: loadID) }
             }
     }
 
     private var adminBodyWithDialogs: some View {
         adminBodyWithOnChanges
+            .providerAdminDismissesKeyboardOnOutsideTap {
+                adminSearchFocus = nil
+                isPlatformFeeFieldFocused = false
+            }
+            .sheet(isPresented: $showingOperatorsFilters) {
+                operatorsFiltersSheet
+            }
+            .sheet(isPresented: $showingOnboardingFilters) {
+                onboardingFiltersSheet
+            }
             .confirmationDialog(
                 pendingReportResolutionTitle,
                 isPresented: Binding(
@@ -422,22 +450,33 @@ struct ProviderAdminDashboardView: View {
                 .padding(.bottom, 10)
                 .background(ProviderAdminChrome.stoneBackground)
 
-            ScrollView {
-                adminScrollBody
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .frame(maxWidth: ProviderAdminChrome.panelMaxWidth)
-                    .frame(maxWidth: .infinity)
+            if isAdminContentReady {
+                ScrollView {
+                    adminScrollBody
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: ProviderAdminChrome.panelMaxWidth)
+                        .frame(maxWidth: .infinity)
+                }
+                .scrollContentBackground(.hidden)
+                .refreshable { await loadAll() }
+            } else {
+                ProgressView()
+                    .controlSize(.regular)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.vertical, 48)
             }
-            .scrollContentBackground(.hidden)
-            .refreshable { await loadAll() }
         }
         .background(ProviderAdminChrome.stoneBackground.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .task { await loadAll() }
+        .task {
+            // Let the sheet presentation settle before building Performance / Charts trees.
+            await Task.yield()
+            isAdminContentReady = true
+            await loadAll()
+        }
     }
 
-    @ViewBuilder
     private var adminScrollBody: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let errorText {
@@ -446,46 +485,54 @@ struct ProviderAdminDashboardView: View {
                     .foregroundStyle(.red)
                     .padding(.horizontal, 4)
             }
-            switch tab {
-            case .performance: performanceTab
-            case .barbers: barbersTab
-            case .users: usersTab
-            case .services: ProviderAdminServicesView(reloadToken: servicesReloadToken)
-            case .safety: safetyTab
+
+            // Type-erase each tab so Admin's body does not nest every tab's view type at once
+            // (that stack-overflowed on sheet presentation: EXC_BAD_ACCESS code=2).
+            ZStack(alignment: .topLeading) {
+                adminSelectedTabContent
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+
+                if hasMountedServicesTab {
+                    ProviderAdminServicesView(reloadToken: servicesReloadToken)
+                        .opacity(tab == .services ? 1 : 0)
+                        .allowsHitTesting(tab == .services)
+                        .accessibilityHidden(tab != .services)
+                        .frame(
+                            maxWidth: .infinity,
+                            maxHeight: tab == .services ? .infinity : 0,
+                            alignment: .topLeading
+                        )
+                        .clipped()
+                }
             }
         }
     }
 
-    private var adminSheetHeader: some View {
-        VStack(spacing: 8) {
-            Capsule()
-                .fill(ProviderAdminChrome.stoneBorder)
-                .frame(width: 36, height: 5)
-                .padding(.top, 8)
-
-            ZStack {
-                Text("Admin")
-                    .font(.provider(.headline, weight: .semibold))
-                    .foregroundStyle(ProviderAdminChrome.primaryText)
-                HStack {
-                    Spacer()
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.provider(.body, weight: .semibold))
-                            .foregroundStyle(ProviderAdminChrome.secondaryText)
-                            .frame(width: 32, height: 32)
-                            .background(ProviderAdminChrome.stoneMutedFill, in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Close Admin")
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 4)
+    /// Only the active tab's concrete tree is built — others are not in the `switch` result type.
+    private var adminSelectedTabContent: AnyView {
+        switch tab {
+        case .performance:
+            AnyView(performanceTab)
+        case .barbers:
+            AnyView(barbersTab)
+        case .users:
+            AnyView(usersTab)
+        case .services:
+            // Placeholder until `hasMountedServicesTab` paints the real Services view above.
+            AnyView(Color.clear.frame(minHeight: hasMountedServicesTab ? 0 : 120))
+        case .safety:
+            AnyView(safetyTab)
         }
-        .background(ProviderAdminChrome.stoneBackground)
+    }
+
+    private var adminSheetHeader: some View {
+        Capsule()
+            .fill(ProviderAdminChrome.stoneBorder)
+            .frame(width: 36, height: 5)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+            .frame(maxWidth: .infinity)
+            .background(ProviderAdminChrome.stoneBackground)
     }
 
     // MARK: - Metrics timeline (chart — parity with former Campus Manager overview)
@@ -596,6 +643,31 @@ struct ProviderAdminDashboardView: View {
             case .month: return "month"
             case .week: return "week"
             case .day: return "day"
+            }
+        }
+    }
+
+    /// Nested Year → Month → Week → Day selections (parity with web `listScope`).
+    private struct MetricsListScope: Equatable {
+        var year: AdminMetricsListWindowDTO?
+        var month: AdminMetricsListWindowDTO?
+        var week: AdminMetricsListWindowDTO?
+        var day: AdminMetricsListWindowDTO?
+
+        static let empty = MetricsListScope()
+
+        /// Tightest selected window used for the events query.
+        var committed: AdminMetricsListWindowDTO? {
+            day ?? week ?? month ?? year
+        }
+
+        func selection(for period: MetricsListPeriod) -> AdminMetricsListWindowDTO? {
+            switch period {
+            case .all: return nil
+            case .year: return year
+            case .month: return month
+            case .week: return week
+            case .day: return day
             }
         }
     }
@@ -854,7 +926,6 @@ struct ProviderAdminDashboardView: View {
             case .graph:
                 performanceTimelineCard
             case .list:
-                metricsListSeriesPicker
                 switch metricsListSeries {
                 case .bookings:
                     metricsBookingsListCard
@@ -870,29 +941,34 @@ struct ProviderAdminDashboardView: View {
     private var platformCommissionAndKPIsCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Platform commission")
-                    .font(.provider(.subheadline, weight: .bold))
-                    .foregroundStyle(ProviderAdminChrome.primaryText)
-
-                HStack(spacing: 10) {
-                    Text("Commission %")
-                        .font(.provider(.subheadline))
-                        .foregroundStyle(ProviderAdminChrome.secondaryText)
-                    Spacer(minLength: 8)
-                    HStack(spacing: 4) {
+                HStack(spacing: 8) {
+                    Text("Platform Commission:")
+                        .font(.provider(.subheadline, weight: .bold))
+                        .foregroundStyle(ProviderAdminChrome.primaryText)
+                    HStack(spacing: 2) {
                         TextField("15", text: $platformFeeInput)
                             .font(.provider(.body, weight: .semibold))
-                            .foregroundStyle(ProviderAdminChrome.primaryText)
+                            .foregroundStyle(
+                                isEditingPlatformFee
+                                    ? ProviderAdminChrome.primaryText
+                                    : ProviderAdminChrome.tertiaryText
+                            )
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
+                            .focused($isPlatformFeeFieldFocused)
                             .disabled(!isEditingPlatformFee || isSavingPlatformFee)
-                            .frame(minWidth: 52, maxWidth: 72)
+                            .frame(width: 36)
                         Text("%")
                             .font(.provider(.subheadline))
-                            .foregroundStyle(ProviderAdminChrome.tertiaryText)
+                            .foregroundStyle(
+                                isEditingPlatformFee
+                                    ? ProviderAdminChrome.secondaryText
+                                    : ProviderAdminChrome.tertiaryText
+                            )
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 8)
                     .padding(.vertical, 8)
+                    .opacity(isEditingPlatformFee ? 1 : 0.72)
                     .background(
                         isEditingPlatformFee
                             ? ProviderAdminChrome.cardBackground
@@ -903,53 +979,43 @@ struct ProviderAdminDashboardView: View {
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .strokeBorder(ProviderAdminChrome.border, lineWidth: 1)
                     )
-                }
 
-                if isEditingPlatformFee {
-                    HStack(spacing: 10) {
-                        Button {
-                            Task { await savePlatformFee() }
-                        } label: {
-                            Group {
-                                if isSavingPlatformFee {
-                                    ProgressView().controlSize(.mini)
-                                } else {
-                                    Text("Save")
-                                        .font(.provider(.subheadline, weight: .semibold))
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.providerOlive)
-                        .disabled(isSavingPlatformFee)
-
-                        Button {
-                            platformFeeInput = Self.formatFeePercent(platformFeePercent)
-                            isEditingPlatformFee = false
-                        } label: {
-                            Text("Cancel")
-                                .font(.provider(.subheadline, weight: .semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(isSavingPlatformFee)
-                    }
-                } else {
                     Button {
-                        platformFeeInput = Self.formatFeePercent(platformFeePercent)
-                        isEditingPlatformFee = true
+                        if isEditingPlatformFee {
+                            isPlatformFeeFieldFocused = false
+                            Task { await savePlatformFee() }
+                        } else {
+                            platformFeeInput = Self.formatFeePercent(platformFeePercent)
+                            isEditingPlatformFee = true
+                            // Focus after the field enables — sync focus while still disabled is a no-op.
+                            DispatchQueue.main.async {
+                                isPlatformFeeFieldFocused = true
+                            }
+                        }
                     } label: {
-                        Text("Edit commission")
-                            .font(.provider(.subheadline, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
+                        Group {
+                            if isSavingPlatformFee {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: isEditingPlatformFee ? "checkmark" : "pencil")
+                                    .font(.provider(.body, weight: .semibold))
+                                    .foregroundStyle(
+                                        isEditingPlatformFee
+                                            ? Color.providerOlive
+                                            : ProviderAdminChrome.primaryText
+                                    )
+                            }
+                        }
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.bordered)
-                    .disabled(isLoadingPlatformFee)
+                    .buttonStyle(.plain)
+                    .disabled(isSavingPlatformFee || (!isEditingPlatformFee && isLoadingPlatformFee))
+                    .accessibilityLabel(isEditingPlatformFee ? "Save commission" : "Edit commission")
                 }
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxWidth: .infinity)
             }
 
             Divider().overlay(ProviderAdminChrome.separator)
@@ -1001,12 +1067,31 @@ struct ProviderAdminDashboardView: View {
 
     private var metricsModeRow: some View {
         VStack(alignment: .leading, spacing: 10) {
-            pillSegmentedControl(
-                selection: $metricsDisplayMode,
-                items: MetricsDisplayMode.allCases,
-                title: \.segmentTitle
-            )
-            .frame(maxWidth: .infinity)
+            HStack(spacing: 8) {
+                pillSegmentedControl(
+                    selection: $metricsDisplayMode,
+                    items: MetricsDisplayMode.allCases,
+                    title: \.segmentTitle
+                )
+
+                if metricsDisplayMode == .list {
+                    pillSegmentedControl(
+                        selection: $metricsListSeries,
+                        items: MetricsListSeries.allCases,
+                        title: \.segmentTitle,
+                        compact: true
+                    )
+                    .frame(maxWidth: .infinity)
+                } else {
+                    pillSegmentedControl(
+                        selection: $metricsChartSeries,
+                        items: MetricsChartSeries.allCases,
+                        title: \.segmentTitle,
+                        compact: true
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+            }
 
             if metricsDisplayMode == .graph {
                 pillSegmentedControl(
@@ -1017,67 +1102,265 @@ struct ProviderAdminDashboardView: View {
                 )
                 .frame(maxWidth: .infinity)
             } else if metricsListSeries != .profit {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(MetricsListPeriod.allCases) { period in
-                            chipButton(
-                                title: period.chipLabel,
-                                selected: metricsListPeriod == period
-                            ) {
-                                metricsListPeriod = period
-                                if period != .all {
-                                    listParentWithin = nil
+                ZStack {
+                    if listPeriodPickerOpen, metricsListPeriod != .all {
+                        metricsListWindowPickerPill
+                            .transition(metricsListPeriodPickerTransition(enteringWindows: true))
+                    } else {
+                        metricsListPeriodPill
+                            .transition(metricsListPeriodPickerTransition(enteringWindows: false))
+                    }
+                }
+                .animation(metricsListPeriodPickerAnimation, value: listPeriodPickerOpen)
+            }
+        }
+    }
+
+    private var metricsListPeriodPickerAnimation: Animation {
+        .spring(response: 0.34, dampingFraction: 0.86)
+    }
+
+    private func metricsListPeriodPickerTransition(enteringWindows: Bool) -> AnyTransition {
+        .asymmetric(
+            insertion: .opacity
+                .combined(with: .move(edge: enteringWindows ? .trailing : .leading))
+                .combined(with: .scale(scale: 0.97)),
+            removal: .opacity
+                .combined(with: .move(edge: enteringWindows ? .leading : .trailing))
+                .combined(with: .scale(scale: 0.97))
+        )
+    }
+
+    /// Selected segment chrome for Performance pills — olive fill like Operators’ tinted controls.
+    private func metricsPillLabel(
+        _ title: String,
+        selected: Bool,
+        compact: Bool,
+        expand: Bool = false
+    ) -> some View {
+        Text(title)
+            .font(.provider(compact ? .caption2 : .caption, weight: .semibold))
+            .foregroundStyle(
+                selected
+                    ? Color.white
+                    : ProviderAdminChrome.secondaryText
+            )
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .padding(.horizontal, compact ? (expand ? 4 : 8) : 12)
+            .padding(.vertical, compact ? 6 : 8)
+            .frame(maxWidth: expand ? .infinity : nil)
+            .background {
+                if selected {
+                    Capsule()
+                        .fill(Color.providerOlive)
+                        .shadow(color: Color.providerOlive.opacity(0.35), radius: 1, y: 1)
+                }
+            }
+    }
+
+    /// All time / Year / Month / Week / Day — same pill chrome as List/Graph.
+    private var metricsListPeriodPill: some View {
+        HStack(spacing: 2) {
+            ForEach(MetricsListPeriod.allCases) { period in
+                let selected = listPeriodIsActive(period)
+                Button {
+                    selectListPeriod(period)
+                } label: {
+                    metricsPillLabel(
+                        listPeriodPillTitle(period),
+                        selected: selected,
+                        compact: true,
+                        expand: true
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(listPeriodPillTitle(period))
+            }
+        }
+        .padding(3)
+        .frame(maxWidth: .infinity)
+        .background(ProviderAdminChrome.mutedFill, in: Capsule())
+    }
+
+    /// Replaces the period pill while picking a concrete Year/Month/Week/Day window.
+    private var metricsListWindowPickerPill: some View {
+        HStack(spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
+                if let parent = resolvedListParentWithin {
+                    Text("In \(parent.displayLabel)")
+                        .font(.provider(.caption2, weight: .medium))
+                        .foregroundStyle(ProviderAdminChrome.tertiaryText)
+                        .lineLimit(1)
+                        .padding(.leading, 8)
+                }
+
+                Group {
+                    if isLoadingListWindowOptions {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Loading \(metricsListPeriod.chipLabel.lowercased())s…")
+                                .font(.provider(.caption2, weight: .semibold))
+                                .foregroundStyle(ProviderAdminChrome.secondaryText)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                    } else if listWindowOptions.isEmpty {
+                        Text(
+                            resolvedListParentWithin.map {
+                                "No \(metricsListPeriod.chipLabel.lowercased())s in \($0.displayLabel)."
+                            } ?? "No \(metricsListPeriod.chipLabel.lowercased()) windows yet."
+                        )
+                            .font(.provider(.caption2, weight: .semibold))
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                    } else {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 2) {
+                                ForEach(listWindowOptions) { option in
+                                    let selected = listScope.selection(for: metricsListPeriod)?.id == option.id
+                                    Button {
+                                        applyListWindowSelection(option)
+                                    } label: {
+                                        metricsPillLabel(
+                                            option.displayLabel,
+                                            selected: selected,
+                                            compact: true
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, minHeight: 28, alignment: .center)
             }
 
-            if metricsDisplayMode == .list,
-               metricsListSeries != .profit,
-               metricsListPeriod != .all {
-                metricsListWindowPicker
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var metricsListWindowPicker: some View {
-        if isLoadingListWindowOptions {
-            HStack {
-                ProgressView().controlSize(.small)
-                Text("Loading windows…")
-                    .font(.provider(.caption))
+            Button {
+                dismissListPeriodPicker()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.provider(.caption2, weight: .bold))
                     .foregroundStyle(ProviderAdminChrome.secondaryText)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        Circle().fill(ProviderAdminChrome.cardBackground)
+                    )
             }
-        } else if listWindowOptions.isEmpty {
-            Text("No windows for this period yet.")
-                .font(.provider(.caption))
-                .foregroundStyle(ProviderAdminChrome.secondaryText)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close timeframe picker")
+        }
+        .padding(.leading, 3)
+        .padding(.trailing, 3)
+        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity, minHeight: 36, alignment: .center)
+        .background(ProviderAdminChrome.mutedFill, in: Capsule())
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(metricsListPeriod.chipLabel) filter")
+    }
+
+    /// Parent window that scopes the current granularity’s options (web `listParentWithin`).
+    private var resolvedListParentWithin: AdminMetricsListWindowDTO? {
+        switch metricsListPeriod {
+        case .month: return listScope.year
+        case .week: return listScope.month ?? listScope.year
+        case .day: return listScope.week ?? listScope.month ?? listScope.year
+        case .all, .year: return nil
+        }
+    }
+
+    private func listPeriodIsActive(_ period: MetricsListPeriod) -> Bool {
+        switch period {
+        case .all: return listScope.committed == nil
+        default: return metricsListPeriod == period
+        }
+    }
+
+    private func listPeriodPillTitle(_ period: MetricsListPeriod) -> String {
+        switch period {
+        case .all:
+            return period.chipLabel
+        default:
+            if let chip = listScope.selection(for: period)?.chipLabel?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+               !chip.isEmpty {
+                return chip
+            }
+            if let label = listScope.selection(for: period)?.displayLabel, !label.isEmpty {
+                return label
+            }
+            return period.chipLabel
+        }
+    }
+
+    private func selectListPeriod(_ period: MetricsListPeriod) {
+        if period == .all {
+            withAnimation(metricsListPeriodPickerAnimation) {
+                metricsListPeriod = .all
+            }
+            return
+        }
+        // Re-tapping the active period reopens the specific-window picker.
+        if metricsListPeriod == period {
+            listPeriodPickerSnapshot = period
+            withAnimation(metricsListPeriodPickerAnimation) {
+                listPeriodPickerOpen = true
+            }
+            Task { await reloadListWindowOptions() }
         } else {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(listWindowOptions) { option in
-                        chipButton(
-                            title: option.displayLabel,
-                            selected: listWindowCommitted?.id == option.id
-                        ) {
-                            listWindowCommitted = option.asWindow
-                            Task { await reloadMetricsListEvents() }
-                        }
-                    }
-                }
+            listPeriodPickerSnapshot = metricsListPeriod
+            withAnimation(metricsListPeriodPickerAnimation) {
+                metricsListPeriod = period
+                listPeriodPickerOpen = true
             }
         }
     }
 
-    private var metricsListSeriesPicker: some View {
-        pillSegmentedControl(
-            selection: $metricsListSeries,
-            items: MetricsListSeries.allCases,
-            title: \.segmentTitle
-        )
+    private func dismissListPeriodPicker() {
+        withAnimation(metricsListPeriodPickerAnimation) {
+            listPeriodPickerOpen = false
+            metricsListPeriod = listPeriodPickerSnapshot
+            if listPeriodPickerSnapshot == .all {
+                listScope = .empty
+                listWindowOptions = []
+            }
+        }
+    }
+
+    private func applyListWindowSelection(_ option: AdminMetricsListWindowOptionDTO) {
+        var next = listScope
+        let selected = option.asWindow
+        switch metricsListPeriod {
+        case .year:
+            next.year = selected
+            next.month = nil
+            next.week = nil
+            next.day = nil
+        case .month:
+            next.year = option.year ?? next.year
+            next.month = selected
+            next.week = nil
+            next.day = nil
+        case .week:
+            next.year = option.year ?? next.year
+            next.month = option.month ?? next.month
+            next.week = selected
+            next.day = nil
+        case .day:
+            next.year = option.year ?? next.year
+            next.month = option.month ?? next.month
+            next.week = option.week ?? next.week
+            next.day = selected
+        case .all:
+            break
+        }
+        withAnimation(metricsListPeriodPickerAnimation) {
+            listScope = next
+            listPeriodPickerOpen = false
+        }
+        Task { await reloadMetricsListEvents() }
     }
 
     private func pillSegmentedControl<T: Hashable & Identifiable>(
@@ -1092,22 +1375,12 @@ struct ProviderAdminDashboardView: View {
                 Button {
                     selection.wrappedValue = item
                 } label: {
-                    Text(item[keyPath: title])
-                        .font(.provider(compact ? .caption2 : .caption, weight: .semibold))
-                        .foregroundStyle(
-                            selected
-                                ? ProviderAdminChrome.primaryText
-                                : ProviderAdminChrome.secondaryText
-                        )
-                        .padding(.horizontal, compact ? 8 : 12)
-                        .padding(.vertical, compact ? 6 : 8)
-                        .frame(maxWidth: compact ? .infinity : nil)
-                        .background {
-                            if selected {
-                                Capsule().fill(ProviderAdminChrome.cardBackground)
-                                    .shadow(color: .black.opacity(0.06), radius: 1, y: 1)
-                            }
-                        }
+                    metricsPillLabel(
+                        item[keyPath: title],
+                        selected: selected,
+                        compact: compact,
+                        expand: compact
+                    )
                 }
                 .buttonStyle(.plain)
             }
@@ -1116,39 +1389,12 @@ struct ProviderAdminDashboardView: View {
         .background(ProviderAdminChrome.mutedFill, in: Capsule())
     }
 
-    private func chipButton(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.provider(.caption, weight: .semibold))
-                .foregroundStyle(
-                    selected ? ProviderAdminChrome.primaryText : ProviderAdminChrome.secondaryText
-                )
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    selected ? ProviderAdminChrome.cardBackground : ProviderAdminChrome.mutedFill,
-                    in: Capsule()
-                )
-                .overlay(
-                    Capsule().strokeBorder(ProviderAdminChrome.border, lineWidth: selected ? 0 : 0.5)
-                )
-        }
-        .buttonStyle(.plain)
-    }
-
     private var performanceTimelineCard: some View {
         sectionCard(
             title: "Performance over time",
             subtitle: nil
         ) {
             VStack(alignment: .leading, spacing: 12) {
-                Picker("Series", selection: $metricsChartSeries) {
-                    ForEach(MetricsChartSeries.allCases) { s in
-                        Text(s.segmentTitle).tag(s)
-                    }
-                }
-                .pickerStyle(.segmented)
-
                 ZStack {
                     if isLoading && metricsSnapshot == nil {
                         loadingRow("Loading chart…")
@@ -1280,7 +1526,7 @@ struct ProviderAdminDashboardView: View {
     }
 
     private func metricsListHeaderTitle(count: Int, noun: String) -> String {
-        let window = listWindowCommitted?.displayLabel
+        let window = listScope.committed?.displayLabel
             ?? (metricsListPeriod == .all ? "All time" : metricsListPeriod.chipLabel)
         return "\(window) · \(count) \(noun)"
     }
@@ -2038,8 +2284,7 @@ struct ProviderAdminDashboardView: View {
     private var barbersTabSubtitle: String {
         switch barbersSubTab {
         case .current:
-            let shown = filteredCurrentBarbers.count
-            return "\(shown) shown · \(barbers.count) loaded."
+            return ""
         case .applications:
             if isLoadingApplications, barberApplications.isEmpty {
                 return "Loading applications…"
@@ -2081,7 +2326,15 @@ struct ProviderAdminDashboardView: View {
     }
 
     private var barbersTab: some View {
-        sectionCard(title: "Operators", subtitle: barbersTabSubtitle) {
+        sectionCard(
+            title: "Operators",
+            subtitle: barbersTabSubtitle,
+            titleAccessory: {
+                if operatorsHubTab == .operators {
+                    operatorsFilterButton
+                }
+            }
+        ) {
             VStack(alignment: .leading, spacing: 12) {
                 Picker("Operators hub", selection: $operatorsHubTab) {
                     ForEach(OperatorsHubTab.allCases) { hub in
@@ -2090,19 +2343,12 @@ struct ProviderAdminDashboardView: View {
                 }
                 .pickerStyle(.segmented)
 
-                switch operatorsHubTab {
-                case .operators:
+                if operatorsHubTab == .operators {
                     operatorsRosterContent
-                case .onboarding:
+                } else {
                     onboardingHubContent
                 }
             }
-        }
-        .sheet(isPresented: $showingOperatorsFilters) {
-            operatorsFiltersSheet
-        }
-        .sheet(isPresented: $showingOnboardingFilters) {
-            onboardingFiltersSheet
         }
     }
 
@@ -2116,6 +2362,9 @@ struct ProviderAdminDashboardView: View {
                     .textFieldStyle(.plain)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
+                    .focused($adminSearchFocus, equals: .operators)
+                    .submitLabel(.search)
+                    .onSubmit { adminSearchFocus = nil }
             }
             .padding(10)
             .background(
@@ -2123,30 +2372,41 @@ struct ProviderAdminDashboardView: View {
                     .fill(ProviderAdminChrome.stoneMutedFill)
             )
 
-            Picker("Operators section", selection: $barbersSubTab) {
-                ForEach(BarbersSubTab.allCases) { sub in
-                    Text("\(sub.rawValue) (\(barbersSubTabCount(sub)))").tag(sub)
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("Operators section", selection: $barbersSubTab) {
+                    Text("Current (\(barbers.count))").tag(BarbersSubTab.current)
+                    Text("Applications (\(barberApplications.count))").tag(BarbersSubTab.applications)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: barbersSubTab) { _, _ in
+                    adminSearchFocus = nil
+                    selectedBarberApplication = nil
+                    applicationInlineConfirmKind = nil
+                }
+
+                if barbersSubTab == .current {
+                    currentBarbersList
+                } else {
+                    ProviderAdminBarberApplicationsView(
+                        applications: barberApplications,
+                        isLoading: isLoadingApplications,
+                        errorText: applicationsError,
+                        busyApplicationId: busyApplicationId,
+                        selectedApplication: $selectedBarberApplication,
+                        inlineConfirmKind: $applicationInlineConfirmKind,
+                        onApprove: { application in
+                            Task {
+                                await applyBarberApplicationAction(application, kind: .approve)
+                            }
+                        },
+                        onReject: { application in
+                            Task {
+                                await applyBarberApplicationAction(application, kind: .reject)
+                            }
+                        }
+                    )
                 }
             }
-            .pickerStyle(.segmented)
-            .onChange(of: barbersSubTab) { _, _ in
-                selectedBarberApplication = nil
-                applicationInlineConfirmKind = nil
-            }
-
-            switch barbersSubTab {
-            case .current:
-                currentBarbersList
-            case .applications:
-                barberApplicationsList
-            }
-        }
-    }
-
-    private func barbersSubTabCount(_ sub: BarbersSubTab) -> Int {
-        switch sub {
-        case .current: return filteredCurrentBarbers.count
-        case .applications: return barberApplications.count
         }
     }
 
@@ -2155,11 +2415,15 @@ struct ProviderAdminDashboardView: View {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(ProviderAdminChrome.tertiaryText)
-                TextField("Search operators…", text: $onboardingSearch)
+                TextField("Search for Operators…", text: $onboardingSearch)
                     .textFieldStyle(.plain)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
+                    .focused($adminSearchFocus, equals: .onboarding)
+                    .submitLabel(.search)
+                    .onSubmit { adminSearchFocus = nil }
                 Button {
+                    adminSearchFocus = nil
                     showingOnboardingFilters = true
                 } label: {
                     Image(systemName: "line.3.horizontal.decrease.circle")
@@ -2183,26 +2447,29 @@ struct ProviderAdminDashboardView: View {
                 if scope == .all { onboardingSelectedIds = [] }
             }
 
-            onboardingMassApplyRow(
-                title: "Commissionless bookings",
-                text: $onboardingFreeInput,
-                keyboard: .numberPad,
-                actionTitle: onboardingScope == .all
-                    ? "Add to All"
-                    : "Add to \(onboardingSelectedIds.count)"
-            ) {
-                pendingOnboardingBulk = PendingOnboardingBulk(field: .free)
-            }
+            HStack(alignment: .top, spacing: 12) {
+                onboardingMassApplyColumn(
+                    title: "Commissionless bookings",
+                    text: $onboardingFreeInput,
+                    keyboard: .numberPad,
+                    actionTitle: onboardingScope == .all
+                        ? "Add to All"
+                        : "Add to \(onboardingSelectedIds.count)"
+                ) {
+                    pendingOnboardingBulk = PendingOnboardingBulk(field: .free)
+                }
 
-            onboardingMassApplyRow(
-                title: "Kickback %",
-                text: $onboardingKickbackInput,
-                keyboard: .decimalPad,
-                actionTitle: onboardingScope == .all
-                    ? "Apply to All"
-                    : "Apply to \(onboardingSelectedIds.count)"
-            ) {
-                pendingOnboardingBulk = PendingOnboardingBulk(field: .kickback)
+                onboardingMassApplyColumn(
+                    title: "Kickback Per Booking",
+                    text: $onboardingKickbackInput,
+                    keyboard: .decimalPad,
+                    showsPercentSuffix: true,
+                    actionTitle: onboardingScope == .all
+                        ? "Apply to All"
+                        : "Apply to \(onboardingSelectedIds.count)"
+                ) {
+                    pendingOnboardingBulk = PendingOnboardingBulk(field: .kickback)
+                }
             }
 
             if let onboardingSaveMessage {
@@ -2223,10 +2490,11 @@ struct ProviderAdminDashboardView: View {
         }
     }
 
-    private func onboardingMassApplyRow(
+    private func onboardingMassApplyColumn(
         title: String,
         text: Binding<String>,
         keyboard: UIKeyboardType,
+        showsPercentSuffix: Bool = false,
         actionTitle: String,
         action: @escaping () -> Void
     ) -> some View {
@@ -2234,24 +2502,48 @@ struct ProviderAdminDashboardView: View {
             Text(title)
                 .font(.provider(.caption))
                 .foregroundStyle(ProviderAdminChrome.secondaryText)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
-                TextField("0", text: text)
-                    .font(.provider(.subheadline))
-                    .keyboardType(keyboard)
+                HStack(spacing: 2) {
+                    TextField("0", text: text)
+                        .font(.provider(.subheadline))
+                        .keyboardType(keyboard)
+                        .multilineTextAlignment(.trailing)
+                    if showsPercentSuffix {
+                        Text("%")
+                            .font(.provider(.subheadline))
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    ProviderAdminChrome.stoneMutedFill,
+                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                )
+                .frame(width: showsPercentSuffix ? 72 : 64)
+
+                Button(actionTitle, action: action)
+                    .font(.provider(.caption, weight: .semibold))
+                    .foregroundStyle(ProviderOliveChromeStyle.adminAccentPillForeground(colorScheme))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
                     .background(
-                        ProviderAdminChrome.stoneMutedFill,
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        ProviderOliveChromeStyle.adminAccentPillFill(colorScheme),
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                     )
-                    .frame(maxWidth: 100)
-                Button(actionTitle, action: action)
-                    .font(.provider(.caption, weight: .semibold))
-                    .buttonStyle(.borderedProminent)
-                    .tint(.providerOlive)
                     .disabled(isSavingOnboardingBulk || (onboardingScope == .selected && onboardingSelectedIds.isEmpty))
+                    .opacity(
+                        isSavingOnboardingBulk || (onboardingScope == .selected && onboardingSelectedIds.isEmpty)
+                            ? 0.45
+                            : 1
+                    )
+                    .fixedSize()
+                    .buttonStyle(.plain)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func onboardingBarberRow(_ barber: AdminBarberDTO) -> some View {
@@ -2386,14 +2678,13 @@ struct ProviderAdminDashboardView: View {
                 }
             }
         }
+        .providerAdminDismissesKeyboardOnOutsideTap()
         .presentationDetents([.medium])
     }
 
     @ViewBuilder
     private var currentBarbersList: some View {
         VStack(alignment: .leading, spacing: 10) {
-            operatorsFilterButton
-
             if filteredCurrentBarbers.isEmpty {
                 Text(currentBarbersEmptyMessage)
                     .font(.provider(.footnote))
@@ -2408,36 +2699,30 @@ struct ProviderAdminDashboardView: View {
 
     private var operatorsFilterButton: some View {
         Button {
+            adminSearchFocus = nil
             showingOperatorsFilters = true
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 4) {
                 Image(systemName: "line.3.horizontal.decrease.circle")
-                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
-                Text(operatorsFiltersAreNonDefault ? "Filters: \(operatorsFilterSummary)" : "Filters")
-                    .font(.provider(.subheadline, weight: .medium))
-                    .foregroundStyle(ProviderAdminChrome.primaryText)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                if operatorsFiltersAreNonDefault {
-                    Text("Edit")
-                        .font(.provider(.caption, weight: .semibold))
-                        .foregroundStyle(ProviderAdminChrome.tertiaryText)
-                }
-                Image(systemName: "chevron.right")
                     .font(.provider(.caption, weight: .semibold))
-                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
+                Text(operatorsFiltersAreNonDefault ? "Filters · On" : "Filters")
+                    .font(.provider(.caption, weight: .semibold))
+                    .lineLimit(1)
             }
-            .padding(10)
+            .foregroundStyle(ProviderAdminChrome.primaryText)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                Capsule(style: .continuous)
                     .fill(ProviderAdminChrome.stoneMutedFill)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        Capsule(style: .continuous)
                             .strokeBorder(ProviderAdminChrome.stoneBorder, lineWidth: 0.5)
                     )
             )
         }
         .buttonStyle(.plain)
+        .fixedSize()
         .accessibilityLabel("Operator filters")
         .accessibilityValue(operatorsFilterSummary)
     }
@@ -2469,6 +2754,7 @@ struct ProviderAdminDashboardView: View {
                 }
             }
         }
+        .providerAdminDismissesKeyboardOnOutsideTap()
         .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
         .tint(.providerOlive)
@@ -2524,332 +2810,6 @@ struct ProviderAdminDashboardView: View {
                 .font(.provider(.caption, weight: .semibold))
                 .foregroundStyle(ProviderAdminChrome.secondaryText)
             content()
-        }
-    }
-
-    @ViewBuilder
-    private var barberApplicationsList: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let applicationsError, !applicationsError.isEmpty {
-                Text(applicationsError)
-                    .font(.provider(.caption))
-                    .foregroundStyle(.red)
-            }
-
-            if let selected = selectedBarberApplication {
-                barberApplicationDetail(selected)
-            } else if isLoadingApplications, barberApplications.isEmpty {
-                loadingRow("Loading applications…")
-            } else if barberApplications.isEmpty {
-                Text("No applications need review for this scope.")
-                    .font(.provider(.footnote))
-                    .foregroundStyle(ProviderAdminChrome.secondaryText)
-            } else {
-                ForEach(barberApplications) { application in
-                    barberApplicationRow(application)
-                }
-            }
-        }
-    }
-
-    private func barberApplicationRow(_ application: BarberApplicationListRowDTO) -> some View {
-        let isBusy = busyApplicationId == application.id
-        return Button {
-            applicationInlineConfirmKind = nil
-            selectedBarberApplication = application
-        } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(application.displayName)
-                            .font(.provider(.subheadline, weight: .semibold))
-                            .foregroundStyle(ProviderAdminChrome.primaryText)
-                        if application.origin == .guest {
-                            tag(text: "Guest", tint: Color.orange.opacity(0.55))
-                        }
-                        Spacer(minLength: 0)
-                        tag(
-                            text: application.statusEnum?.displayLabel ?? application.status.capitalized,
-                            tint: applicationStatusTint(application)
-                        )
-                    }
-                    Text(application.email ?? "No email")
-                        .font(.provider(.caption))
-                        .foregroundStyle(ProviderAdminChrome.secondaryText)
-                        .lineLimit(1)
-                    HStack(spacing: 8) {
-                        if let campus = application.campusName, !campus.isEmpty {
-                            Text(campus)
-                        }
-                        if let years = application.yearsExperience, !years.isEmpty {
-                            Text("·")
-                            Text("\(years) yrs")
-                        }
-                        if let when = application.createdAt {
-                            Text("·")
-                            Text(relativeShort(when))
-                        }
-                    }
-                    .font(.provider(.caption2))
-                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
-                }
-                Image(systemName: "chevron.right")
-                    .font(.provider(.caption))
-                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
-            }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(ProviderAdminChrome.stoneMutedFill)
-            )
-            .opacity(isBusy ? 0.55 : 1)
-        }
-        .buttonStyle(.plain)
-        .disabled(isBusy)
-    }
-
-    private func barberApplicationDetail(_ application: BarberApplicationListRowDTO) -> some View {
-        let isBusy = busyApplicationId == application.id
-        return VStack(alignment: .leading, spacing: 12) {
-            Button {
-                selectedBarberApplication = nil
-                applicationInlineConfirmKind = nil
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.left")
-                    Text("Back to Applications")
-                }
-                .font(.provider(.subheadline, weight: .semibold))
-                .foregroundStyle(ProviderAdminChrome.primaryText)
-            }
-            .buttonStyle(.plain)
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Text(application.displayName)
-                        .font(.provider(.title3, weight: .semibold))
-                        .foregroundStyle(ProviderAdminChrome.primaryText)
-                    if application.origin == .guest {
-                        tag(text: "Guest", tint: Color.orange.opacity(0.55))
-                    }
-                    Spacer(minLength: 0)
-                    tag(
-                        text: application.statusEnum?.displayLabel ?? application.status.capitalized,
-                        tint: applicationStatusTint(application)
-                    )
-                }
-                Text(application.email ?? "No email")
-                    .font(.provider(.caption))
-                    .foregroundStyle(ProviderAdminChrome.secondaryText)
-                applicationDetailGrid(application)
-                if let specialties = application.specialties, !specialties.isEmpty {
-                    applicationDetailBlock(title: "Specialties", value: specialties.joined(separator: ", "))
-                }
-                applicationDetailBlock(
-                    title: "Profession",
-                    value: application.submittedProfessionLabel ?? "—"
-                )
-            }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(ProviderAdminChrome.stoneMutedFill)
-            )
-
-            if application.statusEnum == .pending {
-                applicationDecisionButtons(application, isBusy: isBusy)
-            }
-
-            if isBusy {
-                loadingRow("Updating application…")
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func applicationDecisionButtons(
-        _ application: BarberApplicationListRowDTO,
-        isBusy: Bool
-    ) -> some View {
-        VStack(spacing: 8) {
-            if applicationInlineConfirmKind != nil {
-                Text("Are you sure?")
-                    .font(.provider(.subheadline, weight: .semibold))
-                    .foregroundStyle(ProviderAdminChrome.primaryText)
-                    .frame(maxWidth: .infinity)
-            }
-
-            HStack(spacing: 10) {
-                switch applicationInlineConfirmKind {
-                case nil:
-                    Button {
-                        applicationInlineConfirmKind = .approve
-                    } label: {
-                        Text("Approve")
-                            .font(.provider(.subheadline, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.providerOlive)
-                    .disabled(isBusy)
-
-                    Button {
-                        applicationInlineConfirmKind = .reject
-                    } label: {
-                        Text("Reject")
-                            .font(.provider(.subheadline, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.red)
-                    .disabled(isBusy)
-
-                case .approve:
-                    // Pressed Approve → that slot becomes No; other slot becomes Yes.
-                    Button {
-                        applicationInlineConfirmKind = nil
-                    } label: {
-                        Text("No")
-                            .font(.provider(.subheadline, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isBusy)
-
-                    Button {
-                        let pending = PendingBarberApplicationAction(application: application, kind: .approve)
-                        applicationInlineConfirmKind = nil
-                        Task { await applyBarberApplicationAction(pending) }
-                    } label: {
-                        Text("Yes")
-                            .font(.provider(.subheadline, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.providerOlive)
-                    .disabled(isBusy)
-
-                case .reject:
-                    // Pressed Reject → that slot becomes No; other slot becomes Yes.
-                    Button {
-                        let pending = PendingBarberApplicationAction(application: application, kind: .reject)
-                        applicationInlineConfirmKind = nil
-                        Task { await applyBarberApplicationAction(pending) }
-                    } label: {
-                        Text("Yes")
-                            .font(.provider(.subheadline, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .disabled(isBusy)
-
-                    Button {
-                        applicationInlineConfirmKind = nil
-                    } label: {
-                        Text("No")
-                            .font(.provider(.subheadline, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isBusy)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func applicationDetailGrid(_ application: BarberApplicationListRowDTO) -> some View {
-        LazyVGrid(columns: gridColumns, spacing: 8) {
-            applicationMetricCell(
-                title: "Experience",
-                value: application.yearsExperience.map { "\($0) years" } ?? "—"
-            )
-            applicationMetricCell(title: "Phone", value: applicationPhoneDisplay(application.phoneNumber))
-            applicationMetricCell(
-                title: "Own tools",
-                value: application.hasOwnTools == true ? "Yes" : (application.hasOwnTools == false ? "No" : "—")
-            )
-            if let when = application.createdAt {
-                applicationMetricCell(title: "Applied", value: applicationAppliedDate(when))
-            }
-        }
-    }
-
-    private func applicationPhoneDisplay(_ raw: String?) -> String {
-        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !trimmed.isEmpty else { return "Not provided" }
-        // Prefer the applicant's stored formatting (punctuation / spaces). Only reformat
-        // legacy E.164 / digits-only values that were normalized before submit.
-        let hasApplicantFormatting = trimmed.contains(where: { !$0.isNumber && $0 != "+" })
-        if hasApplicantFormatting {
-            return trimmed
-        }
-        let digits = trimmed.filter(\.isNumber)
-        // Legacy NANP E.164 (`+1…` / `1…` / 10 digits) → `(555) 555-5555`.
-        if digits.count == 11, digits.hasPrefix("1") {
-            return PhoneNumberInputFormatter.format(String(digits.dropFirst()), regionCode: "US")
-        }
-        if digits.count == 10 {
-            return PhoneNumberInputFormatter.format(digits, regionCode: "US")
-        }
-        let region = Locale.current.region?.identifier ?? "US"
-        let formatted = PhoneNumberInputFormatter.format(trimmed, regionCode: region)
-        return formatted.isEmpty ? trimmed : formatted
-    }
-
-    private func applicationAppliedDate(_ date: Date) -> String {
-        date.formatted(date: .abbreviated, time: .omitted)
-    }
-
-    private func applicationMetricCell(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.provider(.caption2))
-                .foregroundStyle(ProviderAdminChrome.tertiaryText)
-            Text(value)
-                .font(.provider(.caption, weight: .semibold))
-                .foregroundStyle(ProviderAdminChrome.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(ProviderAdminChrome.stoneMutedFill)
-        )
-    }
-
-    private func applicationDetailBlock(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.provider(.caption2))
-                .foregroundStyle(ProviderAdminChrome.tertiaryText)
-            Text(value)
-                .font(.provider(.footnote))
-                .foregroundStyle(ProviderAdminChrome.primaryText)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(ProviderAdminChrome.stoneMutedFill)
-        )
-    }
-
-    private func applicationStatusTint(_ application: BarberApplicationListRowDTO) -> Color {
-        switch application.statusEnum {
-        case .pending: return Color.orange.opacity(0.55)
-        case .approved: return Color.green.opacity(0.55)
-        case .rejected: return Color.red.opacity(0.55)
-        case .underReview, .interviewScheduled: return Color.blue.opacity(0.45)
-        case nil: return ProviderAdminChrome.stoneMutedFill
         }
     }
 
@@ -2964,14 +2924,21 @@ struct ProviderAdminDashboardView: View {
                         .textFieldStyle(.plain)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .focused($adminSearchFocus, equals: .users)
+                        .submitLabel(.search)
+                        .onSubmit { adminSearchFocus = nil }
                     if !userSearch.isEmpty {
-                        Button { userSearch = "" } label: {
+                        Button {
+                            userSearch = ""
+                            adminSearchFocus = nil
+                        } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(ProviderAdminChrome.tertiaryText)
                         }
                         .buttonStyle(.plain)
                     }
                     Button {
+                        adminSearchFocus = nil
                         showingUsersFilters = true
                     } label: {
                         Image(systemName: "line.3.horizontal.decrease.circle")
@@ -2988,30 +2955,33 @@ struct ProviderAdminDashboardView: View {
                                 .strokeBorder(ProviderAdminChrome.stoneBorder, lineWidth: 0.5)
                         )
                 )
-                if userRoleFilter != .all {
-                    Text("Role: \(userRoleFilter.chipLabel)")
-                        .font(.provider(.caption))
-                        .foregroundStyle(ProviderAdminChrome.secondaryText)
-                }
-                if filteredUsers.isEmpty {
-                    Text(isLoading ? "Loading users…" : "No matching users.")
-                        .font(.provider(.footnote))
-                        .foregroundStyle(ProviderAdminChrome.secondaryText)
-                } else {
-                    ForEach(displayedUsers) { user in
-                        userRow(user)
+
+                VStack(spacing: 10) {
+                    if userRoleFilter != .all {
+                        Text("Role: \(userRoleFilter.chipLabel)")
+                            .font(.provider(.caption))
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
                     }
-                    if filteredUsers.count > usersVisibleCount {
-                        Button {
-                            usersVisibleCount += usersPageSize
-                        } label: {
-                            Text("Show next \(usersPageSize)")
-                                .font(.provider(.subheadline, weight: .semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
+                    if filteredUsers.isEmpty {
+                        Text(isLoading ? "Loading users…" : "No matching users.")
+                            .font(.provider(.footnote))
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
+                    } else {
+                        ForEach(displayedUsers) { user in
+                            userRow(user)
                         }
-                        .buttonStyle(.bordered)
-                        .tint(.providerOlive)
+                        if filteredUsers.count > usersVisibleCount {
+                            Button {
+                                usersVisibleCount += usersPageSize
+                            } label: {
+                                Text("Show next \(usersPageSize)")
+                                    .font(.provider(.subheadline, weight: .semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.providerOlive)
+                        }
                     }
                 }
             }
@@ -3036,6 +3006,7 @@ struct ProviderAdminDashboardView: View {
                     }
                 }
             }
+            .providerAdminDismissesKeyboardOnOutsideTap()
             .presentationDetents([.medium])
         }
     }
@@ -3095,7 +3066,7 @@ struct ProviderAdminDashboardView: View {
     private var reportsSection: some View {
         sectionCard(
             title: "Reports",
-            subtitle: reportsSubtitle
+            subtitle: nil
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 safetyFilterMenu(
@@ -3125,15 +3096,6 @@ struct ProviderAdminDashboardView: View {
                     }
                 }
             }
-        }
-    }
-
-    private var reportsSubtitle: String {
-        switch reportsStatusFilter {
-        case .open: "Open reports awaiting your decision."
-        case .all: "All reports submitted across the platform."
-        case .resolved: "Reports that have been actioned."
-        case .dismissed: "Reports that have been dismissed."
         }
     }
 
@@ -3313,7 +3275,7 @@ struct ProviderAdminDashboardView: View {
     private var bannedUsersSection: some View {
         sectionCard(
             title: "Banned users",
-            subtitle: bannedSubtitle
+            subtitle: nil
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 safetyFilterMenu(
@@ -3346,13 +3308,6 @@ struct ProviderAdminDashboardView: View {
                 }
             }
         }
-    }
-
-    private var bannedSubtitle: String {
-        if bannedCategoryFilter == .all {
-            return "Accounts with `isBanned = true`. Unban restores sign-in, discovery, and booking."
-        }
-        return "Banned \(bannedCategoryFilter.chipLabel.lowercased())."
     }
 
     @ViewBuilder
@@ -3412,8 +3367,11 @@ struct ProviderAdminDashboardView: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(Color.providerOlive.opacity(0.9), in: Capsule())
-                    .foregroundStyle(ProviderAdminChrome.primaryText)
+                    .foregroundStyle(ProviderOliveChromeStyle.adminAccentPillForeground(colorScheme))
+                    .background(
+                        ProviderOliveChromeStyle.adminAccentPillFill(colorScheme),
+                        in: Capsule()
+                    )
                 }
                 .buttonStyle(.plain)
                 .disabled(isBusy)
@@ -3517,31 +3475,53 @@ struct ProviderAdminDashboardView: View {
 
     // MARK: - Data
 
+    /// Surfaces a load failure unless it is a benign task/URLSession cancellation from reload.
+    private func presentAdminLoadError(_ error: Error) {
+        guard !providerAdminIsBenignRequestCancellation(error) else { return }
+        if errorText == nil {
+            errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
     private func loadAll() async {
+        adminLoadGeneration &+= 1
+        let loadID = adminLoadGeneration
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            if loadID == adminLoadGeneration {
+                isLoading = false
+            }
+        }
         errorText = nil
         _ = try? await ProviderAuthService.refreshAccessTokenIfPossible()
+        guard loadID == adminLoadGeneration else { return }
+
         async let st = ProviderAdminService.platformStats()
         async let cs = ProviderAdminService.listCampuses()
         async let feeTask: () = loadPlatformFee()
         do {
             let (s, c) = try await (st, cs)
+            guard loadID == adminLoadGeneration else { return }
             stats = s
             campuses = c
         } catch let OnCutsHTTPError.httpStatus(code, msg) {
+            guard loadID == adminLoadGeneration else { return }
             errorText = msg ?? "Server returned \(code)."
         } catch {
-            if !providerAdminIsBenignRequestCancellation(error) {
-                errorText = error.localizedDescription
-            }
+            guard loadID == adminLoadGeneration else { return }
+            presentAdminLoadError(error)
+            // Cancelled `.task` / pull-to-refresh — stop so we do not wipe scoped lists below.
+            if providerAdminIsBenignRequestCancellation(error) { return }
         }
         await feeTask
-        await loadScopedData()
-        await loadSafety()
+        guard loadID == adminLoadGeneration else { return }
+        await loadScopedData(loadID: loadID)
+        guard loadID == adminLoadGeneration else { return }
+        await loadSafety(loadID: loadID)
+        guard loadID == adminLoadGeneration else { return }
         servicesReloadToken &+= 1
         if metricsDisplayMode == .list {
-            await reloadMetricsListEvents()
+            await reloadMetricsListEvents(loadID: loadID)
         }
     }
 
@@ -3577,10 +3557,11 @@ struct ProviderAdminDashboardView: View {
             platformFeePercent = saved
             platformFeeInput = Self.formatFeePercent(saved)
             isEditingPlatformFee = false
+            isPlatformFeeFieldFocused = false
         } catch let OnCutsHTTPError.httpStatus(code, msg) {
             errorText = msg ?? "Failed to save platform commission (\(code))."
         } catch {
-            errorText = error.localizedDescription
+            presentAdminLoadError(error)
         }
     }
 
@@ -3592,24 +3573,26 @@ struct ProviderAdminDashboardView: View {
         }
         isLoadingListWindowOptions = true
         defer { isLoadingListWindowOptions = false }
+        let parent = resolvedListParentWithin
         do {
             listWindowOptions = try await ProviderAdminService.metricsEventsOptions(
                 campusId: selectedCampusId,
                 granularity: granularity,
                 type: type,
-                withinStart: listParentWithin?.start,
-                withinEnd: listParentWithin?.end
+                withinStart: parent?.start,
+                withinEnd: parent?.end
             )
         } catch {
+            guard !providerAdminIsBenignRequestCancellation(error) else { return }
             listWindowOptions = []
         }
     }
 
-    private func reloadMetricsListEvents() async {
+    private func reloadMetricsListEvents(loadID: Int? = nil) async {
         isLoadingListEvents = true
         defer { isLoadingListEvents = false }
-        let start = listWindowCommitted?.start
-        let end = listWindowCommitted?.end
+        let start = listScope.committed?.start
+        let end = listScope.committed?.end
         do {
             async let bookings = ProviderAdminService.metricsBookingEvents(
                 campusId: selectedCampusId,
@@ -3622,9 +3605,12 @@ struct ProviderAdminDashboardView: View {
                 end: end
             )
             let (b, s) = try await (bookings, signups)
+            if let loadID, loadID != adminLoadGeneration { return }
             metricsListBookings = b
             metricsListSignups = s
         } catch {
+            guard !providerAdminIsBenignRequestCancellation(error) else { return }
+            if let loadID, loadID != adminLoadGeneration { return }
             metricsListBookings = []
             metricsListSignups = []
         }
@@ -3694,7 +3680,7 @@ struct ProviderAdminDashboardView: View {
         } catch let OnCutsHTTPError.httpStatus(code, msg) {
             errorText = msg ?? "Bulk update failed (\(code))."
         } catch {
-            errorText = error.localizedDescription
+            presentAdminLoadError(error)
         }
     }
 
@@ -3738,49 +3724,57 @@ struct ProviderAdminDashboardView: View {
             }
             NotificationCenter.default.post(name: .providerCommissionFreeQuotaChanged, object: nil)
         } catch {
-            errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            presentAdminLoadError(error)
         }
     }
 
     /// Fetch both Safety lists in parallel. Errors are scoped to each list so a partial outage
     /// (reports up, banned-users down) still surfaces the available data.
-    private func loadSafety() async {
-        async let reportsTask: () = loadModerationReports()
-        async let bannedTask: () = loadBannedUsers()
+    private func loadSafety(loadID: Int? = nil) async {
+        async let reportsTask: () = loadModerationReports(loadID: loadID)
+        async let bannedTask: () = loadBannedUsers(loadID: loadID)
         _ = await (reportsTask, bannedTask)
     }
 
-    private func loadModerationReports() async {
+    private func loadModerationReports(loadID: Int? = nil) async {
         reportsLoading = true
         defer { reportsLoading = false }
         reportsError = nil
         do {
-            moderationReports = try await ProviderAdminService.listModerationReports(
+            let list = try await ProviderAdminService.listModerationReports(
                 status: reportsStatusFilter.apiStatus
             )
+            if let loadID, loadID != adminLoadGeneration { return }
+            moderationReports = list
         } catch let OnCutsHTTPError.httpStatus(code, msg) {
+            if let loadID, loadID != adminLoadGeneration { return }
             moderationReports = []
             reportsError = msg ?? "Could not load reports (\(code))."
         } catch {
             guard !providerAdminIsBenignRequestCancellation(error) else { return }
+            if let loadID, loadID != adminLoadGeneration { return }
             moderationReports = []
             reportsError = error.localizedDescription
         }
     }
 
-    private func loadBannedUsers() async {
+    private func loadBannedUsers(loadID: Int? = nil) async {
         bannedLoading = true
         defer { bannedLoading = false }
         bannedError = nil
         do {
-            bannedUsers = try await ProviderAdminService.listBannedUsers(
+            let list = try await ProviderAdminService.listBannedUsers(
                 category: bannedCategoryFilter
             )
+            if let loadID, loadID != adminLoadGeneration { return }
+            bannedUsers = list
         } catch let OnCutsHTTPError.httpStatus(code, msg) {
+            if let loadID, loadID != adminLoadGeneration { return }
             bannedUsers = []
             bannedError = msg ?? "Could not load banned users (\(code))."
         } catch {
             guard !providerAdminIsBenignRequestCancellation(error) else { return }
+            if let loadID, loadID != adminLoadGeneration { return }
             bannedUsers = []
             bannedError = error.localizedDescription
         }
@@ -3823,7 +3817,14 @@ struct ProviderAdminDashboardView: View {
         await loadBannedUsers()
     }
 
-    private func loadScopedData() async {
+    private func loadScopedData(loadID: Int? = nil) async {
+        let scopedID: Int
+        if let loadID {
+            scopedID = loadID
+        } else {
+            adminLoadGeneration &+= 1
+            scopedID = adminLoadGeneration
+        }
         selectedBucketIndex = nil
         usersVisibleCount = 25
         selectedBarberApplication = nil
@@ -3835,25 +3836,29 @@ struct ProviderAdminDashboardView: View {
         async let metricsTask = fetchMetricsSeries(campusId: scope, period: metricsTimeline.apiPeriod)
         async let applicationsTask = fetchActionableBarberApplications(campusId: scope)
         let (p, bs, us, m, appsResult) = await (perfTask, barbersTask, usersTask, metricsTask, applicationsTask)
-        performance = p
+        guard scopedID == adminLoadGeneration else { return }
+        if let p { performance = p }
         barbers = bs
         users = us
-        metricsSnapshot = m
+        if let m { metricsSnapshot = m }
         switch appsResult {
         case .success(let apps):
             barberApplications = apps
             applicationsError = nil
+        case .cancelled:
+            break
         case .failure(let message):
             barberApplications = []
             applicationsError = message
         }
         if metricsDisplayMode == .list {
-            await reloadMetricsListEvents()
+            await reloadMetricsListEvents(loadID: scopedID)
         }
     }
 
     private enum ApplicationsLoadResult {
         case success([BarberApplicationListRowDTO])
+        case cancelled
         case failure(String)
     }
 
@@ -3869,25 +3874,30 @@ struct ProviderAdminDashboardView: View {
         } catch let OnCutsHTTPError.httpStatus(code, msg) {
             return .failure(msg ?? "Could not load applications (\(code)).")
         } catch {
+            if providerAdminIsBenignRequestCancellation(error) { return .cancelled }
             return .failure(error.localizedDescription)
         }
     }
 
-    private func applyBarberApplicationAction(_ pending: PendingBarberApplicationAction) async {
-        busyApplicationId = pending.application.id
+    private func applyBarberApplicationAction(
+        _ application: BarberApplicationListRowDTO,
+        kind: ProviderAdminBarberApplicationConfirmKind
+    ) async {
+        busyApplicationId = application.id
         defer { busyApplicationId = nil }
         applicationsError = nil
+        let status: BarberApplicationStatus = kind == .approve ? .approved : .rejected
         do {
             try await ProviderBarberApplicationService.updateApplicationStatus(
-                id: pending.application.id,
-                status: pending.status
+                id: application.id,
+                status: status
             )
-            barberApplications.removeAll { $0.id == pending.application.id }
-            if selectedBarberApplication?.id == pending.application.id {
+            barberApplications.removeAll { $0.id == application.id }
+            if selectedBarberApplication?.id == application.id {
                 selectedBarberApplication = nil
             }
             applicationInlineConfirmKind = nil
-            if pending.kind == .approve {
+            if kind == .approve {
                 // Don't replace the list with [] if the refresh fails (try? previously wiped Current).
                 do {
                     if let campusId = selectedCampusId {
@@ -3898,12 +3908,14 @@ struct ProviderAdminDashboardView: View {
                 } catch let OnCutsHTTPError.httpStatus(code, msg) {
                     applicationsError = msg ?? "Approved, but could not refresh operators (\(code))."
                 } catch {
+                    guard !providerAdminIsBenignRequestCancellation(error) else { return }
                     applicationsError = "Approved, but could not refresh operators: \(error.localizedDescription)"
                 }
             }
         } catch let OnCutsHTTPError.httpStatus(code, msg) {
             applicationsError = msg ?? "Could not update application (\(code))."
         } catch {
+            guard !providerAdminIsBenignRequestCancellation(error) else { return }
             applicationsError = error.localizedDescription
         }
     }
@@ -3912,7 +3924,9 @@ struct ProviderAdminDashboardView: View {
         isLoadingMetrics = true
         selectedBucketIndex = nil
         defer { isLoadingMetrics = false }
-        metricsSnapshot = await fetchMetricsSeries(campusId: selectedCampusId, period: metricsTimeline.apiPeriod)
+        if let snapshot = await fetchMetricsSeries(campusId: selectedCampusId, period: metricsTimeline.apiPeriod) {
+            metricsSnapshot = snapshot
+        }
     }
 
     private func fetchMetricsSeries(campusId: String?, period: String) async -> AdminMetricsSnapshotDTO? {
@@ -3922,6 +3936,8 @@ struct ProviderAdminDashboardView: View {
             }
             return try await ProviderAdminService.aggregateMetrics(period: period)
         } catch {
+            // Keep the chart that is already on screen for cancellations / transient failures.
+            if providerAdminIsBenignRequestCancellation(error) { return nil }
             return nil
         }
     }
@@ -4019,10 +4035,15 @@ struct ProviderAdminDashboardView: View {
     }
 
     private func fetchPerformance(campusId: String?) async -> AdminCampusPerformanceDTO? {
-        if let id = campusId {
-            return try? await ProviderAdminService.campusPerformance(campusId: id)
+        do {
+            if let id = campusId {
+                return try await ProviderAdminService.campusPerformance(campusId: id)
+            }
+            return try await ProviderAdminService.aggregatePerformance()
+        } catch {
+            // nil means "leave existing performance alone" in `loadScopedData`.
+            return nil
         }
-        return try? await ProviderAdminService.aggregatePerformance()
     }
 
     private func fetchBarbers(campusId: String?) async -> [AdminBarberDTO] {
@@ -4032,9 +4053,7 @@ struct ProviderAdminDashboardView: View {
             }
             return try await ProviderAdminService.allBarbers()
         } catch {
-            if errorText == nil {
-                errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            }
+            presentAdminLoadError(error)
             // Keep whatever is already on screen rather than blanking Current on a transient failure.
             return barbers
         }
@@ -4044,10 +4063,9 @@ struct ProviderAdminDashboardView: View {
         do {
             return try await ProviderAdminService.listUsers(campusId: campusId)
         } catch {
-            if errorText == nil {
-                errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            }
-            return []
+            presentAdminLoadError(error)
+            // Keep whatever is already on screen — cancelled reloads previously wiped Users to [].
+            return users
         }
     }
 
@@ -4057,17 +4075,30 @@ struct ProviderAdminDashboardView: View {
         [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
     }
 
-    @ViewBuilder
     private func sectionCard<Content: View>(
         title: String,
         subtitle: String?,
         @ViewBuilder content: () -> Content
     ) -> some View {
+        sectionCard(title: title, subtitle: subtitle, titleAccessory: { EmptyView() }, content: content)
+    }
+
+    @ViewBuilder
+    private func sectionCard<Content: View, Accessory: View>(
+        title: String,
+        subtitle: String?,
+        @ViewBuilder titleAccessory: () -> Accessory,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.provider(.title3, weight: .semibold))
-                    .foregroundStyle(ProviderAdminChrome.primaryText)
+                HStack(alignment: .center, spacing: 10) {
+                    Text(title)
+                        .font(.provider(.title3, weight: .semibold))
+                        .foregroundStyle(ProviderAdminChrome.primaryText)
+                    Spacer(minLength: 8)
+                    titleAccessory()
+                }
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.provider(.caption))
@@ -4127,3 +4158,4 @@ struct ProviderAdminDashboardView: View {
         return String(format: "%.2f", avg) + " (\(reviews ?? 0))"
     }
 }
+

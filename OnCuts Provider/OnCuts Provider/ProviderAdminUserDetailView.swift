@@ -102,7 +102,7 @@ struct ProviderAdminUserDetailView: View {
             }
             .font(.provider(.caption))
             .foregroundStyle(ProviderAdminChrome.secondaryText)
-            if let t = b.scheduledTime {
+            if let t = b.paidAt ?? b.scheduledTime {
                 Text(t, format: .dateTime.month().day().year().hour().minute())
                     .font(.provider(.caption2))
                     .foregroundStyle(ProviderAdminChrome.tertiaryText)

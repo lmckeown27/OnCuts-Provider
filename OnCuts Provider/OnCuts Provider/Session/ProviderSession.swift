@@ -11,7 +11,13 @@ final class ProviderSession {
     private(set) var authPresentationEpoch = 0
     private(set) var authUser: AuthMeUser?
     private(set) var barberProfile: BarberMeProfile?
+    /// Remaining commission-free card bookings for the signed-in operator (hub + booking badges).
+    private(set) var commissionFreeBookingsRemaining: Int = 0
     private(set) var lastError: String?
+
+    func setCommissionFreeBookingsRemaining(_ value: Int) {
+        commissionFreeBookingsRemaining = max(0, value)
+    }
 
     var displayName: String {
         if let b = barberProfile {
@@ -55,6 +61,7 @@ final class ProviderSession {
             signedIn = false
             authUser = nil
             barberProfile = nil
+            commissionFreeBookingsRemaining = 0
             pendingProviderEnrollment = false
         } else {
             do {
@@ -69,6 +76,7 @@ final class ProviderSession {
                 signedIn = false
                 authUser = nil
                 barberProfile = nil
+                commissionFreeBookingsRemaining = 0
                 pendingProviderEnrollment = false
             }
         }
@@ -162,6 +170,7 @@ final class ProviderSession {
             isSignedIn = false
             authUser = nil
             barberProfile = nil
+            commissionFreeBookingsRemaining = 0
             pendingProviderEnrollment = false
             authPresentationEpoch &+= 1
         }
@@ -185,6 +194,7 @@ final class ProviderSession {
             isSignedIn = false
             authUser = nil
             barberProfile = nil
+            commissionFreeBookingsRemaining = 0
             pendingProviderEnrollment = false
             authPresentationEpoch &+= 1
         }

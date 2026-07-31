@@ -928,12 +928,15 @@ struct ProviderScheduleDashboardView: View {
     // MARK: - Data loading
 
     private func reloadAll() async {
-        await loadBookings()
-        await loadWeeklySchedule()
-        await loadWeekTimeBlocks()
-        await loadGoogleCalendarStatusAndBusyTimes()
-        await loadDiscoveryLocationStatus(seedManualField: false)
-        await loadCommissionFreeRemaining()
+        // Kick commission-free off with the rest of the hub — sequential awaits left it
+        // painting a beat after schedule / discovery chrome.
+        async let commissionFree: () = loadCommissionFreeRemaining()
+        async let bookings: () = loadBookings()
+        async let schedule: () = loadWeeklySchedule()
+        async let blocks: () = loadWeekTimeBlocks()
+        async let google: () = loadGoogleCalendarStatusAndBusyTimes()
+        async let discovery: () = loadDiscoveryLocationStatus(seedManualField: false)
+        _ = await (commissionFree, bookings, schedule, blocks, google, discovery)
     }
 
     private func loadCommissionFreeRemaining() async {
@@ -941,6 +944,7 @@ struct ProviderScheduleDashboardView: View {
               let userId = session.authUser?.id.trimmingCharacters(in: .whitespacesAndNewlines),
               !userId.isEmpty else {
             commissionFreeBookingsRemaining = 0
+            session.setCommissionFreeBookingsRemaining(0)
             return
         }
         do {
@@ -949,6 +953,7 @@ struct ProviderScheduleDashboardView: View {
             )
             try Task.checkCancellation()
             commissionFreeBookingsRemaining = remaining
+            session.setCommissionFreeBookingsRemaining(remaining)
         } catch is CancellationError {
         } catch let error as URLError where error.code == .cancelled {
         } catch {

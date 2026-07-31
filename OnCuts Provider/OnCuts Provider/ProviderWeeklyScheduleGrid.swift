@@ -18,10 +18,23 @@ struct ProviderWeeklyScheduleGrid: View {
 
     @State private var didInitialScroll = false
     @State private var horizontalScrollOffset: CGFloat = 0
+    /// Week navigation + block reloads remount/reset the day scroller — restore focus until it sticks.
+    @State private var needsHorizontalFocusRestore = true
     @Environment(\.displayScale) private var displayScale
 
     private var positionedBookings: [ProviderWeeklyScheduleGridPositionedBooking] {
         ProviderWeeklyScheduleGridEngine.positionedBookings(in: model)
+    }
+
+    /// Earliest booking at/after now in this week (week-nav ticker weeks); drives day + time focus.
+    private var bookingScrollFocus: ProviderWeeklyScheduleGridBookingScrollFocus? {
+        ProviderWeeklyScheduleGridEngine.bookingScrollFocus(
+            model: model,
+            positionedBookings: positionedBookings,
+            weekOffset: weekOffset,
+            now: .now,
+            calendar: calendar
+        )
     }
 
     private func moveResolver(viewportWidth: CGFloat) -> ProviderWeeklyScheduleGridMoveResolver {
@@ -69,20 +82,6 @@ struct ProviderWeeklyScheduleGrid: View {
                 geometry.size.width - ProviderWeeklyScheduleGridMetrics.timeGutterWidth
             )
             gridScrollRegion(daysViewportWidth: daysViewportWidth)
-                .onAppear {
-                    horizontalScrollOffset = ProviderWeeklyScheduleGridEngine.initialHorizontalContentOffset(
-                        dayColumnWidth: dayColumnWidth(for: daysViewportWidth),
-                        daysContentWidth: daysContentWidth(for: daysViewportWidth),
-                        viewportWidth: daysViewportWidth
-                    )
-                }
-                .onChange(of: weekOffset) { _, _ in
-                    horizontalScrollOffset = ProviderWeeklyScheduleGridEngine.initialHorizontalContentOffset(
-                        dayColumnWidth: dayColumnWidth(for: daysViewportWidth),
-                        daysContentWidth: daysContentWidth(for: daysViewportWidth),
-                        viewportWidth: daysViewportWidth
-                    )
-                }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -185,6 +184,16 @@ struct ProviderWeeklyScheduleGrid: View {
                                     scrollToInitialPosition(proxy: verticalProxy)
                                 }
                             }
+                            .onChange(of: isLoading) { _, loading in
+                                // Bookings/blocks often land after the first vertical scroll pass.
+                                guard !loading else { return }
+                                didInitialScroll = false
+                                scrollToInitialPosition(proxy: verticalProxy)
+                            }
+                            .onChange(of: bookingScrollFocus?.dayID) { _, _ in
+                                guard !didInitialScroll || bookingScrollFocus != nil else { return }
+                                scrollToInitialPosition(proxy: verticalProxy)
+                            }
                     }
                 }
             }
@@ -257,6 +266,8 @@ struct ProviderWeeklyScheduleGrid: View {
                 }
                 .frame(width: contentWidth, alignment: .leading)
             }
+            // Remount when the week changes so day ids / contentOffset don't stick to the prior week.
+            .id(weekOffset)
             .providerScheduleGridScrollMarginsZero()
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
                 geometry.contentOffset.x + geometry.contentInsets.leading
@@ -264,17 +275,31 @@ struct ProviderWeeklyScheduleGrid: View {
                 horizontalScrollOffset = newOffset
             }
             .onAppear {
-                applyInitialHorizontalScroll(
+                restoreHorizontalFocusIfNeeded(
                     proxy: proxy,
-                    viewportWidth: daysViewportWidth,
-                    animated: false
+                    viewportWidth: daysViewportWidth
                 )
             }
             .onChange(of: weekOffset) { _, _ in
-                applyInitialHorizontalScroll(
+                needsHorizontalFocusRestore = true
+                restoreHorizontalFocusIfNeeded(
                     proxy: proxy,
-                    viewportWidth: daysViewportWidth,
-                    animated: true
+                    viewportWidth: daysViewportWidth
+                )
+            }
+            .onChange(of: isLoading) { _, loading in
+                // Week switches reload blocks/busy times and reset the scroller to Monday.
+                guard !loading else { return }
+                restoreHorizontalFocusIfNeeded(
+                    proxy: proxy,
+                    viewportWidth: daysViewportWidth
+                )
+            }
+            .onChange(of: bookingScrollFocus?.dayID) { _, _ in
+                needsHorizontalFocusRestore = true
+                restoreHorizontalFocusIfNeeded(
+                    proxy: proxy,
+                    viewportWidth: daysViewportWidth
                 )
             }
         }
@@ -392,49 +417,89 @@ struct ProviderWeeklyScheduleGrid: View {
 
     // MARK: - Interaction
 
+    private func restoreHorizontalFocusIfNeeded(
+        proxy: ScrollViewProxy,
+        viewportWidth: CGFloat
+    ) {
+        guard needsHorizontalFocusRestore else { return }
+        applyInitialHorizontalScroll(
+            proxy: proxy,
+            viewportWidth: viewportWidth
+        )
+    }
+
     private func applyInitialHorizontalScroll(
         proxy: ScrollViewProxy,
-        viewportWidth: CGFloat,
-        animated: Bool
+        viewportWidth: CGFloat
     ) {
-        guard viewportWidth > 0,
-              model.weekDays.indices.contains(ProviderWeeklyScheduleGridMetrics.fridayDayIndex) else { return }
+        guard viewportWidth > 0 else { return }
 
         let columnWidth = dayColumnWidth(for: viewportWidth)
         let contentWidth = daysContentWidth(for: viewportWidth)
-        let friday = model.weekDays[ProviderWeeklyScheduleGridMetrics.fridayDayIndex]
-        let peek = ProviderWeeklyScheduleGridEngine.fridayPeekVisibleWidth(dayColumnWidth: columnWidth)
-        let anchorX = max(0.5, min(0.995, (viewportWidth - peek) / viewportWidth))
-        horizontalScrollOffset = ProviderWeeklyScheduleGridEngine.fridayPeekContentOffset(
-            dayColumnWidth: columnWidth,
-            daysContentWidth: contentWidth,
-            viewportWidth: viewportWidth
-        )
-        let scroll = {
-            proxy.scrollTo(friday.id, anchor: UnitPoint(x: anchorX, y: 0))
+
+        let scrollDayID: String
+        let targetOffset: CGFloat
+        let anchorX: CGFloat
+
+        if let focus = bookingScrollFocus,
+           model.weekDays.indices.contains(focus.dayIndex) {
+            scrollDayID = focus.dayID
+            targetOffset = ProviderWeeklyScheduleGridEngine.dayLeadingContentOffset(
+                dayIndex: focus.dayIndex,
+                dayColumnWidth: columnWidth,
+                daysContentWidth: contentWidth,
+                viewportWidth: viewportWidth
+            )
+            // Keep the focused day near the leading edge of the visible strip.
+            anchorX = 0.08
+        } else {
+            guard model.weekDays.indices.contains(ProviderWeeklyScheduleGridMetrics.fridayDayIndex) else {
+                return
+            }
+            let friday = model.weekDays[ProviderWeeklyScheduleGridMetrics.fridayDayIndex]
+            scrollDayID = friday.id
+            let peek = ProviderWeeklyScheduleGridEngine.fridayPeekVisibleWidth(dayColumnWidth: columnWidth)
+            anchorX = max(0.5, min(0.995, (viewportWidth - peek) / viewportWidth))
+            targetOffset = ProviderWeeklyScheduleGridEngine.fridayPeekContentOffset(
+                dayColumnWidth: columnWidth,
+                daysContentWidth: contentWidth,
+                viewportWidth: viewportWidth
+            )
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            if animated {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    scroll()
-                }
-            } else {
-                scroll()
+        let scroll = {
+            proxy.scrollTo(scrollDayID, anchor: UnitPoint(x: anchorX, y: 0))
+        }
+
+        // Immediate + short retry: week changes replace day ids; the first scrollTo can no-op.
+        // Header offset follows only via `onScrollGeometryChange` so labels never drift from columns.
+        DispatchQueue.main.async(execute: scroll)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: scroll)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            scroll()
+            if targetOffset == 0 || abs(self.horizontalScrollOffset - targetOffset) < 8 {
+                self.needsHorizontalFocusRestore = false
             }
         }
     }
 
     private func scrollToInitialPosition(proxy: ScrollViewProxy) {
         guard !model.isEmptyAvailability else { return }
-        let targetMin = ProviderWeeklyScheduleGridEngine.autoScrollTargetMinute(
-            weekOffset: weekOffset,
-            gridStartMin: model.gridStartMin,
-            now: .now,
-            calendar: calendar
-        )
-        let rowIndex = max(0, (targetMin - model.gridStartMin) / ProviderWeeklyScheduleGridMetrics.slotMinutes)
-        let scrollRowMin = model.timeRows.indices.contains(rowIndex) ? model.timeRows[rowIndex] : model.gridStartMin
+
+        let scrollRowMin: Int
+        if let focus = bookingScrollFocus {
+            scrollRowMin = focus.scrollRowMinute
+        } else {
+            let targetMin = ProviderWeeklyScheduleGridEngine.autoScrollTargetMinute(
+                weekOffset: weekOffset,
+                gridStartMin: model.gridStartMin,
+                now: .now,
+                calendar: calendar
+            )
+            let rowIndex = max(0, (targetMin - model.gridStartMin) / ProviderWeeklyScheduleGridMetrics.slotMinutes)
+            scrollRowMin = model.timeRows.indices.contains(rowIndex) ? model.timeRows[rowIndex] : model.gridStartMin
+        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             withAnimation(.easeInOut(duration: 0.25)) {
                 proxy.scrollTo("row-\(scrollRowMin)", anchor: .top)

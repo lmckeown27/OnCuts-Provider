@@ -55,6 +55,7 @@ struct ProviderAdminBarberDetailView: View {
         .task { await loadBookings() }
         .providerPageNavigationTitle(barber.displayName)
         .background(ProviderAdminChrome.canvasBackground.ignoresSafeArea())
+        .providerAdminDismissesKeyboardOnOutsideTap()
         .onChange(of: barber.id) { _, _ in
             syncCommissionFormFromBarber()
         }
@@ -320,7 +321,7 @@ struct ProviderAdminBarberDetailView: View {
             }
             .font(.provider(.caption))
             .foregroundStyle(ProviderAdminChrome.secondaryText)
-            if let t = b.scheduledTime {
+            if let t = b.paidAt ?? b.scheduledTime {
                 Text(t, format: .dateTime.month().day().year().hour().minute())
                     .font(.provider(.caption2))
                     .foregroundStyle(ProviderAdminChrome.tertiaryText)

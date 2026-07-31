@@ -48,6 +48,7 @@ struct ProviderMessagesInboxUIKitHost: UIViewControllerRepresentable {
 struct ProviderChatDetailHost: UIViewControllerRepresentable {
     let conversation: ConversationRow
     var barberTableId: String?
+    var operatorUserId: String?
     var onNavigateBack: () -> Void
     var onBlocked: () -> Void
 
@@ -58,6 +59,7 @@ struct ProviderChatDetailHost: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> ProviderChatDetailViewController {
         let detail = ProviderChatDetailViewController(conversation: conversation)
         detail.barberTableId = barberTableId
+        detail.operatorUserId = operatorUserId
         detail.delegate = context.coordinator
         detail.onNavigateBack = onNavigateBack
         context.coordinator.detail = detail
@@ -66,6 +68,7 @@ struct ProviderChatDetailHost: UIViewControllerRepresentable {
 
     func updateUIViewController(_ detail: ProviderChatDetailViewController, context: Context) {
         detail.barberTableId = barberTableId
+        detail.operatorUserId = operatorUserId
         detail.onNavigateBack = onNavigateBack
         context.coordinator.detail = detail
     }
@@ -169,6 +172,7 @@ struct ProviderMessagesInboxView: View {
                     conversationId: conversationId,
                     knownConversation: conversation(for: conversationId),
                     barberTableId: session.barberProfile?.id,
+                    operatorUserId: session.authUser?.id,
                     onResolved: { row in
                         supplementalConversations[row.id] = row
                     },
@@ -225,6 +229,7 @@ private struct ProviderMessagingConversationDestination: View {
     let conversationId: Int
     let knownConversation: ConversationRow?
     let barberTableId: String?
+    let operatorUserId: String?
     let onResolved: (ConversationRow) -> Void
     let onNavigateBack: () -> Void
     let onBlocked: () -> Void
@@ -241,6 +246,7 @@ private struct ProviderMessagingConversationDestination: View {
                 ProviderChatDetailHost(
                     conversation: resolvedConversation,
                     barberTableId: barberTableId,
+                    operatorUserId: operatorUserId,
                     onNavigateBack: onNavigateBack,
                     onBlocked: onBlocked
                 )

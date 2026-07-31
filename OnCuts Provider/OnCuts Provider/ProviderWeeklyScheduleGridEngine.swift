@@ -129,6 +129,13 @@ struct ProviderWeeklyScheduleBusyInterval: Equatable {
     let end: Date
 }
 
+/// Target day column + time row when auto-focusing a week's earliest upcoming booking.
+struct ProviderWeeklyScheduleGridBookingScrollFocus: Equatable {
+    let dayID: String
+    let dayIndex: Int
+    let scrollRowMinute: Int
+}
+
 // MARK: - Engine
 
 enum ProviderWeeklyScheduleGridEngine {
@@ -357,6 +364,87 @@ enum ProviderWeeklyScheduleGridEngine {
         guard weekOffset == 0 else { return gridStartMin }
         let nowMin = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
         return max(gridStartMin, nowMin - 60)
+    }
+
+    /// Day + time focus when the viewed week has on-schedule bookings (week-nav ticker).
+    /// Prefers the earliest booking at/after `now`; for past weeks falls back to the week's earliest.
+    static func bookingScrollFocus(
+        model: ProviderWeeklyScheduleGridModel,
+        positionedBookings: [ProviderWeeklyScheduleGridPositionedBooking],
+        weekOffset: Int,
+        now: Date,
+        calendar: Calendar
+    ) -> ProviderWeeklyScheduleGridBookingScrollFocus? {
+        struct Candidate {
+            let dayIndex: Int
+            let startRowIndex: Int
+            let scheduled: Date
+        }
+
+        let candidates: [Candidate] = positionedBookings.compactMap { positioned in
+            guard ProviderBookingStatusDisplay.countsForWeekNavigationTicker(positioned.booking),
+                  let scheduled = positioned.booking.providerEffectiveScheduledTime
+            else { return nil }
+            return Candidate(
+                dayIndex: positioned.dayIndex,
+                startRowIndex: positioned.startRowIndex,
+                scheduled: scheduled
+            )
+        }
+        .sorted { $0.scheduled < $1.scheduled }
+
+        guard !candidates.isEmpty else { return nil }
+
+        let upcoming = candidates.filter { $0.scheduled >= now }
+        let chosen: Candidate
+        if let next = upcoming.first {
+            chosen = next
+        } else if weekOffset != 0 {
+            // Past week (or no remaining future slots): show the week's earliest booking.
+            chosen = candidates[0]
+        } else {
+            return nil
+        }
+
+        guard model.weekDays.indices.contains(chosen.dayIndex) else { return nil }
+        let day = model.weekDays[chosen.dayIndex]
+        let bookingStartMin: Int
+        if model.timeRows.indices.contains(chosen.startRowIndex) {
+            bookingStartMin = model.timeRows[chosen.startRowIndex]
+        } else {
+            bookingStartMin = calendar.component(.hour, from: chosen.scheduled) * 60
+                + calendar.component(.minute, from: chosen.scheduled)
+        }
+        let leadPad = 30
+        let targetMin = max(model.gridStartMin, bookingStartMin - leadPad)
+        let slot = ProviderWeeklyScheduleGridMetrics.slotMinutes
+        let alignedMin = model.gridStartMin
+            + ((targetMin - model.gridStartMin) / slot) * slot
+        let scrollRowMin = model.timeRows.contains(alignedMin) ? alignedMin : (
+            model.timeRows.last(where: { $0 <= alignedMin }) ?? model.gridStartMin
+        )
+
+        return ProviderWeeklyScheduleGridBookingScrollFocus(
+            dayID: day.id,
+            dayIndex: chosen.dayIndex,
+            scrollRowMinute: scrollRowMin
+        )
+    }
+
+    /// Horizontal content offset that brings `dayIndex` near the leading edge of the viewport.
+    static func dayLeadingContentOffset(
+        dayIndex: Int,
+        dayColumnWidth: CGFloat,
+        daysContentWidth: CGFloat,
+        viewportWidth: CGFloat
+    ) -> CGFloat {
+        guard dayColumnWidth > 0, viewportWidth > 0 else { return 0 }
+        let maxOffset = maxHorizontalScrollOffset(
+            daysContentWidth: daysContentWidth,
+            viewportWidth: viewportWidth
+        )
+        let leading = CGFloat(dayIndex) * dayColumnWidth
+        return min(max(0, leading), maxOffset)
     }
 
     // MARK: - Private

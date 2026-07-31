@@ -15,6 +15,8 @@ final class ProviderChatDetailViewController: UIViewController {
 
     private let conversation: ConversationRow
     var barberTableId: String?
+    /// Auth user id — used when opening booking detail for commissionless “if paid” state.
+    var operatorUserId: String?
     /// Pops the SwiftUI `messagesDetailPath` when hosted inside `NavigationStack`.
     var onNavigateBack: (() -> Void)?
 
@@ -671,6 +673,7 @@ final class ProviderChatDetailViewController: UIViewController {
         let detail = BookingDetailViewController(
             booking: booking,
             barberTableId: barberTableId,
+            operatorUserId: operatorUserId,
             showsOpenConversationButton: false,
             onChanged: {
             await MainActor.run {

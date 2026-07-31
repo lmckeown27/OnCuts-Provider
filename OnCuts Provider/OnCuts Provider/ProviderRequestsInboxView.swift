@@ -510,8 +510,29 @@ struct ProviderRequestsInboxContent: View {
         }
 
         async let bookings: Void = loadBookings(isUserPullToRefresh: isUserPullToRefresh)
-        _ = await bookings
+        async let freeSlots: Void = refreshCommissionFreeRemaining()
+        _ = await (bookings, freeSlots)
         await loadRequests(settlesPresentation: false)
+    }
+
+    private func refreshCommissionFreeRemaining() async {
+        guard session.hasProviderProfile,
+              let userId = session.authUser?.id.trimmingCharacters(in: .whitespacesAndNewlines),
+              !userId.isEmpty else {
+            session.setCommissionFreeBookingsRemaining(0)
+            return
+        }
+        do {
+            let remaining = try await ProviderBarberServicesService.fetchCommissionFreeBookingsRemaining(
+                userId: userId
+            )
+            try Task.checkCancellation()
+            session.setCommissionFreeBookingsRemaining(remaining)
+        } catch is CancellationError {
+        } catch let error as URLError where error.code == .cancelled {
+        } catch {
+            guard !providerAllBookingsIsBenignCancellation(error) else { return }
+        }
     }
 
     private func loadRequests(settlesPresentation: Bool) async {
@@ -651,7 +672,11 @@ private struct ProviderBookingDetailDestination: View {
     var body: some View {
         Group {
             if let resolvedBooking {
-                BookingDetailScreen(booking: resolvedBooking, onChanged: onChanged)
+                BookingDetailScreen(
+                    booking: resolvedBooking,
+                    showsStackBackButton: true,
+                    onChanged: onChanged
+                )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color(uiColor: ProviderAppearance.shellBase))
             } else if let errorText {

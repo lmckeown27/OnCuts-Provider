@@ -77,4 +77,25 @@ enum ProviderOliveChromeStyle {
             ? Color.lavaShellCream.opacity(0.72)
             : Color.lavaShellCreamSecondary
     }
+
+    // MARK: Admin accent pills (Add service, Unban, etc.)
+
+    /// Solid olive action fill that stays readable in light and dark appearance.
+    static func adminAccentPillFill(_ colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color.providerOlive.opacity(0.72)
+            : Color.providerOlive
+    }
+
+    /// Label on ``adminAccentPillFill`` — light in both appearances (never adaptive ink).
+    static func adminAccentPillForeground(_ colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color.lavaShellCream : Color.providerOnOliveFill
+    }
+
+    /// Softer olive fill for secondary commits (e.g. Save service).
+    static func adminAccentSoftFill(_ colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color.providerOlive.opacity(0.45)
+            : Color.providerOlive.opacity(0.88)
+    }
 }

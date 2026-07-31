@@ -631,6 +631,23 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
         case conversationId
     }
 
+    /// Confirmed: free slot already reserved at payment-intent time.
+    var isCommissionless: Bool { commissionFreeApplied == true }
+
+    /// Unpaid ACCEPTED / COMPLETED (awaiting pay) — still eligible for a free-slot reserve.
+    var isEligibleForPotentialCommissionless: Bool {
+        guard !isCommissionless, paidAt == nil else { return false }
+        switch statusUpper {
+        case "ACCEPTED", "COMPLETED": return true
+        default: return false
+        }
+    }
+
+    /// Operator still has free slots → next payment on this booking should be commissionless.
+    func showsPotentialCommissionless(remainingFreeSlots: Int) -> Bool {
+        isEligibleForPotentialCommissionless && remainingFreeSlots > 0
+    }
+
     var consumerDisplayName: String {
         if let flat = consumerName?.trimmingCharacters(in: .whitespacesAndNewlines), !flat.isEmpty {
             return flat
@@ -2303,6 +2320,9 @@ struct BarberApplicationListRowDTO: Decodable, Identifiable, Hashable {
     var origin: BarberApplicationOrigin { BarberApplicationOrigin(rawValue: applicationType ?? "regular") ?? .regular }
     var statusEnum: BarberApplicationStatus? { BarberApplicationStatus(rawValue: status) }
 
+    /// Stable ForEach identity across the regular + guest UNION (ids are only unique per table).
+    var adminQueueIdentity: String { "\(origin.rawValue):\(id)" }
+
     var displayName: String {
         let f = firstName ?? ""
         let l = lastName ?? ""
@@ -2366,34 +2386,52 @@ struct BarberApplicationListRowDTO: Decodable, Identifiable, Hashable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
-        userId = try c.decodeIfPresent(String.self, forKey: .userId)
+        if let stringId = try? c.decode(String.self, forKey: .id) {
+            id = stringId
+        } else if let uuid = try? c.decode(UUID.self, forKey: .id) {
+            id = uuid.uuidString
+        } else {
+            id = try c.decode(String.self, forKey: .id)
+        }
+        userId = ProviderAPIFlexibleDecoding.optionalString(from: c, forKey: .userId)
         status = (try? c.decode(String.self, forKey: .status)) ?? "pending"
-        if let text = try c.decodeIfPresent(String.self, forKey: .yearsExperience) {
+        if let text = try? c.decode(String.self, forKey: .yearsExperience) {
             yearsExperience = text
-        } else if let number = try c.decodeIfPresent(Int.self, forKey: .yearsExperience) {
+        } else if let number = try? c.decode(Int.self, forKey: .yearsExperience) {
             yearsExperience = String(number)
+        } else if let number = try? c.decode(Double.self, forKey: .yearsExperience) {
+            yearsExperience = String(Int(number))
         } else {
             yearsExperience = nil
         }
-        hasLicense = try c.decodeIfPresent(Bool.self, forKey: .hasLicense)
-        licenseNumber = try c.decodeIfPresent(String.self, forKey: .licenseNumber)
-        specialties = try c.decodeIfPresent([String].self, forKey: .specialties)
-        hasOwnTools = try c.decodeIfPresent(Bool.self, forKey: .hasOwnTools)
-        availableHours = try c.decodeIfPresent(String.self, forKey: .availableHours)
-        whyBeBarber = try c.decodeIfPresent(String.self, forKey: .whyBeBarber)
-        phoneNumber = try c.decodeIfPresent(String.self, forKey: .phoneNumber)
-        socialMedia = try c.decodeIfPresent(String.self, forKey: .socialMedia)
-        additionalNotes = try c.decodeIfPresent(String.self, forKey: .additionalNotes)
-        createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt)
-        reviewedAt = try c.decodeIfPresent(Date.self, forKey: .reviewedAt)
-        interviewScheduledAt = try c.decodeIfPresent(Date.self, forKey: .interviewScheduledAt)
-        email = try c.decodeIfPresent(String.self, forKey: .email)
-        firstName = try c.decodeIfPresent(String.self, forKey: .firstName)
-        lastName = try c.decodeIfPresent(String.self, forKey: .lastName)
-        campusName = try c.decodeIfPresent(String.self, forKey: .campusName)
-        campusId = try c.decodeIfPresent(String.self, forKey: .campusId)
-        applicationType = try c.decodeIfPresent(String.self, forKey: .applicationType)
+        hasLicense = try? c.decodeIfPresent(Bool.self, forKey: .hasLicense)
+        licenseNumber = try? c.decodeIfPresent(String.self, forKey: .licenseNumber)
+        if let list = try? c.decodeIfPresent([String].self, forKey: .specialties) {
+            specialties = list
+        } else if let joined = try? c.decodeIfPresent(String.self, forKey: .specialties) {
+            let parts = joined
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            specialties = parts.isEmpty ? nil : parts
+        } else {
+            specialties = nil
+        }
+        hasOwnTools = try? c.decodeIfPresent(Bool.self, forKey: .hasOwnTools)
+        availableHours = try? c.decodeIfPresent(String.self, forKey: .availableHours)
+        whyBeBarber = try? c.decodeIfPresent(String.self, forKey: .whyBeBarber)
+        phoneNumber = try? c.decodeIfPresent(String.self, forKey: .phoneNumber)
+        socialMedia = try? c.decodeIfPresent(String.self, forKey: .socialMedia)
+        additionalNotes = try? c.decodeIfPresent(String.self, forKey: .additionalNotes)
+        createdAt = try? c.decodeIfPresent(Date.self, forKey: .createdAt)
+        reviewedAt = try? c.decodeIfPresent(Date.self, forKey: .reviewedAt)
+        interviewScheduledAt = try? c.decodeIfPresent(Date.self, forKey: .interviewScheduledAt)
+        email = try? c.decodeIfPresent(String.self, forKey: .email)
+        firstName = try? c.decodeIfPresent(String.self, forKey: .firstName)
+        lastName = try? c.decodeIfPresent(String.self, forKey: .lastName)
+        campusName = try? c.decodeIfPresent(String.self, forKey: .campusName)
+        campusId = ProviderAPIFlexibleDecoding.optionalString(from: c, forKey: .campusId)
+        applicationType = try? c.decodeIfPresent(String.self, forKey: .applicationType)
     }
 }
 
