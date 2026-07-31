@@ -24,12 +24,30 @@ enum ProviderBarberServicesService {
     static func fetchBarberUserProfile(userId: String) async throws -> BarberUserProfileDTO {
         let enc = userId.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlPathAllowed) ?? userId
         let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "barbers/user/\(enc)")
-        let dec = OnCutsHTTPClient.jsonDecoderSnake()
-        let env = try dec.decode(BarberUserProfileEnvelope.self, from: data)
-        guard let profile = env.data else {
-            throw OnCutsHTTPError.decoding
+        // Prefer a plain decoder: this DTO reads camelCase + snake_case keys explicitly.
+        // `convertFromSnakeCase` can drop `commissionFreeBookingsRemaining` when the payload
+        // also includes `commission_free_bookings_remaining` (web /barbers/user response).
+        let dec = JSONDecoder()
+        if let env = try? dec.decode(BarberUserProfileEnvelope.self, from: data),
+           let profile = env.data {
+            return profile.withCommissionFreeFallback(from: data)
         }
-        return profile
+        if let profile = try? dec.decode(BarberUserProfileDTO.self, from: data) {
+            return profile.withCommissionFreeFallback(from: data)
+        }
+        // Last resort: snake decoder (older payloads) + JSON dig for the free-quota field.
+        let snake = OnCutsHTTPClient.jsonDecoderSnake()
+        if let env = try? snake.decode(BarberUserProfileEnvelope.self, from: data),
+           let profile = env.data {
+            return profile.withCommissionFreeFallback(from: data)
+        }
+        throw OnCutsHTTPError.decoding
+    }
+
+    /// Lightweight pull of remaining commission-free bookings for the operator hub indicator.
+    static func fetchCommissionFreeBookingsRemaining(userId: String) async throws -> Int {
+        let profile = try await fetchBarberUserProfile(userId: userId)
+        return profile.resolvedCommissionFreeBookingsRemaining
     }
 
     static func updateBarberServicesAndPricing(
@@ -53,6 +71,39 @@ enum ProviderBarberServicesService {
             path: "barbers/\(enc)",
             method: "PUT",
             jsonBody: body
+        )
+    }
+
+    fileprivate static func parseCommissionFreeBookingsRemaining(from data: Data) -> Int? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        let payload = (root["data"] as? [String: Any]) ?? root
+        let raw =
+            payload["commissionFreeBookingsRemaining"]
+            ?? payload["commission_free_bookings_remaining"]
+        if let n = raw as? Int { return max(0, n) }
+        if let n = raw as? Double { return max(0, Int(n)) }
+        if let s = raw as? String, let n = Int(s.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            return max(0, n)
+        }
+        if let n = raw as? NSNumber { return max(0, n.intValue) }
+        return nil
+    }
+}
+
+private extension BarberUserProfileDTO {
+    func withCommissionFreeFallback(from data: Data) -> BarberUserProfileDTO {
+        if commissionFreeBookingsRemaining != nil { return self }
+        guard let parsed = ProviderBarberServicesService.parseCommissionFreeBookingsRemaining(from: data) else {
+            return self
+        }
+        return BarberUserProfileDTO(
+            id: id,
+            specialties: specialties,
+            pricing: pricing,
+            providerType: providerType,
+            commissionFreeBookingsRemaining: parsed
         )
     }
 }

@@ -143,11 +143,57 @@ struct BarberUserProfileDTO: Decodable {
     let pricing: [BarberPricingEntryDTO]?
     /// Operator profession (`barber` / `beauty`) from `barbers.provider_type`.
     let providerType: String?
+    /// Remaining card bookings that take $0 platform fee (`GET /barbers/user/:userId`).
+    let commissionFreeBookingsRemaining: Int?
 
     /// Normalized profession key for catalog filtering; defaults to barber when unset.
     var resolvedProviderType: String {
         let trimmed = (providerType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return trimmed.isEmpty ? "barber" : trimmed
+    }
+
+    /// Non-negative remaining free slots; `0` when the API omits the field.
+    var resolvedCommissionFreeBookingsRemaining: Int {
+        max(0, commissionFreeBookingsRemaining ?? 0)
+    }
+
+    init(
+        id: String,
+        specialties: [String]?,
+        pricing: [BarberPricingEntryDTO]?,
+        providerType: String?,
+        commissionFreeBookingsRemaining: Int?
+    ) {
+        self.id = id
+        self.specialties = specialties
+        self.pricing = pricing
+        self.providerType = providerType
+        self.commissionFreeBookingsRemaining = commissionFreeBookingsRemaining
+    }
+
+    init(from decoder: Decoder) throws {
+        // Decode without relying on convertFromSnakeCase so camelCase + snake_case
+        // commission fields from `GET /barbers/user/:id` both resolve.
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try ProviderAPIFlexibleDecoding.requiredString(from: c, forKey: .id)
+        specialties = try c.decodeIfPresent([String].self, forKey: .specialties)
+        pricing = try c.decodeIfPresent([BarberPricingEntryDTO].self, forKey: .pricing)
+        providerType =
+            ProviderAPIFlexibleDecoding.optionalString(from: c, forKey: .providerType)
+            ?? ProviderAPIFlexibleDecoding.optionalString(from: c, forKey: .provider_type)
+        commissionFreeBookingsRemaining =
+            ProviderAPIFlexibleDecoding.optionalInt(from: c, forKey: .commissionFreeBookingsRemaining)
+            ?? ProviderAPIFlexibleDecoding.optionalInt(from: c, forKey: .commission_free_bookings_remaining)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case specialties
+        case pricing
+        case providerType
+        case provider_type
+        case commissionFreeBookingsRemaining
+        case commission_free_bookings_remaining
     }
 }
 
@@ -245,6 +291,7 @@ struct SimpleBookingDetailPayload: Decodable {
     let tipAmountCents: Int?
     let totalPaidCents: Int?
     let paymentMethod: String?
+    let commissionFreeApplied: Bool?
     let reviewRating: Double?
     let reviewComment: String?
     let reviewedAt: Date?
@@ -275,6 +322,7 @@ struct SimpleBookingDetailPayload: Decodable {
             tipAmountCents: tipAmountCents,
             totalPaidCents: totalPaidCents,
             paymentMethod: paymentMethod,
+            commissionFreeApplied: commissionFreeApplied,
             pendingRescheduleRequest: pendingRescheduleRequest,
             consumer: consumer,
             consumerName: nil,
@@ -462,6 +510,8 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
     let tipAmountCents: Int?
     let totalPaidCents: Int?
     let paymentMethod: String?
+    /// True when this card booking used a commission-free slot ($0 platform fee).
+    let commissionFreeApplied: Bool?
     let pendingRescheduleRequest: BookingPendingRescheduleRequestDTO?
     let consumer: SimpleBookingConsumer?
     /// `GET /bookings-simple/campus/:id` returns a single display string instead of `consumer`.
@@ -489,6 +539,7 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
         tipAmountCents: Int?,
         totalPaidCents: Int?,
         paymentMethod: String?,
+        commissionFreeApplied: Bool? = nil,
         pendingRescheduleRequest: BookingPendingRescheduleRequestDTO?,
         consumer: SimpleBookingConsumer?,
         consumerName: String?,
@@ -512,6 +563,7 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
         self.tipAmountCents = tipAmountCents
         self.totalPaidCents = totalPaidCents
         self.paymentMethod = paymentMethod
+        self.commissionFreeApplied = commissionFreeApplied
         self.pendingRescheduleRequest = pendingRescheduleRequest
         self.consumer = consumer
         self.consumerName = consumerName
@@ -538,6 +590,9 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
         tipAmountCents = ProviderAPIFlexibleDecoding.optionalInt(from: container, forKey: .tipAmountCents)
         totalPaidCents = ProviderAPIFlexibleDecoding.optionalInt(from: container, forKey: .totalPaidCents)
         paymentMethod = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .paymentMethod)
+        commissionFreeApplied =
+            (try? container.decodeIfPresent(Bool.self, forKey: .commissionFreeApplied))
+            ?? (try? container.decodeIfPresent(Bool.self, forKey: .commission_free_applied))
         pendingRescheduleRequest = try? container.decodeIfPresent(
             BookingPendingRescheduleRequestDTO.self,
             forKey: .pendingRescheduleRequest
@@ -566,6 +621,8 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
         case tipAmountCents
         case totalPaidCents
         case paymentMethod
+        case commissionFreeApplied
+        case commission_free_applied
         case pendingRescheduleRequest
         case consumer
         case consumerName
@@ -880,6 +937,172 @@ struct AdminPlatformStatsDTO: Decodable, Hashable {
     let totalCampuses: Int?
 }
 
+/// `GET/PUT /admin/platform-settings` — global commission percent.
+struct AdminPlatformSettingsDTO: Decodable, Hashable {
+    let platformFeePercent: Double?
+}
+
+struct AdminPlatformSettingsEnvelope: Decodable {
+    let success: Bool?
+    let data: AdminPlatformSettingsDTO?
+    let message: String?
+}
+
+/// Window chip from `GET …/metrics/events/options`.
+struct AdminMetricsListWindowDTO: Decodable, Hashable, Identifiable {
+    let id: String
+    let label: String?
+    let chipLabel: String?
+    let start: String?
+    let end: String?
+
+    var displayLabel: String {
+        let chip = chipLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !chip.isEmpty { return chip }
+        let full = label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return full.isEmpty ? id : full
+    }
+}
+
+struct AdminMetricsListWindowOptionDTO: Decodable, Hashable, Identifiable {
+    let id: String
+    let label: String?
+    let chipLabel: String?
+    let start: String?
+    let end: String?
+    let year: AdminMetricsListWindowDTO?
+    let month: AdminMetricsListWindowDTO?
+    let week: AdminMetricsListWindowDTO?
+
+    var asWindow: AdminMetricsListWindowDTO {
+        AdminMetricsListWindowDTO(id: id, label: label, chipLabel: chipLabel, start: start, end: end)
+    }
+
+    var displayLabel: String { asWindow.displayLabel }
+}
+
+struct AdminMetricsEventsOptionsEnvelope: Decodable {
+    let granularity: String?
+    let type: String?
+    let options: [AdminMetricsListWindowOptionDTO]?
+}
+
+/// Booking row from `GET …/metrics/events?type=bookings` (snake_case columns).
+struct AdminMetricsBookingEventDTO: Decodable, Hashable, Identifiable {
+    let id: String
+    let status: String?
+    let serviceType: String?
+    let totalPaidCents: Int?
+    let tipCents: Int?
+    let paidAt: Date?
+    let consumerFirstName: String?
+    let consumerLastName: String?
+    let barberFirstName: String?
+    let barberLastName: String?
+
+    var consumerDisplayName: String {
+        let joined = "\(consumerFirstName ?? "") \(consumerLastName ?? "")".trimmingCharacters(in: .whitespaces)
+        return joined.isEmpty ? "Customer" : joined
+    }
+
+    var barberDisplayName: String {
+        let joined = "\(barberFirstName ?? "") \(barberLastName ?? "")".trimmingCharacters(in: .whitespaces)
+        return joined.isEmpty ? "Operator" : joined
+    }
+
+    var serviceDisplayName: String {
+        ProviderServiceTypeDisplay.format(serviceType)
+    }
+}
+
+/// Signup row from `GET …/metrics/events?type=signups`.
+struct AdminMetricsSignupEventDTO: Decodable, Hashable, Identifiable {
+    let id: String
+    let firstName: String?
+    let lastName: String?
+    let email: String?
+    let role: String?
+    let createdAt: Date?
+    let campusName: String?
+
+    var displayName: String {
+        let joined = "\(firstName ?? "") \(lastName ?? "")".trimmingCharacters(in: .whitespaces)
+        if !joined.isEmpty { return joined }
+        return email ?? "User"
+    }
+}
+
+struct AdminMetricsEventsEnvelope: Decodable {
+    let period: String?
+    let type: String?
+    let start: String?
+    let end: String?
+    let events: [AdminMetricsEventRaw]?
+}
+
+/// Untyped event row — decoded into booking or signup DTOs by the service layer.
+struct AdminMetricsEventRaw: Decodable {
+    let id: String?
+    // Booking fields
+    let status: String?
+    let serviceType: String?
+    let totalPaidCents: Int?
+    let tipCents: Int?
+    let paidAt: Date?
+    let consumerFirstName: String?
+    let consumerLastName: String?
+    let barberFirstName: String?
+    let barberLastName: String?
+    // Signup fields
+    let firstName: String?
+    let lastName: String?
+    let email: String?
+    let role: String?
+    let createdAt: Date?
+    let campusName: String?
+
+    func asBookingEvent() -> AdminMetricsBookingEventDTO? {
+        guard let id else { return nil }
+        return AdminMetricsBookingEventDTO(
+            id: id,
+            status: status,
+            serviceType: serviceType,
+            totalPaidCents: totalPaidCents,
+            tipCents: tipCents,
+            paidAt: paidAt,
+            consumerFirstName: consumerFirstName,
+            consumerLastName: consumerLastName,
+            barberFirstName: barberFirstName,
+            barberLastName: barberLastName
+        )
+    }
+
+    func asSignupEvent() -> AdminMetricsSignupEventDTO? {
+        guard let id else { return nil }
+        return AdminMetricsSignupEventDTO(
+            id: id,
+            firstName: firstName,
+            lastName: lastName,
+            email: email,
+            role: role,
+            createdAt: createdAt,
+            campusName: campusName
+        )
+    }
+}
+
+struct AdminBulkCommissionResultDTO: Decodable, Hashable {
+    let updatedCount: Int?
+    let scope: String?
+}
+
+struct AdminBulkCommissionEnvelope: Decodable {
+    let success: Bool?
+    let data: AdminBulkCommissionResultDTO?
+    let message: String?
+    let updatedCount: Int?
+}
+
 /// `/admin/campuses` row. Same shape works for the Campus Manager's single-campus lookup, and
 /// for the public `GET /api/v1/campus` directory used by the provider enrollment flow.
 ///
@@ -1055,10 +1278,12 @@ struct AdminBarberDTO: Decodable, Hashable, Identifiable {
     let totalVolumeCents: Int?
     let serviceLocationLabel: String?
     let hasServiceLocation: Bool?
-    /// Custom platform fee percent (`null` / omitted = default 15%).
+    /// Legacy per-barber fee override (platform rate is now global via `/admin/platform-settings`).
     let platformFeePercent: Double?
     /// Remaining card bookings that take $0 platform fee before the rate applies.
     let commissionFreeBookingsRemaining: Int?
+    /// Platform → Connect kickback % of service (not tip), only on commissionless bookings.
+    let kickbackPercent: Double?
 
     var displayName: String {
         let f = firstName ?? ""
@@ -1113,6 +1338,7 @@ struct AdminBarberCommissionDTO: Decodable, Hashable {
     let barberRecordId: String?
     let platformFeePercent: Double?
     let commissionFreeBookingsRemaining: Int?
+    let kickbackPercent: Double?
     let defaultPlatformFeePercent: Double?
 }
 
@@ -2336,24 +2562,32 @@ struct AdminBannedUsersEnvelope: Decodable {
     let success: Bool?
     let data: AdminBannedUsersData?
     let bannedUsers: [AdminBannedUserDTO]?
+    let users: [AdminBannedUserDTO]?
 
     var resolved: [AdminBannedUserDTO] {
-        if let list = data?.bannedUsers { return list }
+        if let list = data?.resolved { return list }
+        if let list = users { return list }
         if let list = bannedUsers { return list }
         return []
     }
 }
 
 struct AdminBannedUsersData: Decodable {
+    /// Live API key from `GET /admin/moderation/banned-users` (`data.users`).
+    let users: [AdminBannedUserDTO]?
+    /// Alternate / legacy key kept for defensive decoding.
     let bannedUsers: [AdminBannedUserDTO]?
+
+    var resolved: [AdminBannedUserDTO]? {
+        users ?? bannedUsers
+    }
 }
 
 /// One row from `GET /admin/moderation/reports`.
 ///
-/// User identities can arrive either flattened (`reporter_user_id`, `reporter_first_name`, …)
-/// or nested under `reporter` / `reported_user` keyed objects, depending on the exact controller
-/// SELECT shape — we decode both defensively. Unknown fields are ignored. The action / notes
-/// for resolved or dismissed reports live in `resolution_action` / `resolution_notes`.
+/// Live admin SELECT flattens reporter/reported as `reporter_*` / `reported_*` (not
+/// `reported_user_*`), uses `detail` for free-text, and `message_preview` for chat content.
+/// Nested `reporter` / `reported_user` objects are still accepted defensively.
 struct AdminModerationReportDTO: Decodable, Identifiable, Hashable {
     let id: String
     let status: String
@@ -2401,8 +2635,11 @@ struct AdminModerationReportDTO: Decodable, Identifiable, Hashable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, status, reason, description, subjectType, subjectId, subjectContent
-        case reportedUser, reportedUserId, reportedUserFirstName, reportedUserLastName, reportedUserEmail
+        case id, status, reason, description, detail
+        case subjectType, subjectId, subjectContent, messagePreview
+        case reportedUser, reportedUserId
+        case reportedUserFirstName, reportedUserLastName, reportedUserEmail
+        case reportedFirstName, reportedLastName, reportedEmail
         case reporter, reporterUserId, reporterFirstName, reporterLastName, reporterEmail
         case createdAt, resolvedAt, resolutionAction, resolutionNotes
     }
@@ -2416,16 +2653,29 @@ struct AdminModerationReportDTO: Decodable, Identifiable, Hashable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
+        // Postgres UUID may arrive as a JSON string; tolerate numeric/other via String(describing:).
+        if let asString = try? c.decode(String.self, forKey: .id) {
+            id = asString
+        } else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .id,
+                in: c,
+                debugDescription: "Report id missing or not a string"
+            )
+        }
         status = (try? c.decode(String.self, forKey: .status)) ?? "open"
         reason = try? c.decodeIfPresent(String.self, forKey: .reason)
-        description = try? c.decodeIfPresent(String.self, forKey: .description)
+        // Live column is `detail`; older shapes may use `description`.
+        description =
+            (try? c.decodeIfPresent(String.self, forKey: .detail))
+            ?? (try? c.decodeIfPresent(String.self, forKey: .description))
         subjectType = try? c.decodeIfPresent(String.self, forKey: .subjectType)
         subjectId = try? c.decodeIfPresent(String.self, forKey: .subjectId)
-        subjectContent = try? c.decodeIfPresent(String.self, forKey: .subjectContent)
+        subjectContent =
+            (try? c.decodeIfPresent(String.self, forKey: .messagePreview))
+            ?? (try? c.decodeIfPresent(String.self, forKey: .subjectContent))
 
-        // Prefer nested objects when the API joins user rows under `reported_user` / `reporter`;
-        // fall back to flat columns (`reported_user_id`, …) for SELECTs that flatten.
+        // Prefer nested objects when present; else live flat `reported_*` / `reported_user_*`.
         if let nested = try? c.decodeIfPresent(NestedUserRef.self, forKey: .reportedUser) {
             reportedUserId = nested.id
             reportedUserFirstName = nested.firstName
@@ -2433,9 +2683,15 @@ struct AdminModerationReportDTO: Decodable, Identifiable, Hashable {
             reportedUserEmail = nested.email
         } else {
             reportedUserId = try? c.decodeIfPresent(String.self, forKey: .reportedUserId)
-            reportedUserFirstName = try? c.decodeIfPresent(String.self, forKey: .reportedUserFirstName)
-            reportedUserLastName = try? c.decodeIfPresent(String.self, forKey: .reportedUserLastName)
-            reportedUserEmail = try? c.decodeIfPresent(String.self, forKey: .reportedUserEmail)
+            reportedUserFirstName =
+                (try? c.decodeIfPresent(String.self, forKey: .reportedFirstName))
+                ?? (try? c.decodeIfPresent(String.self, forKey: .reportedUserFirstName))
+            reportedUserLastName =
+                (try? c.decodeIfPresent(String.self, forKey: .reportedLastName))
+                ?? (try? c.decodeIfPresent(String.self, forKey: .reportedUserLastName))
+            reportedUserEmail =
+                (try? c.decodeIfPresent(String.self, forKey: .reportedEmail))
+                ?? (try? c.decodeIfPresent(String.self, forKey: .reportedUserEmail))
         }
 
         if let nested = try? c.decodeIfPresent(NestedUserRef.self, forKey: .reporter) {

@@ -566,10 +566,58 @@ final class BookingDetailViewController: UIViewController {
         grid.distribution = .fillEqually
         grid.spacing = 12
 
-        let wrap = UIStackView(arrangedSubviews: [header, grid])
+        var rows: [UIView] = [header, grid]
+        if current.commissionFreeApplied == true {
+            rows.append(makeCommissionlessIndicatorRow())
+        }
+
+        let wrap = UIStackView(arrangedSubviews: rows)
         wrap.axis = .vertical
         wrap.spacing = 8
         return wrap
+    }
+
+    private func makeCommissionlessIndicatorRow() -> UIView {
+        let title = UILabel()
+        title.text = "Commission"
+        title.font = .provider(size: 14, weight: .medium)
+        title.textColor = Token.secondaryText
+        title.translatesAutoresizingMaskIntoConstraints = false
+
+        let badge = UILabel()
+        badge.text = "Commissionless"
+        badge.font = .provider(size: 12, weight: .semibold)
+        badge.textColor = Token.statusGreen
+        badge.textAlignment = .center
+        badge.translatesAutoresizingMaskIntoConstraints = false
+        badge.setContentHuggingPriority(.required, for: .horizontal)
+
+        let badgeWrap = UIView()
+        badgeWrap.translatesAutoresizingMaskIntoConstraints = false
+        badgeWrap.backgroundColor = Token.statusGreen.withAlphaComponent(0.16)
+        badgeWrap.layer.cornerRadius = 10
+        badgeWrap.layer.cornerCurve = .continuous
+        badgeWrap.addSubview(badge)
+
+        let row = UIView()
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(title)
+        row.addSubview(badgeWrap)
+
+        NSLayoutConstraint.activate([
+            badge.topAnchor.constraint(equalTo: badgeWrap.topAnchor, constant: 4),
+            badge.bottomAnchor.constraint(equalTo: badgeWrap.bottomAnchor, constant: -4),
+            badge.leadingAnchor.constraint(equalTo: badgeWrap.leadingAnchor, constant: 10),
+            badge.trailingAnchor.constraint(equalTo: badgeWrap.trailingAnchor, constant: -10),
+
+            title.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 4),
+            title.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            badgeWrap.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -4),
+            badgeWrap.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            badgeWrap.leadingAnchor.constraint(greaterThanOrEqualTo: title.trailingAnchor, constant: 12),
+            row.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
+        ])
+        return row
     }
 
     // MARK: - Sections — When grid
@@ -1390,6 +1438,7 @@ final class BookingDetailViewController: UIViewController {
             tipAmountCents: current.tipAmountCents,
             totalPaidCents: current.totalPaidCents,
             paymentMethod: current.paymentMethod,
+            commissionFreeApplied: current.commissionFreeApplied,
             pendingRescheduleRequest: clearsPendingReschedule ? nil : current.pendingRescheduleRequest,
             consumer: current.consumer,
             consumerName: current.consumerName,

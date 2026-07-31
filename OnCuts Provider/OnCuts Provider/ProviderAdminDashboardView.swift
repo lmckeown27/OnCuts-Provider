@@ -1,5 +1,16 @@
 import Charts
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
+
+/// `NSURLErrorCancelled` (-999) when a prior `URLSession` task is cancelled—**not** a user-visible failure.
+private func providerAdminIsBenignRequestCancellation(_ error: Error) -> Bool {
+    if error is CancellationError { return true }
+    if let url = error as? URLError, url.code == .cancelled { return true }
+    let ns = error as NSError
+    return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
+}
 
 /// Native iOS Admin dashboard.
 ///
@@ -18,6 +29,8 @@ struct ProviderAdminDashboardView: View {
         case user(AdminPlatformUserDTO)
     }
 
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var adminDetailPath = NavigationPath()
 
     enum Tab: String, CaseIterable, Identifiable {
@@ -50,7 +63,14 @@ struct ProviderAdminDashboardView: View {
         }
     }
 
-    /// Sub-selectors inside the Operators tab (Current roster vs Applications).
+    /// Outer hub inside Operators: roster tools vs onboarding bulk tools.
+    enum OperatorsHubTab: String, CaseIterable, Identifiable {
+        case operators = "Operators"
+        case onboarding = "Onboarding"
+        var id: String { rawValue }
+    }
+
+    /// Sub-selectors inside the Operators hub (Current roster vs Applications).
     enum BarbersSubTab: String, CaseIterable, Identifiable {
         case current = "Current"
         case applications = "Applications"
@@ -128,11 +148,13 @@ struct ProviderAdminDashboardView: View {
     }
 
     @State private var tab: Tab = .performance
+    @State private var operatorsHubTab: OperatorsHubTab = .operators
     @State private var barbersSubTab: BarbersSubTab = .current
     @State private var barberVisibilityFilter: BarberVisibilityFilter = .visible
     @State private var barberStripeFilter: BarberStripeFilter = .all
     @State private var barberLocationFilter: BarberLocationFilter = .all
     @State private var showingOperatorsFilters = false
+    @State private var operatorSearch = ""
     @State private var campuses: [AdminCampusDTO] = []
     @State private var selectedCampusId: String? = nil
     @State private var stats: AdminPlatformStatsDTO?
@@ -148,6 +170,8 @@ struct ProviderAdminDashboardView: View {
     @State private var users: [AdminPlatformUserDTO] = []
     @State private var userSearch: String = ""
     @State private var usersVisibleCount = 25
+    @State private var userRoleFilter: UserRoleFilter = .all
+    @State private var showingUsersFilters = false
 
     @State private var isLoading = true
     @State private var errorText: String?
@@ -155,9 +179,44 @@ struct ProviderAdminDashboardView: View {
     @State private var metricsSnapshot: AdminMetricsSnapshotDTO?
     @State private var metricsTimeline: MetricsTimeline = .daily
     @State private var metricsChartSeries: MetricsChartSeries = .revenue
+    @State private var metricsDisplayMode: MetricsDisplayMode = .list
+    @State private var metricsListSeries: MetricsListSeries = .bookings
+    @State private var metricsListPeriod: MetricsListPeriod = .all
+    @State private var listWindowOptions: [AdminMetricsListWindowOptionDTO] = []
+    @State private var listWindowCommitted: AdminMetricsListWindowDTO?
+    @State private var listParentWithin: AdminMetricsListWindowDTO?
+    @State private var isLoadingListWindowOptions = false
+    @State private var metricsListBookings: [AdminMetricsBookingEventDTO] = []
+    @State private var metricsListSignups: [AdminMetricsSignupEventDTO] = []
+    @State private var isLoadingListEvents = false
+    @State private var listEventsSortNewestFirst = true
     @State private var isLoadingMetrics = false
     @State private var selectedBucketIndex: Int?
     @State private var isChartScrubbing = false
+
+    @State private var platformFeePercent: Double = 15
+    @State private var platformFeeInput = "15"
+    @State private var isEditingPlatformFee = false
+    @State private var isLoadingPlatformFee = false
+    @State private var isSavingPlatformFee = false
+
+    // Onboarding hub
+    @State private var onboardingScope: OnboardingScope = .all
+    @State private var onboardingSelectedIds: Set<String> = []
+    @State private var onboardingFreeInput = "5"
+    @State private var onboardingKickbackInput = "10"
+    @State private var onboardingSearch = ""
+    @State private var showingOnboardingFilters = false
+    @State private var onboardingStripeFilter: BarberStripeFilter = .all
+    @State private var onboardingLocationFilter: BarberLocationFilter = .all
+    @State private var onboardingFreeFilter: OnboardingFreeFilter = .all
+    @State private var onboardingKickbackFilter: OnboardingKickbackFilter = .all
+    @State private var isSavingOnboardingBulk = false
+    @State private var pendingOnboardingBulk: PendingOnboardingBulk?
+    @State private var onboardingSaveMessage: String?
+    /// Bumped by Admin pull-to-refresh so the nested Services tab reloads instead of only
+    /// having its in-flight `.task` cancelled.
+    @State private var servicesReloadToken = 0
 
     // MARK: Safety tab state
     //
@@ -203,111 +262,230 @@ struct ProviderAdminDashboardView: View {
     }
 
     var body: some View {
+        adminBodyWithDialogs
+    }
+
+    private var adminNavigationRoot: some View {
         NavigationStack(path: $adminDetailPath) {
-            adminDashboardRoot
+            adminDashboardChrome
                 .navigationDestination(for: AdminDashboardDestination.self) { destination in
-                    switch destination {
-                    case .barber(let barber):
-                        ProviderAdminBarberDetailView(barber: barber)
-                            .providerShellHostDestinationRegistration()
-                    case .user(let user):
-                        ProviderAdminUserDetailView(user: user)
-                            .providerShellHostDestinationRegistration()
-                    }
+                    adminDestination(destination)
                 }
         }
     }
 
-    private var adminDashboardRoot: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                campusPickerCard
-                if let errorText {
-                    Text(errorText)
-                        .font(.provider(.footnote))
-                        .foregroundStyle(.red)
-                        .padding(.horizontal, 12)
+    private var adminBodyWithOnChanges: some View {
+        adminNavigationRoot
+            .onChange(of: userSearch) { _, _ in usersVisibleCount = 25 }
+            .onChange(of: userRoleFilter) { _, _ in usersVisibleCount = 25 }
+            .onChange(of: metricsTimeline) { _, _ in
+                selectedBucketIndex = nil
+                Task { await reloadMetricsTimeline() }
+            }
+            .onChange(of: metricsChartSeries) { _, _ in selectedBucketIndex = nil }
+            .onChange(of: metricsDisplayMode) { _, mode in
+                if mode == .list {
+                    Task { await reloadMetricsListEvents() }
+                } else {
+                    Task { await reloadMetricsTimeline() }
                 }
-                tabPicker
-                switch tab {
-                case .performance: performanceTab
-                case .barbers: barbersTab
-                case .users: usersTab
-                case .services: ProviderAdminServicesView()
-                case .safety: safetyTab
+            }
+            .onChange(of: metricsListSeries) { _, series in
+                if series == .profit {
+                    listWindowCommitted = nil
+                    metricsListPeriod = .all
+                } else {
+                    Task { await reloadMetricsListEvents() }
+                }
+            }
+            .onChange(of: metricsListPeriod) { _, period in
+                if period == .all {
+                    listWindowCommitted = nil
+                    listParentWithin = nil
+                    listWindowOptions = []
+                    Task { await reloadMetricsListEvents() }
+                } else {
+                    Task { await reloadListWindowOptions() }
+                }
+            }
+            .onChange(of: reportsStatusFilter) { _, _ in
+                Task { await loadModerationReports() }
+            }
+            .onChange(of: bannedCategoryFilter) { _, _ in
+                Task { await loadBannedUsers() }
+            }
+    }
+
+    private var adminBodyWithDialogs: some View {
+        adminBodyWithOnChanges
+            .confirmationDialog(
+                pendingReportResolutionTitle,
+                isPresented: Binding(
+                    get: { pendingReportResolution != nil },
+                    set: { if !$0 { pendingReportResolution = nil } }
+                ),
+                titleVisibility: .visible,
+                actions: { reportResolutionDialogActions },
+                message: { reportResolutionDialogMessage }
+            )
+            .confirmationDialog(
+                pendingUnbanTitle,
+                isPresented: Binding(
+                    get: { pendingUnban != nil },
+                    set: { if !$0 { pendingUnban = nil } }
+                ),
+                titleVisibility: .visible,
+                actions: { unbanDialogActions },
+                message: { unbanDialogMessage }
+            )
+            .confirmationDialog(
+                pendingOnboardingBulkTitle,
+                isPresented: Binding(
+                    get: { pendingOnboardingBulk != nil },
+                    set: { if !$0 { pendingOnboardingBulk = nil } }
+                ),
+                titleVisibility: .visible,
+                actions: { onboardingBulkDialogActions },
+                message: { onboardingBulkDialogMessage }
+            )
+    }
+
+    @ViewBuilder private var reportResolutionDialogActions: some View {
+        if let pending = pendingReportResolution {
+            Button(pending.action.displayLabel, role: pending.action.bansUser ? .destructive : nil) {
+                let captured = pending
+                pendingReportResolution = nil
+                Task { await applyReportResolution(captured) }
+            }
+            Button("Cancel", role: .cancel) { pendingReportResolution = nil }
+        }
+    }
+
+    @ViewBuilder private var reportResolutionDialogMessage: some View {
+        if let pending = pendingReportResolution {
+            Text(pendingReportResolutionMessage(for: pending))
+        }
+    }
+
+    @ViewBuilder private var unbanDialogActions: some View {
+        if let target = pendingUnban {
+            Button("Unban") {
+                let captured = target
+                pendingUnban = nil
+                Task { await applyUnban(captured) }
+            }
+            Button("Cancel", role: .cancel) { pendingUnban = nil }
+        }
+    }
+
+    @ViewBuilder private var unbanDialogMessage: some View {
+        if let target = pendingUnban {
+            Text("\(target.displayName) will be able to sign in, get discovered, and make bookings again. You can re-ban them later if needed.")
+        }
+    }
+
+    @ViewBuilder private var onboardingBulkDialogActions: some View {
+        if let pending = pendingOnboardingBulk {
+            Button("Apply", role: .destructive) {
+                let captured = pending
+                pendingOnboardingBulk = nil
+                Task { await applyOnboardingBulk(captured) }
+            }
+            Button("Cancel", role: .cancel) { pendingOnboardingBulk = nil }
+        }
+    }
+
+    @ViewBuilder private var onboardingBulkDialogMessage: some View {
+        if let pending = pendingOnboardingBulk {
+            Text(pendingOnboardingBulkMessage(for: pending))
+        }
+    }
+
+    @ViewBuilder
+    private func adminDestination(_ destination: AdminDashboardDestination) -> some View {
+        switch destination {
+        case .barber(let barber):
+            ProviderAdminBarberDetailView(
+                barber: barber,
+                platformFeePercent: platformFeePercent
+            )
+        case .user(let user):
+            ProviderAdminUserDetailView(user: user)
+        }
+    }
+
+    private var adminDashboardChrome: some View {
+        VStack(spacing: 0) {
+            adminSheetHeader
+            tabPicker
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
+                .background(ProviderAdminChrome.stoneBackground)
+
+            ScrollView {
+                adminScrollBody
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: ProviderAdminChrome.panelMaxWidth)
+                    .frame(maxWidth: .infinity)
+            }
+            .scrollContentBackground(.hidden)
+            .refreshable { await loadAll() }
+        }
+        .background(ProviderAdminChrome.stoneBackground.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .task { await loadAll() }
+    }
+
+    @ViewBuilder
+    private var adminScrollBody: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let errorText {
+                Text(errorText)
+                    .font(.provider(.footnote))
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 4)
+            }
+            switch tab {
+            case .performance: performanceTab
+            case .barbers: barbersTab
+            case .users: usersTab
+            case .services: ProviderAdminServicesView(reloadToken: servicesReloadToken)
+            case .safety: safetyTab
+            }
+        }
+    }
+
+    private var adminSheetHeader: some View {
+        VStack(spacing: 8) {
+            Capsule()
+                .fill(ProviderAdminChrome.stoneBorder)
+                .frame(width: 36, height: 5)
+                .padding(.top, 8)
+
+            ZStack {
+                Text("Admin")
+                    .font(.provider(.headline, weight: .semibold))
+                    .foregroundStyle(ProviderAdminChrome.primaryText)
+                HStack {
+                    Spacer()
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.provider(.body, weight: .semibold))
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
+                            .frame(width: 32, height: 32)
+                            .background(ProviderAdminChrome.stoneMutedFill, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close Admin")
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.bottom, 4)
         }
-        .scrollContentBackground(.hidden)
-        .providerNavigationStackDestinationBackdrop()
-        .refreshable { await loadAll() }
-        .task { await loadAll() }
-        .providerPageNavigationTitle("Admin")
-        .providerLavaScreenChrome()
-        .onChange(of: userSearch) { _, _ in
-            usersVisibleCount = 25
-        }
-        .onChange(of: metricsTimeline) { _, _ in
-            selectedBucketIndex = nil
-            Task { await reloadMetricsTimeline() }
-        }
-        .onChange(of: metricsChartSeries) { _, _ in
-            selectedBucketIndex = nil
-        }
-        .onChange(of: reportsStatusFilter) { _, _ in
-            Task { await loadModerationReports() }
-        }
-        .onChange(of: bannedCategoryFilter) { _, _ in
-            Task { await loadBannedUsers() }
-        }
-        .confirmationDialog(
-            pendingReportResolutionTitle,
-            isPresented: Binding(
-                get: { pendingReportResolution != nil },
-                set: { if !$0 { pendingReportResolution = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            if let pending = pendingReportResolution {
-                Button(pending.action.displayLabel, role: pending.action.bansUser ? .destructive : nil) {
-                    let captured = pending
-                    pendingReportResolution = nil
-                    Task { await applyReportResolution(captured) }
-                }
-                Button("Cancel", role: .cancel) {
-                    pendingReportResolution = nil
-                }
-            }
-        } message: {
-            if let pending = pendingReportResolution {
-                Text(pendingReportResolutionMessage(for: pending))
-            }
-        }
-        .confirmationDialog(
-            pendingUnbanTitle,
-            isPresented: Binding(
-                get: { pendingUnban != nil },
-                set: { if !$0 { pendingUnban = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            if let target = pendingUnban {
-                Button("Unban") {
-                    let captured = target
-                    pendingUnban = nil
-                    Task { await applyUnban(captured) }
-                }
-                Button("Cancel", role: .cancel) {
-                    pendingUnban = nil
-                }
-            }
-        } message: {
-            if let target = pendingUnban {
-                Text("\(target.displayName) will be able to sign in, get discovered, and make bookings again. You can re-ban them later if needed.")
-            }
-        }
+        .background(ProviderAdminChrome.stoneBackground)
     }
 
     // MARK: - Metrics timeline (chart — parity with former Campus Manager overview)
@@ -365,6 +543,114 @@ struct ProviderAdminDashboardView: View {
             case .signups: return "Sign-ups"
             }
         }
+    }
+
+    private enum MetricsDisplayMode: String, CaseIterable, Identifiable {
+        case list, graph
+        var id: String { rawValue }
+        var segmentTitle: String {
+            switch self {
+            case .list: return "List"
+            case .graph: return "Graph"
+            }
+        }
+    }
+
+    private enum MetricsListSeries: String, CaseIterable, Identifiable {
+        case bookings, signups, profit
+        var id: String { rawValue }
+        var segmentTitle: String {
+            switch self {
+            case .bookings: return "Bookings"
+            case .signups: return "Sign-ups"
+            case .profit: return "Profit/Loss"
+            }
+        }
+
+        var eventsType: String? {
+            switch self {
+            case .bookings: return "bookings"
+            case .signups: return "signups"
+            case .profit: return nil
+            }
+        }
+    }
+
+    private enum MetricsListPeriod: String, CaseIterable, Identifiable {
+        case all, year, month, week, day
+        var id: String { rawValue }
+        var chipLabel: String {
+            switch self {
+            case .all: return "All time"
+            case .year: return "Year"
+            case .month: return "Month"
+            case .week: return "Week"
+            case .day: return "Day"
+            }
+        }
+
+        var apiGranularity: String? {
+            switch self {
+            case .all: return nil
+            case .year: return "year"
+            case .month: return "month"
+            case .week: return "week"
+            case .day: return "day"
+            }
+        }
+    }
+
+    private enum UserRoleFilter: String, CaseIterable, Identifiable {
+        case all, consumer, admin
+        var id: String { rawValue }
+        var chipLabel: String {
+            switch self {
+            case .all: return "All"
+            case .consumer: return "Consumer"
+            case .admin: return "Admin"
+            }
+        }
+    }
+
+    private enum OnboardingScope: String, CaseIterable, Identifiable {
+        case all, selected
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .all: return "All Operators"
+            case .selected: return "Select Operators"
+            }
+        }
+    }
+
+    private enum OnboardingFreeFilter: String, CaseIterable, Identifiable {
+        case all, withFree, none
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .all: return "All"
+            case .withFree: return "Has free slots"
+            case .none: return "No free slots"
+            }
+        }
+    }
+
+    private enum OnboardingKickbackFilter: String, CaseIterable, Identifiable {
+        case all, withKickback, none
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .all: return "All"
+            case .withKickback: return "Has kickback"
+            case .none: return "No kickback"
+            }
+        }
+    }
+
+    private struct PendingOnboardingBulk: Identifiable, Equatable {
+        enum Field: String, Equatable { case free, kickback }
+        let id = UUID()
+        let field: Field
     }
 
     private struct MetricPlotPoint: Identifiable {
@@ -477,7 +763,7 @@ struct ProviderAdminDashboardView: View {
         } label: {
             Text(campusScopeLabel)
                 .font(.provider(.title3, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream)
+                .foregroundStyle(ProviderAdminChrome.primaryText)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity)
@@ -485,16 +771,16 @@ struct ProviderAdminDashboardView: View {
                 .padding(.horizontal, 36)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.providerScheduleTrackFill)
+                        .fill(ProviderAdminChrome.stoneMutedFill)
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(Color.providerScheduleTrackStroke, lineWidth: 0.6)
+                                .strokeBorder(ProviderAdminChrome.stoneBorder, lineWidth: 0.6)
                         )
                 )
                 .overlay(alignment: .trailing) {
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .foregroundStyle(ProviderAdminChrome.tertiaryText)
                         .padding(.trailing, 14)
                 }
         }
@@ -511,10 +797,10 @@ struct ProviderAdminDashboardView: View {
         .padding(4)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(ProviderOliveChromeStyle.adminTabTrackFill(colorScheme))
+                .fill(ProviderAdminChrome.stoneMutedFill)
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(ProviderOliveChromeStyle.adminTabTrackStroke(colorScheme), lineWidth: 0.6)
+                        .strokeBorder(ProviderAdminChrome.stoneBorder, lineWidth: 0.6)
                 )
         )
         .accessibilityElement(children: .contain)
@@ -539,15 +825,16 @@ struct ProviderAdminDashboardView: View {
             }
             .foregroundStyle(
                 isSelected
-                    ? ProviderOliveChromeStyle.adminTabActiveForeground(colorScheme)
-                    : ProviderOliveChromeStyle.adminTabInactiveForeground(colorScheme)
+                    ? ProviderAdminChrome.primaryText
+                    : ProviderAdminChrome.secondaryText
             )
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
             .background {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(ProviderOliveChromeStyle.adminTabActiveFill(colorScheme))
+                        .fill(ProviderAdminChrome.cardBackground)
+                        .shadow(color: Color.primary.opacity(0.06), radius: 2, y: 1)
                 }
             }
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -561,10 +848,292 @@ struct ProviderAdminDashboardView: View {
 
     private var performanceTab: some View {
         VStack(alignment: .leading, spacing: 16) {
-            platformStatsCard
-            performanceTimelineCard
-            performanceCard
+            platformCommissionAndKPIsCard
+            metricsModeRow
+            switch metricsDisplayMode {
+            case .graph:
+                performanceTimelineCard
+            case .list:
+                metricsListSeriesPicker
+                switch metricsListSeries {
+                case .bookings:
+                    metricsBookingsListCard
+                case .signups:
+                    metricsSignupsListCard
+                case .profit:
+                    performanceCard
+                }
+            }
         }
+    }
+
+    private var platformCommissionAndKPIsCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Platform commission")
+                    .font(.provider(.subheadline, weight: .bold))
+                    .foregroundStyle(ProviderAdminChrome.primaryText)
+
+                HStack(spacing: 10) {
+                    Text("Commission %")
+                        .font(.provider(.subheadline))
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
+                    Spacer(minLength: 8)
+                    HStack(spacing: 4) {
+                        TextField("15", text: $platformFeeInput)
+                            .font(.provider(.body, weight: .semibold))
+                            .foregroundStyle(ProviderAdminChrome.primaryText)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .disabled(!isEditingPlatformFee || isSavingPlatformFee)
+                            .frame(minWidth: 52, maxWidth: 72)
+                        Text("%")
+                            .font(.provider(.subheadline))
+                            .foregroundStyle(ProviderAdminChrome.tertiaryText)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        isEditingPlatformFee
+                            ? ProviderAdminChrome.cardBackground
+                            : ProviderAdminChrome.mutedFill,
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(ProviderAdminChrome.border, lineWidth: 1)
+                    )
+                }
+
+                if isEditingPlatformFee {
+                    HStack(spacing: 10) {
+                        Button {
+                            Task { await savePlatformFee() }
+                        } label: {
+                            Group {
+                                if isSavingPlatformFee {
+                                    ProgressView().controlSize(.mini)
+                                } else {
+                                    Text("Save")
+                                        .font(.provider(.subheadline, weight: .semibold))
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.providerOlive)
+                        .disabled(isSavingPlatformFee)
+
+                        Button {
+                            platformFeeInput = Self.formatFeePercent(platformFeePercent)
+                            isEditingPlatformFee = false
+                        } label: {
+                            Text("Cancel")
+                                .font(.provider(.subheadline, weight: .semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isSavingPlatformFee)
+                    }
+                } else {
+                    Button {
+                        platformFeeInput = Self.formatFeePercent(platformFeePercent)
+                        isEditingPlatformFee = true
+                    } label: {
+                        Text("Edit commission")
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isLoadingPlatformFee)
+                }
+            }
+
+            Divider().overlay(ProviderAdminChrome.separator)
+
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: 8),
+                    GridItem(.flexible(), spacing: 8),
+                    GridItem(.flexible(), spacing: 8),
+                ],
+                spacing: 8
+            ) {
+                compactKPI(label: "Users", value: "\(stats?.totalUsers ?? 0)")
+                compactKPI(
+                    label: "Bookings",
+                    value: performance.map { "\($0.totalBookings ?? 0)" } ?? "…"
+                )
+                compactKPI(
+                    label: "Operators",
+                    value: performance.map { "\($0.totalBarbers ?? 0)" } ?? "…"
+                )
+            }
+        }
+        .padding(14)
+        .providerAdminCardBackground(cornerRadius: 14)
+    }
+
+    private func compactKPI(label: String, value: String) -> some View {
+        VStack(spacing: 6) {
+            Text(label)
+                .font(.provider(.caption2, weight: .medium))
+                .foregroundStyle(ProviderAdminChrome.tertiaryText)
+                .textCase(.uppercase)
+            Text(value)
+                .font(.provider(.title3, weight: .semibold))
+                .foregroundStyle(ProviderAdminChrome.primaryText)
+                .monospacedDigit()
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 6)
+        .background(
+            ProviderAdminChrome.mutedFill,
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+    }
+
+    private var metricsModeRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            pillSegmentedControl(
+                selection: $metricsDisplayMode,
+                items: MetricsDisplayMode.allCases,
+                title: \.segmentTitle
+            )
+            .frame(maxWidth: .infinity)
+
+            if metricsDisplayMode == .graph {
+                pillSegmentedControl(
+                    selection: $metricsTimeline,
+                    items: MetricsTimeline.allCases,
+                    title: \.segmentTitle,
+                    compact: true
+                )
+                .frame(maxWidth: .infinity)
+            } else if metricsListSeries != .profit {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(MetricsListPeriod.allCases) { period in
+                            chipButton(
+                                title: period.chipLabel,
+                                selected: metricsListPeriod == period
+                            ) {
+                                metricsListPeriod = period
+                                if period != .all {
+                                    listParentWithin = nil
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if metricsDisplayMode == .list,
+               metricsListSeries != .profit,
+               metricsListPeriod != .all {
+                metricsListWindowPicker
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var metricsListWindowPicker: some View {
+        if isLoadingListWindowOptions {
+            HStack {
+                ProgressView().controlSize(.small)
+                Text("Loading windows…")
+                    .font(.provider(.caption))
+                    .foregroundStyle(ProviderAdminChrome.secondaryText)
+            }
+        } else if listWindowOptions.isEmpty {
+            Text("No windows for this period yet.")
+                .font(.provider(.caption))
+                .foregroundStyle(ProviderAdminChrome.secondaryText)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(listWindowOptions) { option in
+                        chipButton(
+                            title: option.displayLabel,
+                            selected: listWindowCommitted?.id == option.id
+                        ) {
+                            listWindowCommitted = option.asWindow
+                            Task { await reloadMetricsListEvents() }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var metricsListSeriesPicker: some View {
+        pillSegmentedControl(
+            selection: $metricsListSeries,
+            items: MetricsListSeries.allCases,
+            title: \.segmentTitle
+        )
+    }
+
+    private func pillSegmentedControl<T: Hashable & Identifiable>(
+        selection: Binding<T>,
+        items: [T],
+        title: KeyPath<T, String>,
+        compact: Bool = false
+    ) -> some View {
+        HStack(spacing: 2) {
+            ForEach(items) { item in
+                let selected = selection.wrappedValue.id == item.id
+                Button {
+                    selection.wrappedValue = item
+                } label: {
+                    Text(item[keyPath: title])
+                        .font(.provider(compact ? .caption2 : .caption, weight: .semibold))
+                        .foregroundStyle(
+                            selected
+                                ? ProviderAdminChrome.primaryText
+                                : ProviderAdminChrome.secondaryText
+                        )
+                        .padding(.horizontal, compact ? 8 : 12)
+                        .padding(.vertical, compact ? 6 : 8)
+                        .frame(maxWidth: compact ? .infinity : nil)
+                        .background {
+                            if selected {
+                                Capsule().fill(ProviderAdminChrome.cardBackground)
+                                    .shadow(color: .black.opacity(0.06), radius: 1, y: 1)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(ProviderAdminChrome.mutedFill, in: Capsule())
+    }
+
+    private func chipButton(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.provider(.caption, weight: .semibold))
+                .foregroundStyle(
+                    selected ? ProviderAdminChrome.primaryText : ProviderAdminChrome.secondaryText
+                )
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    selected ? ProviderAdminChrome.cardBackground : ProviderAdminChrome.mutedFill,
+                    in: Capsule()
+                )
+                .overlay(
+                    Capsule().strokeBorder(ProviderAdminChrome.border, lineWidth: selected ? 0 : 0.5)
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     private var performanceTimelineCard: some View {
@@ -573,13 +1142,6 @@ struct ProviderAdminDashboardView: View {
             subtitle: nil
         ) {
             VStack(alignment: .leading, spacing: 12) {
-                Picker("Timeline", selection: $metricsTimeline) {
-                    ForEach(MetricsTimeline.allCases) { t in
-                        Text(t.segmentTitle).tag(t)
-                    }
-                }
-                .pickerStyle(.segmented)
-
                 Picker("Series", selection: $metricsChartSeries) {
                     ForEach(MetricsChartSeries.allCases) { s in
                         Text(s.segmentTitle).tag(s)
@@ -597,7 +1159,7 @@ struct ProviderAdminDashboardView: View {
                     }
                     if isLoadingMetrics {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.black.opacity(0.25))
+                            .fill(Color.primary.opacity(0.06))
                         ProgressView()
                             .controlSize(.regular)
                     }
@@ -606,24 +1168,274 @@ struct ProviderAdminDashboardView: View {
                 if !chartMetricPoints.isEmpty, selectedMetricPoint == nil {
                     Text("Press and drag on the chart to inspect a single \(metricsTimeline.bucketUnitSingular).")
                         .font(.provider(.caption2))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .foregroundStyle(ProviderAdminChrome.tertiaryText)
                         .padding(.top, 4)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(metricsContextLabel)
                         .font(.provider(.subheadline, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCream)
+                        .foregroundStyle(ProviderAdminChrome.primaryText)
 
                     if selectedMetricPoint == nil {
                         Text(metricsTimeline.helperSubtitle)
                             .font(.provider(.caption2))
-                            .foregroundStyle(Color.lavaShellCreamTertiary)
+                            .foregroundStyle(ProviderAdminChrome.tertiaryText)
                     }
                 }
 
                 metricsSummaryGrid
             }
+        }
+    }
+
+    private var metricsBookingsListCard: some View {
+        sectionCard(
+            title: metricsListHeaderTitle(count: sortedMetricsListBookings.count, noun: "bookings"),
+            subtitle: nil
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    ShareLink(
+                        item: bookingsCSV,
+                        preview: SharePreview("Bookings export")
+                    ) {
+                        Label("Export CSV", systemImage: "square.and.arrow.up")
+                            .font(.provider(.caption, weight: .semibold))
+                    }
+                    .disabled(sortedMetricsListBookings.isEmpty)
+
+                    Spacer()
+
+                    Button {
+                        listEventsSortNewestFirst.toggle()
+                    } label: {
+                        Label(
+                            listEventsSortNewestFirst ? "Latest" : "Earliest",
+                            systemImage: "arrow.up.arrow.down"
+                        )
+                        .font(.provider(.caption, weight: .semibold))
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                if isLoadingListEvents {
+                    loadingRow("Loading bookings…")
+                } else if sortedMetricsListBookings.isEmpty {
+                    Text("No bookings in this window.")
+                        .font(.provider(.footnote))
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
+                } else {
+                    ForEach(sortedMetricsListBookings) { event in
+                        metricsBookingRow(event)
+                    }
+                }
+            }
+        }
+    }
+
+    private var metricsSignupsListCard: some View {
+        sectionCard(
+            title: metricsListHeaderTitle(count: sortedMetricsListSignups.count, noun: "sign-ups"),
+            subtitle: nil
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    ShareLink(
+                        item: signupsCSV,
+                        preview: SharePreview("Sign-ups export")
+                    ) {
+                        Label("Export CSV", systemImage: "square.and.arrow.up")
+                            .font(.provider(.caption, weight: .semibold))
+                    }
+                    .disabled(sortedMetricsListSignups.isEmpty)
+
+                    Spacer()
+
+                    Button {
+                        listEventsSortNewestFirst.toggle()
+                    } label: {
+                        Label(
+                            listEventsSortNewestFirst ? "Latest" : "Earliest",
+                            systemImage: "arrow.up.arrow.down"
+                        )
+                        .font(.provider(.caption, weight: .semibold))
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                if isLoadingListEvents {
+                    loadingRow("Loading sign-ups…")
+                } else if sortedMetricsListSignups.isEmpty {
+                    Text("No sign-ups in this window.")
+                        .font(.provider(.footnote))
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
+                } else {
+                    ForEach(sortedMetricsListSignups) { event in
+                        metricsSignupRow(event)
+                    }
+                }
+            }
+        }
+    }
+
+    private func metricsListHeaderTitle(count: Int, noun: String) -> String {
+        let window = listWindowCommitted?.displayLabel
+            ?? (metricsListPeriod == .all ? "All time" : metricsListPeriod.chipLabel)
+        return "\(window) · \(count) \(noun)"
+    }
+
+    private var sortedMetricsListBookings: [AdminMetricsBookingEventDTO] {
+        metricsListBookings.sorted { lhs, rhs in
+            let l = lhs.paidAt ?? .distantPast
+            let r = rhs.paidAt ?? .distantPast
+            return listEventsSortNewestFirst ? l > r : l < r
+        }
+    }
+
+    private var sortedMetricsListSignups: [AdminMetricsSignupEventDTO] {
+        metricsListSignups.sorted { lhs, rhs in
+            let l = lhs.createdAt ?? .distantPast
+            let r = rhs.createdAt ?? .distantPast
+            return listEventsSortNewestFirst ? l > r : l < r
+        }
+    }
+
+    private func metricsBookingRow(_ event: AdminMetricsBookingEventDTO) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(event.consumerDisplayName)
+                    .font(.provider(.subheadline, weight: .semibold))
+                    .foregroundStyle(ProviderAdminChrome.primaryText)
+                Spacer()
+                Text(dollarString(centsLike: Double(event.totalPaidCents ?? 0)))
+                    .font(.provider(.subheadline, weight: .semibold))
+                    .foregroundStyle(ProviderAdminChrome.primaryText)
+            }
+            Text("with \(event.barberDisplayName) · \(event.serviceDisplayName)")
+                .font(.provider(.caption))
+                .foregroundStyle(ProviderAdminChrome.secondaryText)
+            HStack {
+                if let paidAt = event.paidAt {
+                    Text(paidAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(.provider(.caption2))
+                        .foregroundStyle(ProviderAdminChrome.tertiaryText)
+                }
+                Spacer()
+                if let tip = event.tipCents, tip > 0 {
+                    Text("+\(dollarString(centsLike: Double(tip))) tip")
+                        .font(.provider(.caption2, weight: .semibold))
+                        .foregroundStyle(Color.green.opacity(0.85))
+                }
+            }
+        }
+        .padding(10)
+        .background(ProviderAdminChrome.stoneMutedFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func metricsSignupRow(_ event: AdminMetricsSignupEventDTO) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(event.displayName)
+                    .font(.provider(.subheadline, weight: .semibold))
+                    .foregroundStyle(ProviderAdminChrome.primaryText)
+                Text("·")
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
+                Text(prettyRole(event.role))
+                    .font(.provider(.caption))
+                    .foregroundStyle(ProviderAdminChrome.secondaryText)
+                Spacer()
+            }
+            if let email = event.email, !email.isEmpty {
+                Text(email)
+                    .font(.provider(.caption))
+                    .foregroundStyle(ProviderAdminChrome.secondaryText)
+            }
+            HStack {
+                if let created = event.createdAt {
+                    Text(created.formatted(date: .abbreviated, time: .shortened))
+                        .font(.provider(.caption2))
+                        .foregroundStyle(ProviderAdminChrome.tertiaryText)
+                }
+                if let campus = event.campusName, !campus.isEmpty {
+                    Text("· \(campus)")
+                        .font(.provider(.caption2))
+                        .foregroundStyle(ProviderAdminChrome.tertiaryText)
+                }
+                Spacer()
+            }
+        }
+        .padding(10)
+        .background(ProviderAdminChrome.stoneMutedFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var bookingsCSV: String {
+        var lines = ["Booking ID,Status,Service,Amount,Tip,Month,Year,Date,Time,Consumer,Operator"]
+        let cal = Calendar.current
+        for e in sortedMetricsListBookings {
+            let paid = e.paidAt
+            let month = paid.map { String(cal.component(.month, from: $0)) } ?? ""
+            let year = paid.map { String(cal.component(.year, from: $0)) } ?? ""
+            let date = paid.map { $0.formatted(date: .numeric, time: .omitted) } ?? ""
+            let time = paid.map { $0.formatted(date: .omitted, time: .shortened) } ?? ""
+            let amount = String(format: "%.2f", Double(e.totalPaidCents ?? 0) / 100.0)
+            let tip = String(format: "%.2f", Double(e.tipCents ?? 0) / 100.0)
+            lines.append([
+                e.id,
+                e.status ?? "",
+                e.serviceDisplayName,
+                amount,
+                tip,
+                month,
+                year,
+                date,
+                time,
+                e.consumerDisplayName,
+                e.barberDisplayName,
+            ].map(csvEscape).joined(separator: ","))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private var signupsCSV: String {
+        var lines = ["User ID,Name,Email,Role,Campus,Month,Year,Date,Time"]
+        let cal = Calendar.current
+        for e in sortedMetricsListSignups {
+            let created = e.createdAt
+            let month = created.map { String(cal.component(.month, from: $0)) } ?? ""
+            let year = created.map { String(cal.component(.year, from: $0)) } ?? ""
+            let date = created.map { $0.formatted(date: .numeric, time: .omitted) } ?? ""
+            let time = created.map { $0.formatted(date: .omitted, time: .shortened) } ?? ""
+            lines.append([
+                e.id,
+                e.displayName,
+                e.email ?? "",
+                e.role ?? "",
+                e.campusName ?? "",
+                month,
+                year,
+                date,
+                time,
+            ].map(csvEscape).joined(separator: ","))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func csvEscape(_ value: String) -> String {
+        if value.contains(",") || value.contains("\"") || value.contains("\n") {
+            return "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
+        }
+        return value
+    }
+
+    private func prettyRole(_ role: String?) -> String {
+        let r = (role ?? "").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        switch r {
+        case "ADMIN": return "Admin"
+        case "BARBER", "PROVIDER": return "Operator"
+        case "CAMPUS_MANAGER": return "Campus Manager"
+        case "CONSUMER", "USER", "": return "Consumer"
+        default: return role?.capitalized ?? "User"
         }
     }
 
@@ -636,12 +1448,12 @@ struct ProviderAdminDashboardView: View {
                 ProgressView().controlSize(.small)
                 Text("Loading \(metricsScopeTitle.lowercased())…")
                     .font(.provider(.footnote))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .foregroundStyle(ProviderAdminChrome.secondaryText)
             }
         } else {
             Text("No \(metricsScopeTitle.lowercased()) data in this range yet.")
                 .font(.provider(.footnote))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .foregroundStyle(ProviderAdminChrome.secondaryText)
         }
     }
 
@@ -751,7 +1563,7 @@ struct ProviderAdminDashboardView: View {
         if points.isEmpty {
             Text("No data in this range yet (uses paid booking timestamps).")
                 .font(.provider(.footnote))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .foregroundStyle(ProviderAdminChrome.secondaryText)
                 .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
         } else {
             Chart {
@@ -778,7 +1590,7 @@ struct ProviderAdminDashboardView: View {
 
                 if let selected = selectedMetricPoint {
                     RuleMark(x: .value("Selected", selected.bucketIndex))
-                        .foregroundStyle(Color.lavaShellCream.opacity(0.45))
+                        .foregroundStyle(ProviderAdminChrome.primaryText.opacity(0.45))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
                 }
             }
@@ -791,7 +1603,7 @@ struct ProviderAdminDashboardView: View {
                     if let plotFrame = proxy.plotFrame {
                         let plotRect = geometry[plotFrame]
                         let labelY = plotRect.maxY + 14
-                        let gridColor = Color.lavaShellCream.opacity(0.12)
+                        let gridColor = ProviderAdminChrome.primaryText.opacity(0.12)
                         let gridStroke = StrokeStyle(lineWidth: 0.35)
 
                         ZStack {
@@ -845,7 +1657,7 @@ struct ProviderAdminDashboardView: View {
                         if let number = value.as(Double.self) {
                             Text(metricsYAxisLabel(for: number))
                                 .font(.provider(.caption2))
-                                .foregroundStyle(Color.lavaShellCreamSecondary)
+                                .foregroundStyle(ProviderAdminChrome.secondaryText)
                         }
                     }
                 }
@@ -946,7 +1758,7 @@ struct ProviderAdminDashboardView: View {
             .overlay {
                 Text(text)
                     .font(.provider(.caption2))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .foregroundStyle(ProviderAdminChrome.secondaryText)
                     .fixedSize()
                     .offset(x: shift)
             }
@@ -1144,11 +1956,11 @@ struct ProviderAdminDashboardView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Stripe analytics")
                     .font(.provider(.caption, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .foregroundStyle(ProviderAdminChrome.secondaryText)
                     .padding(.top, 6)
                 Text("Estimated from booking card volume and platform fees (same model as the web admin).")
                     .font(.provider(.caption2))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
 
                 LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 10) {
                     metricCell(title: "Total Stripe fees (est.)", value: dollarString(centsLike: p.estimatedStripeFees))
@@ -1210,6 +2022,12 @@ struct ProviderAdminDashboardView: View {
                 }
             }
 
+            let q = operatorSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if !q.isEmpty {
+                let hay = "\(barber.displayName) \(barber.email ?? "") \(barber.publicLocationDisplay)".lowercased()
+                if !hay.contains(q) { return false }
+            }
+
             return true
         }
         .sorted {
@@ -1265,28 +2083,310 @@ struct ProviderAdminDashboardView: View {
     private var barbersTab: some View {
         sectionCard(title: "Operators", subtitle: barbersTabSubtitle) {
             VStack(alignment: .leading, spacing: 12) {
-                Picker("Operators section", selection: $barbersSubTab) {
-                    ForEach(BarbersSubTab.allCases) { sub in
-                        Text(sub.rawValue).tag(sub)
+                Picker("Operators hub", selection: $operatorsHubTab) {
+                    ForEach(OperatorsHubTab.allCases) { hub in
+                        Text(hub.rawValue).tag(hub)
                     }
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: barbersSubTab) { _, _ in
-                    selectedBarberApplication = nil
-                    applicationInlineConfirmKind = nil
-                }
 
-                switch barbersSubTab {
-                case .current:
-                    currentBarbersList
-                case .applications:
-                    barberApplicationsList
+                switch operatorsHubTab {
+                case .operators:
+                    operatorsRosterContent
+                case .onboarding:
+                    onboardingHubContent
                 }
             }
         }
         .sheet(isPresented: $showingOperatorsFilters) {
             operatorsFiltersSheet
         }
+        .sheet(isPresented: $showingOnboardingFilters) {
+            onboardingFiltersSheet
+        }
+    }
+
+    @ViewBuilder
+    private var operatorsRosterContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
+                TextField("Search for Operators…", text: $operatorSearch)
+                    .textFieldStyle(.plain)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(ProviderAdminChrome.stoneMutedFill)
+            )
+
+            Picker("Operators section", selection: $barbersSubTab) {
+                ForEach(BarbersSubTab.allCases) { sub in
+                    Text("\(sub.rawValue) (\(barbersSubTabCount(sub)))").tag(sub)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: barbersSubTab) { _, _ in
+                selectedBarberApplication = nil
+                applicationInlineConfirmKind = nil
+            }
+
+            switch barbersSubTab {
+            case .current:
+                currentBarbersList
+            case .applications:
+                barberApplicationsList
+            }
+        }
+    }
+
+    private func barbersSubTabCount(_ sub: BarbersSubTab) -> Int {
+        switch sub {
+        case .current: return filteredCurrentBarbers.count
+        case .applications: return barberApplications.count
+        }
+    }
+
+    private var onboardingHubContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
+                TextField("Search operators…", text: $onboardingSearch)
+                    .textFieldStyle(.plain)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                Button {
+                    showingOnboardingFilters = true
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(ProviderAdminChrome.stoneMutedFill)
+            )
+
+            Picker("Scope", selection: $onboardingScope) {
+                ForEach(OnboardingScope.allCases) { scope in
+                    Text(scope.label).tag(scope)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: onboardingScope) { _, scope in
+                if scope == .all { onboardingSelectedIds = [] }
+            }
+
+            onboardingMassApplyRow(
+                title: "Commissionless bookings",
+                text: $onboardingFreeInput,
+                keyboard: .numberPad,
+                actionTitle: onboardingScope == .all
+                    ? "Add to All"
+                    : "Add to \(onboardingSelectedIds.count)"
+            ) {
+                pendingOnboardingBulk = PendingOnboardingBulk(field: .free)
+            }
+
+            onboardingMassApplyRow(
+                title: "Kickback %",
+                text: $onboardingKickbackInput,
+                keyboard: .decimalPad,
+                actionTitle: onboardingScope == .all
+                    ? "Apply to All"
+                    : "Apply to \(onboardingSelectedIds.count)"
+            ) {
+                pendingOnboardingBulk = PendingOnboardingBulk(field: .kickback)
+            }
+
+            if let onboardingSaveMessage {
+                Text(onboardingSaveMessage)
+                    .font(.provider(.caption))
+                    .foregroundStyle(Color.green.opacity(0.9))
+            }
+
+            if filteredOnboardingBarbers.isEmpty {
+                Text("No operators match these filters.")
+                    .font(.provider(.footnote))
+                    .foregroundStyle(ProviderAdminChrome.secondaryText)
+            } else {
+                ForEach(filteredOnboardingBarbers) { barber in
+                    onboardingBarberRow(barber)
+                }
+            }
+        }
+    }
+
+    private func onboardingMassApplyRow(
+        title: String,
+        text: Binding<String>,
+        keyboard: UIKeyboardType,
+        actionTitle: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.provider(.caption))
+                .foregroundStyle(ProviderAdminChrome.secondaryText)
+            HStack(spacing: 8) {
+                TextField("0", text: text)
+                    .font(.provider(.subheadline))
+                    .keyboardType(keyboard)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(
+                        ProviderAdminChrome.stoneMutedFill,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
+                    .frame(maxWidth: 100)
+                Button(actionTitle, action: action)
+                    .font(.provider(.caption, weight: .semibold))
+                    .buttonStyle(.borderedProminent)
+                    .tint(.providerOlive)
+                    .disabled(isSavingOnboardingBulk || (onboardingScope == .selected && onboardingSelectedIds.isEmpty))
+            }
+        }
+    }
+
+    private func onboardingBarberRow(_ barber: AdminBarberDTO) -> some View {
+        let recordId = barber.barberRecordId ?? barber.id
+        return HStack(alignment: .center, spacing: 10) {
+            if onboardingScope == .selected {
+                Button {
+                    if onboardingSelectedIds.contains(recordId) {
+                        onboardingSelectedIds.remove(recordId)
+                    } else {
+                        onboardingSelectedIds.insert(recordId)
+                    }
+                } label: {
+                    Image(systemName: onboardingSelectedIds.contains(recordId) ? "checkmark.square.fill" : "square")
+                        .foregroundStyle(Color.providerOlive)
+                }
+                .buttonStyle(.plain)
+            }
+
+            ProviderSquaredAvatarView(
+                url: barber.avatarURL,
+                fallbackName: barber.displayName,
+                size: 36
+            )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(barber.displayName)
+                    .font(.provider(.subheadline, weight: .semibold))
+                    .foregroundStyle(ProviderAdminChrome.primaryText)
+                HStack(spacing: 6) {
+                    if barber.hasStripeSetup == true {
+                        tag(text: "Stripe", tint: Color.green.opacity(0.45))
+                    } else {
+                        tag(text: "No Stripe", tint: ProviderAdminChrome.stoneMutedFill)
+                    }
+                    Text("\(barber.commissionFreeBookingsRemaining ?? 0) free")
+                        .font(.provider(.caption2))
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
+                    Text("·")
+                        .foregroundStyle(ProviderAdminChrome.tertiaryText)
+                    Text(String(format: "%.1f%% kb", barber.kickbackPercent ?? 0))
+                        .font(.provider(.caption2))
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            VStack(spacing: 4) {
+                stepperButton(systemName: "plus") {
+                    Task { await adjustOnboarding(barber: barber, field: .free, delta: 1) }
+                }
+                stepperButton(systemName: "minus") {
+                    Task { await adjustOnboarding(barber: barber, field: .free, delta: -1) }
+                }
+            }
+        }
+        .padding(10)
+        .background(ProviderAdminChrome.stoneMutedFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func stepperButton(systemName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.provider(.caption, weight: .bold))
+                .foregroundStyle(ProviderAdminChrome.primaryText)
+                .frame(width: 28, height: 28)
+                .background(ProviderAdminChrome.stoneCard, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(isSavingOnboardingBulk)
+    }
+
+    private var filteredOnboardingBarbers: [AdminBarberDTO] {
+        barbers.filter { barber in
+            if onboardingStripeFilter == .setup, barber.hasStripeSetup != true { return false }
+            if onboardingStripeFilter == .notSetup, barber.hasStripeSetup == true { return false }
+            if onboardingLocationFilter == .nearCampus, barber.isLocationUnassigned { return false }
+            if onboardingLocationFilter == .unassigned, !barber.isLocationUnassigned { return false }
+            let free = barber.commissionFreeBookingsRemaining ?? 0
+            if onboardingFreeFilter == .withFree, free <= 0 { return false }
+            if onboardingFreeFilter == .none, free > 0 { return false }
+            let kickback = barber.kickbackPercent ?? 0
+            if onboardingKickbackFilter == .withKickback, kickback <= 0 { return false }
+            if onboardingKickbackFilter == .none, kickback > 0 { return false }
+            let q = onboardingSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if q.isEmpty { return true }
+            let hay = "\(barber.displayName) \(barber.email ?? "")".lowercased()
+            return hay.contains(q)
+        }
+    }
+
+    private var onboardingFiltersSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Stripe") {
+                    Picker("Stripe", selection: $onboardingStripeFilter) {
+                        ForEach(BarberStripeFilter.allCases) { f in
+                            Text(f.segmentTitle).tag(f)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                Section("Location") {
+                    Picker("Location", selection: $onboardingLocationFilter) {
+                        ForEach(BarberLocationFilter.allCases) { f in
+                            Text(f.segmentTitle).tag(f)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                Section("Commission-free") {
+                    Picker("Free slots", selection: $onboardingFreeFilter) {
+                        ForEach(OnboardingFreeFilter.allCases) { f in
+                            Text(f.label).tag(f)
+                        }
+                    }
+                }
+                Section("Kickback") {
+                    Picker("Kickback", selection: $onboardingKickbackFilter) {
+                        ForEach(OnboardingKickbackFilter.allCases) { f in
+                            Text(f.label).tag(f)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Onboarding filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showingOnboardingFilters = false }
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 
     @ViewBuilder
@@ -1297,7 +2397,7 @@ struct ProviderAdminDashboardView: View {
             if filteredCurrentBarbers.isEmpty {
                 Text(currentBarbersEmptyMessage)
                     .font(.provider(.footnote))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .foregroundStyle(ProviderAdminChrome.secondaryText)
             } else {
                 ForEach(filteredCurrentBarbers) { barber in
                     barberRow(barber)
@@ -1312,28 +2412,28 @@ struct ProviderAdminDashboardView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "line.3.horizontal.decrease.circle")
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
                 Text(operatorsFiltersAreNonDefault ? "Filters: \(operatorsFilterSummary)" : "Filters")
                     .font(.provider(.subheadline, weight: .medium))
-                    .foregroundStyle(Color.lavaShellCream)
+                    .foregroundStyle(ProviderAdminChrome.primaryText)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 if operatorsFiltersAreNonDefault {
                     Text("Edit")
                         .font(.provider(.caption, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .foregroundStyle(ProviderAdminChrome.tertiaryText)
                 }
                 Image(systemName: "chevron.right")
                     .font(.provider(.caption, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
             }
             .padding(10)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.providerScheduleTrackFill)
+                    .fill(ProviderAdminChrome.stoneMutedFill)
                     .overlay(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(Color.providerScheduleTrackStroke, lineWidth: 0.5)
+                            .strokeBorder(ProviderAdminChrome.stoneBorder, lineWidth: 0.5)
                     )
             )
         }
@@ -1350,7 +2450,7 @@ struct ProviderAdminDashboardView: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.providerFormGroupedBackground.ignoresSafeArea())
+            .background(ProviderAdminChrome.stoneBackground.ignoresSafeArea())
             .providerPageNavigationTitle("Filters")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -1422,7 +2522,7 @@ struct ProviderAdminDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.provider(.caption, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .foregroundStyle(ProviderAdminChrome.secondaryText)
             content()
         }
     }
@@ -1443,7 +2543,7 @@ struct ProviderAdminDashboardView: View {
             } else if barberApplications.isEmpty {
                 Text("No applications need review for this scope.")
                     .font(.provider(.footnote))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .foregroundStyle(ProviderAdminChrome.secondaryText)
             } else {
                 ForEach(barberApplications) { application in
                     barberApplicationRow(application)
@@ -1463,7 +2563,7 @@ struct ProviderAdminDashboardView: View {
                     HStack(spacing: 6) {
                         Text(application.displayName)
                             .font(.provider(.subheadline, weight: .semibold))
-                            .foregroundStyle(Color.lavaShellCream)
+                            .foregroundStyle(ProviderAdminChrome.primaryText)
                         if application.origin == .guest {
                             tag(text: "Guest", tint: Color.orange.opacity(0.55))
                         }
@@ -1475,7 +2575,7 @@ struct ProviderAdminDashboardView: View {
                     }
                     Text(application.email ?? "No email")
                         .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
                         .lineLimit(1)
                     HStack(spacing: 8) {
                         if let campus = application.campusName, !campus.isEmpty {
@@ -1491,16 +2591,16 @@ struct ProviderAdminDashboardView: View {
                         }
                     }
                     .font(.provider(.caption2))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
                 }
                 Image(systemName: "chevron.right")
                     .font(.provider(.caption))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
             }
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.providerElevatedSurface)
+                    .fill(ProviderAdminChrome.stoneMutedFill)
             )
             .opacity(isBusy ? 0.55 : 1)
         }
@@ -1520,7 +2620,7 @@ struct ProviderAdminDashboardView: View {
                     Text("Back to Applications")
                 }
                 .font(.provider(.subheadline, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream)
+                .foregroundStyle(ProviderAdminChrome.primaryText)
             }
             .buttonStyle(.plain)
 
@@ -1528,7 +2628,7 @@ struct ProviderAdminDashboardView: View {
                 HStack(spacing: 6) {
                     Text(application.displayName)
                         .font(.provider(.title3, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCream)
+                        .foregroundStyle(ProviderAdminChrome.primaryText)
                     if application.origin == .guest {
                         tag(text: "Guest", tint: Color.orange.opacity(0.55))
                     }
@@ -1540,7 +2640,7 @@ struct ProviderAdminDashboardView: View {
                 }
                 Text(application.email ?? "No email")
                     .font(.provider(.caption))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .foregroundStyle(ProviderAdminChrome.secondaryText)
                 applicationDetailGrid(application)
                 if let specialties = application.specialties, !specialties.isEmpty {
                     applicationDetailBlock(title: "Specialties", value: specialties.joined(separator: ", "))
@@ -1553,7 +2653,7 @@ struct ProviderAdminDashboardView: View {
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.providerElevatedSurface)
+                    .fill(ProviderAdminChrome.stoneMutedFill)
             )
 
             if application.statusEnum == .pending {
@@ -1575,7 +2675,7 @@ struct ProviderAdminDashboardView: View {
             if applicationInlineConfirmKind != nil {
                 Text("Are you sure?")
                     .font(.provider(.subheadline, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCream)
+                    .foregroundStyle(ProviderAdminChrome.primaryText)
                     .frame(maxWidth: .infinity)
             }
 
@@ -1712,17 +2812,17 @@ struct ProviderAdminDashboardView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
                 .font(.provider(.caption2))
-                .foregroundStyle(Color.lavaShellCreamTertiary)
+                .foregroundStyle(ProviderAdminChrome.tertiaryText)
             Text(value)
                 .font(.provider(.caption, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream)
+                .foregroundStyle(ProviderAdminChrome.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.providerScheduleTrackFill)
+                .fill(ProviderAdminChrome.stoneMutedFill)
         )
     }
 
@@ -1730,16 +2830,16 @@ struct ProviderAdminDashboardView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.provider(.caption2))
-                .foregroundStyle(Color.lavaShellCreamTertiary)
+                .foregroundStyle(ProviderAdminChrome.tertiaryText)
             Text(value)
                 .font(.provider(.footnote))
-                .foregroundStyle(Color.lavaShellCream)
+                .foregroundStyle(ProviderAdminChrome.primaryText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.providerScheduleTrackFill)
+                .fill(ProviderAdminChrome.stoneMutedFill)
         )
     }
 
@@ -1749,7 +2849,7 @@ struct ProviderAdminDashboardView: View {
         case .approved: return Color.green.opacity(0.55)
         case .rejected: return Color.red.opacity(0.55)
         case .underReview, .interviewScheduled: return Color.blue.opacity(0.45)
-        case nil: return Color.providerElevatedSurface
+        case nil: return ProviderAdminChrome.stoneMutedFill
         }
     }
 
@@ -1776,11 +2876,11 @@ struct ProviderAdminDashboardView: View {
                     }
                     Text(barber.email ?? "—")
                         .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
                     // Prefer the provider's public pin label exactly — never nearest campus name.
                     Text(barber.publicLocationDisplay)
                         .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
                         .lineLimit(1)
                     HStack(spacing: 8) {
                         Text("\(barber.completedBookings ?? 0) bookings")
@@ -1788,18 +2888,18 @@ struct ProviderAdminDashboardView: View {
                         Text(dollarString(centsLike: Double(barber.totalVolumeCents ?? 0)))
                     }
                     .font(.provider(.caption2))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
                     stripeBadges(barber)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.provider(.caption))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
             }
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.providerElevatedSurface)
+                    .fill(ProviderAdminChrome.stoneMutedFill)
             )
         }
         .buttonStyle(.plain)
@@ -1813,7 +2913,7 @@ struct ProviderAdminDashboardView: View {
             } else if barber.hasStripeAccountOnly == true {
                 tag(text: "Stripe pending", tint: Color.orange.opacity(0.55))
             } else {
-                tag(text: "No Stripe", tint: Color.providerElevatedSurface)
+                tag(text: "No Stripe", tint: ProviderAdminChrome.stoneMutedFill)
             }
         }
     }
@@ -1823,10 +2923,21 @@ struct ProviderAdminDashboardView: View {
     private let usersPageSize = 25
 
     private var filteredUsers: [AdminPlatformUserDTO] {
-        let q = userSearch.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !q.isEmpty else { return users }
-        return users.filter { u in
-            (u.email?.lowercased().contains(q) ?? false)
+        users.filter { u in
+            switch userRoleFilter {
+            case .all: break
+            case .consumer:
+                let r = (u.role ?? "").uppercased()
+                if r == "ADMIN" || r == "BARBER" || r == "PROVIDER" || r == "CAMPUS_MANAGER" {
+                    return false
+                }
+            case .admin:
+                if (u.role ?? "").uppercased() != "ADMIN" { return false }
+            }
+
+            let q = userSearch.trimmingCharacters(in: .whitespaces).lowercased()
+            guard !q.isEmpty else { return true }
+            return (u.email?.lowercased().contains(q) ?? false)
                 || u.displayName.lowercased().contains(q)
                 || (u.role?.lowercased().contains(q) ?? false)
                 || (u.campusName?.lowercased().contains(q) ?? false)
@@ -1848,32 +2959,44 @@ struct ProviderAdminDashboardView: View {
             VStack(spacing: 10) {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
-                    TextField("Search users", text: $userSearch)
+                        .foregroundStyle(ProviderAdminChrome.tertiaryText)
+                    TextField("Search users…", text: $userSearch)
                         .textFieldStyle(.plain)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                     if !userSearch.isEmpty {
                         Button { userSearch = "" } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(Color.lavaShellCreamTertiary)
+                                .foregroundStyle(ProviderAdminChrome.tertiaryText)
                         }
                         .buttonStyle(.plain)
                     }
+                    Button {
+                        showingUsersFilters = true
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(10)
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.providerScheduleTrackFill)
+                        .fill(ProviderAdminChrome.stoneMutedFill)
                         .overlay(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .strokeBorder(Color.providerScheduleTrackStroke, lineWidth: 0.5)
+                                .strokeBorder(ProviderAdminChrome.stoneBorder, lineWidth: 0.5)
                         )
                 )
+                if userRoleFilter != .all {
+                    Text("Role: \(userRoleFilter.chipLabel)")
+                        .font(.provider(.caption))
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
+                }
                 if filteredUsers.isEmpty {
                     Text(isLoading ? "Loading users…" : "No matching users.")
                         .font(.provider(.footnote))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
                 } else {
                     ForEach(displayedUsers) { user in
                         userRow(user)
@@ -1893,6 +3016,28 @@ struct ProviderAdminDashboardView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingUsersFilters) {
+            NavigationStack {
+                Form {
+                    Section("Role") {
+                        Picker("Role", selection: $userRoleFilter) {
+                            ForEach(UserRoleFilter.allCases) { filter in
+                                Text(filter.chipLabel).tag(filter)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                }
+                .navigationTitle("User filters")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { showingUsersFilters = false }
+                    }
+                }
+            }
+            .presentationDetents([.medium])
+        }
     }
 
     private func userRow(_ user: AdminPlatformUserDTO) -> some View {
@@ -1908,7 +3053,7 @@ struct ProviderAdminDashboardView: View {
                     }
                     Text(user.email ?? "—")
                         .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
                     HStack(spacing: 6) {
                         Text(user.prettyRole)
                         if let campus = user.campusName, !campus.isEmpty {
@@ -1917,17 +3062,17 @@ struct ProviderAdminDashboardView: View {
                         }
                     }
                     .font(.provider(.caption2))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.provider(.caption))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
             }
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.providerElevatedSurface)
+                    .fill(ProviderAdminChrome.stoneMutedFill)
             )
         }
         .buttonStyle(.plain)
@@ -1971,7 +3116,7 @@ struct ProviderAdminDashboardView: View {
                 } else if moderationReports.isEmpty {
                     Text(emptyReportsMessage)
                         .font(.provider(.footnote))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
                 } else {
                     VStack(spacing: 10) {
                         ForEach(moderationReports) { report in
@@ -2012,45 +3157,45 @@ struct ProviderAdminDashboardView: View {
                         if let reason = report.reason?.trimmingCharacters(in: .whitespacesAndNewlines), !reason.isEmpty {
                             Text(reason.replacingOccurrences(of: "_", with: " ").capitalized)
                                 .font(.provider(.caption, weight: .semibold))
-                                .foregroundStyle(Color.lavaShellCream)
+                                .foregroundStyle(ProviderAdminChrome.primaryText)
                         }
                         Spacer(minLength: 0)
                         if let when = report.createdAt {
                             Text(relativeShort(when))
                                 .font(.provider(.caption2))
-                                .foregroundStyle(Color.lavaShellCreamTertiary)
+                                .foregroundStyle(ProviderAdminChrome.tertiaryText)
                         }
                     }
                     Text("Reported: \(report.reportedUserDisplayName)")
                         .font(.provider(.subheadline, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCream)
+                        .foregroundStyle(ProviderAdminChrome.primaryText)
                     if let email = report.reportedUserEmail, !email.isEmpty {
                         Text(email)
                             .font(.provider(.caption))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
                             .lineLimit(1)
                     }
                     Text("Reporter: \(report.reporterDisplayName)")
                         .font(.provider(.caption2))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .foregroundStyle(ProviderAdminChrome.tertiaryText)
                 }
             }
 
             if let descr = report.description?.trimmingCharacters(in: .whitespacesAndNewlines), !descr.isEmpty {
                 Text(descr)
                     .font(.provider(.footnote))
-                    .foregroundStyle(Color.lavaShellCream)
+                    .foregroundStyle(ProviderAdminChrome.primaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let preview = report.subjectContent?.trimmingCharacters(in: .whitespacesAndNewlines), !preview.isEmpty {
                 Text("“\(preview)”")
                     .font(.provider(.footnote)).italic()
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .foregroundStyle(ProviderAdminChrome.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(8)
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.providerElevatedSurface)
+                            .fill(ProviderAdminChrome.stoneMutedFill)
                     )
             }
             if !report.isOpen,
@@ -2061,10 +3206,10 @@ struct ProviderAdminDashboardView: View {
                     Text("Resolution notes")
                         .font(.provider(.caption2, weight: .semibold))
                         .textCase(.uppercase)
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .foregroundStyle(ProviderAdminChrome.tertiaryText)
                     Text(notes)
                         .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCream)
+                        .foregroundStyle(ProviderAdminChrome.primaryText)
                 }
             }
 
@@ -2073,18 +3218,18 @@ struct ProviderAdminDashboardView: View {
             } else if let action = report.resolutionAction, !action.isEmpty {
                 Text("Action: \(action.replacingOccurrences(of: "_", with: " ").capitalized)")
                     .font(.provider(.caption2))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.providerElevatedSurface)
+                .fill(ProviderAdminChrome.stoneMutedFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(report.isOpen ? Color.orange.opacity(0.35) : Color.providerElevatedSurfaceStroke, lineWidth: 0.5)
+                .strokeBorder(report.isOpen ? Color.orange.opacity(0.35) : ProviderAdminChrome.stoneBorder, lineWidth: 0.5)
         )
         .opacity(isBusy ? 0.55 : 1.0)
     }
@@ -2114,8 +3259,8 @@ struct ProviderAdminDashboardView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(Color.providerElevatedSurface, in: Capsule())
-                .foregroundStyle(Color.lavaShellCream)
+                .background(ProviderAdminChrome.stoneMutedFill, in: Capsule())
+                .foregroundStyle(ProviderAdminChrome.primaryText)
             }
             .disabled(isBusy)
             if isBusy {
@@ -2141,7 +3286,7 @@ struct ProviderAdminDashboardView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(tint, in: Capsule())
-            .foregroundStyle(Color.lavaShellCream)
+            .foregroundStyle(ProviderAdminChrome.primaryText)
         }
         .buttonStyle(.plain)
         .disabled(isBusy)
@@ -2160,7 +3305,7 @@ struct ProviderAdminDashboardView: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .background(tint, in: Capsule())
-            .foregroundStyle(Color.lavaShellCream)
+            .foregroundStyle(ProviderAdminChrome.primaryText)
     }
 
     // MARK: Banned users section
@@ -2191,7 +3336,7 @@ struct ProviderAdminDashboardView: View {
                         ? "No users are currently banned."
                         : "No banned \(bannedCategoryFilter.chipLabel.lowercased()) right now.")
                         .font(.provider(.footnote))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
                 } else {
                     VStack(spacing: 10) {
                         ForEach(bannedUsers) { user in
@@ -2221,7 +3366,7 @@ struct ProviderAdminDashboardView: View {
                     HStack(spacing: 6) {
                         Text(user.displayName)
                             .font(.provider(.subheadline, weight: .semibold))
-                            .foregroundStyle(Color.lavaShellCream)
+                            .foregroundStyle(ProviderAdminChrome.primaryText)
                         tag(text: "BANNED", tint: Color.red.opacity(0.7))
                         if let count = user.openReportCount, count > 0 {
                             tag(text: "\(count) open", tint: Color.orange.opacity(0.65))
@@ -2230,7 +3375,7 @@ struct ProviderAdminDashboardView: View {
                     if let email = user.email, !email.isEmpty {
                         Text(email)
                             .font(.provider(.caption))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
                             .lineLimit(1)
                     }
                     HStack(spacing: 6) {
@@ -2245,11 +3390,11 @@ struct ProviderAdminDashboardView: View {
                         }
                     }
                     .font(.provider(.caption2))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
                     if let listing = user.barberListingStateLabel {
                         Text(listing)
                             .font(.provider(.caption2))
-                            .foregroundStyle(Color.lavaShellCreamTertiary)
+                            .foregroundStyle(ProviderAdminChrome.tertiaryText)
                     }
                 }
                 Spacer(minLength: 0)
@@ -2268,7 +3413,7 @@ struct ProviderAdminDashboardView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(Color.providerOlive.opacity(0.9), in: Capsule())
-                    .foregroundStyle(Color.lavaShellCream)
+                    .foregroundStyle(ProviderAdminChrome.primaryText)
                 }
                 .buttonStyle(.plain)
                 .disabled(isBusy)
@@ -2281,7 +3426,7 @@ struct ProviderAdminDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.providerElevatedSurface)
+                .fill(ProviderAdminChrome.stoneMutedFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -2340,23 +3485,23 @@ struct ProviderAdminDashboardView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "line.3.horizontal.decrease.circle")
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
                 Text("\(title): \(label(selection.wrappedValue))")
                     .font(.provider(.subheadline, weight: .medium))
-                    .foregroundStyle(Color.lavaShellCream)
+                    .foregroundStyle(ProviderAdminChrome.primaryText)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.provider(.caption))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
             }
             .padding(10)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.providerScheduleTrackFill)
+                    .fill(ProviderAdminChrome.stoneMutedFill)
                     .overlay(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(Color.providerScheduleTrackStroke, lineWidth: 0.5)
+                            .strokeBorder(ProviderAdminChrome.stoneBorder, lineWidth: 0.5)
                     )
             )
         }
@@ -2379,6 +3524,7 @@ struct ProviderAdminDashboardView: View {
         _ = try? await ProviderAuthService.refreshAccessTokenIfPossible()
         async let st = ProviderAdminService.platformStats()
         async let cs = ProviderAdminService.listCampuses()
+        async let feeTask: () = loadPlatformFee()
         do {
             let (s, c) = try await (st, cs)
             stats = s
@@ -2386,10 +3532,214 @@ struct ProviderAdminDashboardView: View {
         } catch let OnCutsHTTPError.httpStatus(code, msg) {
             errorText = msg ?? "Server returned \(code)."
         } catch {
-            errorText = error.localizedDescription
+            if !providerAdminIsBenignRequestCancellation(error) {
+                errorText = error.localizedDescription
+            }
         }
+        await feeTask
         await loadScopedData()
         await loadSafety()
+        servicesReloadToken &+= 1
+        if metricsDisplayMode == .list {
+            await reloadMetricsListEvents()
+        }
+    }
+
+    private func loadPlatformFee() async {
+        isLoadingPlatformFee = true
+        defer { isLoadingPlatformFee = false }
+        do {
+            let pct = try await ProviderAdminService.fetchPlatformSettings()
+            platformFeePercent = pct
+            if !isEditingPlatformFee {
+                platformFeeInput = Self.formatFeePercent(pct)
+            }
+        } catch {
+            // Keep last known / default 15%.
+        }
+    }
+
+    private static func formatFeePercent(_ pct: Double) -> String {
+        if pct.rounded() == pct { return String(Int(pct)) }
+        return String(format: "%.1f", pct)
+    }
+
+    private func savePlatformFee() async {
+        guard let pct = Double(platformFeeInput.trimmingCharacters(in: .whitespacesAndNewlines)),
+              pct >= 0, pct <= 100 else {
+            errorText = "Commission percent must be between 0 and 100."
+            return
+        }
+        isSavingPlatformFee = true
+        defer { isSavingPlatformFee = false }
+        do {
+            let saved = try await ProviderAdminService.updatePlatformSettings(platformFeePercent: pct)
+            platformFeePercent = saved
+            platformFeeInput = Self.formatFeePercent(saved)
+            isEditingPlatformFee = false
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
+            errorText = msg ?? "Failed to save platform commission (\(code))."
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    private func reloadListWindowOptions() async {
+        guard let granularity = metricsListPeriod.apiGranularity,
+              let type = metricsListSeries.eventsType else {
+            listWindowOptions = []
+            return
+        }
+        isLoadingListWindowOptions = true
+        defer { isLoadingListWindowOptions = false }
+        do {
+            listWindowOptions = try await ProviderAdminService.metricsEventsOptions(
+                campusId: selectedCampusId,
+                granularity: granularity,
+                type: type,
+                withinStart: listParentWithin?.start,
+                withinEnd: listParentWithin?.end
+            )
+        } catch {
+            listWindowOptions = []
+        }
+    }
+
+    private func reloadMetricsListEvents() async {
+        isLoadingListEvents = true
+        defer { isLoadingListEvents = false }
+        let start = listWindowCommitted?.start
+        let end = listWindowCommitted?.end
+        do {
+            async let bookings = ProviderAdminService.metricsBookingEvents(
+                campusId: selectedCampusId,
+                start: start,
+                end: end
+            )
+            async let signups = ProviderAdminService.metricsSignupEvents(
+                campusId: selectedCampusId,
+                start: start,
+                end: end
+            )
+            let (b, s) = try await (bookings, signups)
+            metricsListBookings = b
+            metricsListSignups = s
+        } catch {
+            metricsListBookings = []
+            metricsListSignups = []
+        }
+    }
+
+    private var pendingOnboardingBulkTitle: String {
+        guard let pending = pendingOnboardingBulk else { return "Confirm" }
+        switch pending.field {
+        case .free: return "Apply commission-free quota?"
+        case .kickback: return "Apply kickback percent?"
+        }
+    }
+
+    private func pendingOnboardingBulkMessage(for pending: PendingOnboardingBulk) -> String {
+        let target: String
+        switch onboardingScope {
+        case .all:
+            target = "all operators"
+        case .selected:
+            target = "\(onboardingSelectedIds.count) selected operators"
+        }
+        switch pending.field {
+        case .free:
+            return "Set commission-free bookings remaining to \(onboardingFreeInput) for \(target)."
+        case .kickback:
+            return "Set kickback percent to \(onboardingKickbackInput)% for \(target)."
+        }
+    }
+
+    private func applyOnboardingBulk(_ pending: PendingOnboardingBulk) async {
+        isSavingOnboardingBulk = true
+        onboardingSaveMessage = nil
+        defer { isSavingOnboardingBulk = false }
+        do {
+            let scope = onboardingScope == .all ? "all" : "selected"
+            let ids = onboardingScope == .selected ? Array(onboardingSelectedIds) : nil
+            let updated: Int
+            switch pending.field {
+            case .free:
+                guard let free = Int(onboardingFreeInput.trimmingCharacters(in: .whitespacesAndNewlines)),
+                      free >= 0 else {
+                    errorText = "Commission-free bookings must be a whole number ≥ 0."
+                    return
+                }
+                updated = try await ProviderAdminService.bulkUpdateBarberCommission(
+                    scope: scope,
+                    barberRecordIds: ids,
+                    commissionFreeBookingsRemaining: free,
+                    kickbackPercent: nil
+                )
+            case .kickback:
+                guard let kickback = Double(onboardingKickbackInput.trimmingCharacters(in: .whitespacesAndNewlines)),
+                      kickback >= 0, kickback <= 100 else {
+                    errorText = "Kickback percent must be between 0 and 100."
+                    return
+                }
+                updated = try await ProviderAdminService.bulkUpdateBarberCommission(
+                    scope: scope,
+                    barberRecordIds: ids,
+                    commissionFreeBookingsRemaining: nil,
+                    kickbackPercent: kickback
+                )
+            }
+            onboardingSaveMessage = "Updated \(updated) operators."
+            barbers = await fetchBarbers(campusId: selectedCampusId)
+            NotificationCenter.default.post(name: .providerCommissionFreeQuotaChanged, object: nil)
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
+            errorText = msg ?? "Bulk update failed (\(code))."
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    private func adjustOnboarding(barber: AdminBarberDTO, field: PendingOnboardingBulk.Field, delta: Int) async {
+        guard let recordId = barber.barberRecordId else { return }
+        let free = max(0, (barber.commissionFreeBookingsRemaining ?? 0) + (field == .free ? delta : 0))
+        let kickback = barber.kickbackPercent ?? 0
+        do {
+            let updated = try await ProviderAdminService.updateBarberCommission(
+                barberRecordId: recordId,
+                commissionFreeBookingsRemaining: free,
+                kickbackPercent: kickback
+            )
+            if let idx = barbers.firstIndex(where: { $0.id == barber.id || $0.barberRecordId == recordId }) {
+                var copy = barbers
+                let b = copy[idx]
+                copy[idx] = AdminBarberDTO(
+                    id: b.id,
+                    barberRecordId: b.barberRecordId,
+                    firstName: b.firstName,
+                    lastName: b.lastName,
+                    email: b.email,
+                    profileImageUrl: b.profileImageUrl,
+                    isActive: b.isActive,
+                    isBanned: b.isBanned,
+                    isCampusManager: b.isCampusManager,
+                    campusId: b.campusId,
+                    campusName: b.campusName,
+                    hasStripeSetup: b.hasStripeSetup,
+                    hasStripeAccountOnly: b.hasStripeAccountOnly,
+                    createdAt: b.createdAt,
+                    completedBookings: b.completedBookings,
+                    totalVolumeCents: b.totalVolumeCents,
+                    serviceLocationLabel: b.serviceLocationLabel,
+                    hasServiceLocation: b.hasServiceLocation,
+                    platformFeePercent: b.platformFeePercent,
+                    commissionFreeBookingsRemaining: updated.commissionFreeBookingsRemaining ?? free,
+                    kickbackPercent: updated.kickbackPercent ?? kickback
+                )
+                barbers = copy
+            }
+            NotificationCenter.default.post(name: .providerCommissionFreeQuotaChanged, object: nil)
+        } catch {
+            errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
     }
 
     /// Fetch both Safety lists in parallel. Errors are scoped to each list so a partial outage
@@ -2412,6 +3762,7 @@ struct ProviderAdminDashboardView: View {
             moderationReports = []
             reportsError = msg ?? "Could not load reports (\(code))."
         } catch {
+            guard !providerAdminIsBenignRequestCancellation(error) else { return }
             moderationReports = []
             reportsError = error.localizedDescription
         }
@@ -2429,6 +3780,7 @@ struct ProviderAdminDashboardView: View {
             bannedUsers = []
             bannedError = msg ?? "Could not load banned users (\(code))."
         } catch {
+            guard !providerAdminIsBenignRequestCancellation(error) else { return }
             bannedUsers = []
             bannedError = error.localizedDescription
         }
@@ -2446,6 +3798,7 @@ struct ProviderAdminDashboardView: View {
         } catch let OnCutsHTTPError.httpStatus(code, msg) {
             reportsError = msg ?? "Resolution failed (\(code))."
         } catch {
+            guard !providerAdminIsBenignRequestCancellation(error) else { return }
             reportsError = error.localizedDescription
         }
         // Refresh both lists — ban-causing actions affect banned-users too.
@@ -2464,6 +3817,7 @@ struct ProviderAdminDashboardView: View {
         } catch let OnCutsHTTPError.httpStatus(code, msg) {
             bannedError = msg ?? "Unban failed (\(code))."
         } catch {
+            guard !providerAdminIsBenignRequestCancellation(error) else { return }
             bannedError = error.localizedDescription
         }
         await loadBannedUsers()
@@ -2492,6 +3846,9 @@ struct ProviderAdminDashboardView: View {
         case .failure(let message):
             barberApplications = []
             applicationsError = message
+        }
+        if metricsDisplayMode == .list {
+            await reloadMetricsListEvents()
         }
     }
 
@@ -2710,39 +4067,34 @@ struct ProviderAdminDashboardView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.provider(.title3, weight: .semibold))
+                    .foregroundStyle(ProviderAdminChrome.primaryText)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
                 }
             }
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.providerScheduleCardFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(Color.providerScheduleCardStroke, lineWidth: 0.6)
-                )
-        )
+        .providerAdminCardBackground(cornerRadius: 16)
     }
 
     private func metricCell(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
                 .font(.provider(.caption2))
-                .foregroundStyle(Color.lavaShellCreamTertiary)
+                .foregroundStyle(ProviderAdminChrome.tertiaryText)
             Text(value)
                 .font(.provider(.subheadline, weight: .semibold))
+                .foregroundStyle(ProviderAdminChrome.primaryText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.providerElevatedSurface)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(ProviderAdminChrome.mutedFill)
         )
     }
 
@@ -2757,7 +4109,7 @@ struct ProviderAdminDashboardView: View {
     private func loadingRow(_ msg: String) -> some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text(msg).font(.provider(.footnote)).foregroundStyle(Color.lavaShellCreamSecondary)
+            Text(msg).font(.provider(.footnote)).foregroundStyle(ProviderAdminChrome.secondaryText)
         }
     }
 

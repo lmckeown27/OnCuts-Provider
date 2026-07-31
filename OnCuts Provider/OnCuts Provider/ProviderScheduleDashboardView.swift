@@ -18,6 +18,7 @@ struct ProviderScheduleDashboardView: View {
     @Environment(ProviderSession.self) private var session
     @Environment(ProviderShellNavigator.self) private var shellNavigator
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
 
     private let awaitingPaymentTracker = ProviderAwaitingPaymentTracker.shared
 
@@ -50,6 +51,8 @@ struct ProviderScheduleDashboardView: View {
     @State private var isSavingBookingMove = false
     @State private var discoveryLocationPin: BarberServiceLocationDTO?
     @State private var discoveryLocationLoadFailed = false
+    /// Remaining commission-free card bookings for this operator (`GET /barbers/user/:id`).
+    @State private var commissionFreeBookingsRemaining = 0
     /// Toggle On = device GPS tracking; Off = manual place input (`web_only`).
     @State private var shareDeviceLocation = true
     @State private var isTogglingDiscoveryLocation = false
@@ -149,13 +152,23 @@ struct ProviderScheduleDashboardView: View {
         .task(id: session.barberProfile?.id) {
             await reloadAll()
         }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await loadCommissionFreeRemaining() }
+        }
         .task(id: weekOffset) {
             cancelBookingMove()
             await loadWeekTimeBlocks()
             await loadGoogleBusyTimes()
         }
         .onReceive(NotificationCenter.default.publisher(for: .providerBookingsChanged)) { _ in
-            Task { await loadBookings() }
+            Task {
+                await loadBookings()
+                await loadCommissionFreeRemaining()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .providerCommissionFreeQuotaChanged)) { _ in
+            Task { await loadCommissionFreeRemaining() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .providerAvailabilityChanged)) { _ in
             Task {
@@ -432,6 +445,19 @@ struct ProviderScheduleDashboardView: View {
 
     private var discoveryLocationStatusLine: some View {
         VStack(spacing: 8) {
+            if commissionFreeBookingsRemaining > 0 {
+                (
+                    Text("Commissionless Bookings left: ")
+                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                    + Text("\(commissionFreeBookingsRemaining)")
+                        .fontWeight(.bold)
+                        .foregroundStyle(Color.lavaShellCream)
+                )
+                .font(.provider(.caption))
+                .frame(maxWidth: .infinity, alignment: .center)
+                .multilineTextAlignment(.center)
+            }
+
             if shareDeviceLocation {
                 HStack(spacing: 6) {
                     Text(discoveryLocationPlaceText)
@@ -907,6 +933,28 @@ struct ProviderScheduleDashboardView: View {
         await loadWeekTimeBlocks()
         await loadGoogleCalendarStatusAndBusyTimes()
         await loadDiscoveryLocationStatus(seedManualField: false)
+        await loadCommissionFreeRemaining()
+    }
+
+    private func loadCommissionFreeRemaining() async {
+        guard session.hasProviderProfile,
+              let userId = session.authUser?.id.trimmingCharacters(in: .whitespacesAndNewlines),
+              !userId.isEmpty else {
+            commissionFreeBookingsRemaining = 0
+            return
+        }
+        do {
+            let remaining = try await ProviderBarberServicesService.fetchCommissionFreeBookingsRemaining(
+                userId: userId
+            )
+            try Task.checkCancellation()
+            commissionFreeBookingsRemaining = remaining
+        } catch is CancellationError {
+        } catch let error as URLError where error.code == .cancelled {
+        } catch {
+            guard !providerIsBenignRequestCancellation(error) else { return }
+            // Keep last known count; missing field / transient errors should not blank the hub.
+        }
     }
 
     private func loadDiscoveryLocationStatus(seedManualField: Bool) async {

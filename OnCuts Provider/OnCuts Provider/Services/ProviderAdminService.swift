@@ -1,6 +1,6 @@
 import Foundation
 
-/// Read-only Admin endpoints used by `ProviderAdminDashboardView` (parity with web `AdminDashboard.tsx`).
+/// Read Admin endpoints used by `ProviderAdminDashboardView` (parity with web `AdminDashboard.tsx`).
 ///
 /// Backend mounts these under `/api/v1/admin/...`; all require an `admin` role JWT.
 @MainActor
@@ -17,6 +17,33 @@ enum ProviderAdminService {
         return try dec.decode(Env.self, from: data).data ?? AdminPlatformStatsDTO(
             totalUsers: nil, totalBookings: nil, totalBarbers: nil, totalCampuses: nil
         )
+    }
+
+    // MARK: - Platform settings (global commission %)
+
+    /// `GET /admin/platform-settings`
+    static func fetchPlatformSettings() async throws -> Double {
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "admin/platform-settings")
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
+        let env = try dec.decode(AdminPlatformSettingsEnvelope.self, from: data)
+        if let pct = env.data?.platformFeePercent { return pct }
+        let flat = try dec.decode(AdminPlatformSettingsDTO.self, from: data)
+        return flat.platformFeePercent ?? 15
+    }
+
+    /// `PUT /admin/platform-settings` body `{ platformFeePercent }`
+    static func updatePlatformSettings(platformFeePercent: Double) async throws -> Double {
+        let rounded = (platformFeePercent * 100).rounded() / 100
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "admin/platform-settings",
+            method: "PUT",
+            jsonBody: ["platformFeePercent": rounded]
+        )
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
+        let env = try dec.decode(AdminPlatformSettingsEnvelope.self, from: data)
+        if let pct = env.data?.platformFeePercent { return pct }
+        let flat = try? dec.decode(AdminPlatformSettingsDTO.self, from: data)
+        return flat?.platformFeePercent ?? rounded
     }
 
     // MARK: - Campuses
@@ -64,6 +91,88 @@ enum ProviderAdminService {
         )
         let dec = JSONDecoder()
         return try dec.decode(AdminMetricsSnapshotDTO.self, from: data)
+    }
+
+    // MARK: - List-mode metrics events
+
+    /// `GET …/metrics/events/options?granularity=&type=`
+    static func metricsEventsOptions(
+        campusId: String?,
+        granularity: String,
+        type: String,
+        withinStart: String? = nil,
+        withinEnd: String? = nil
+    ) async throws -> [AdminMetricsListWindowOptionDTO] {
+        var parts = [
+            "granularity=\(granularity.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? granularity)",
+            "type=\(type.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? type)",
+        ]
+        if let withinStart, let withinEnd {
+            let s = withinStart.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? withinStart
+            let e = withinEnd.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? withinEnd
+            parts.append("withinStart=\(s)")
+            parts.append("withinEnd=\(e)")
+        }
+        let base: String
+        if let campusId {
+            let enc = campusId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? campusId
+            base = "admin/campuses/\(enc)/metrics/events/options"
+        } else {
+            base = "admin/campuses/aggregate/metrics/events/options"
+        }
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "\(base)?\(parts.joined(separator: "&"))"
+        )
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
+        return try dec.decode(AdminMetricsEventsOptionsEnvelope.self, from: data).options ?? []
+    }
+
+    /// `GET …/metrics/events?type=bookings|signups` with either `period=snapshot_all` or start/end.
+    static func metricsBookingEvents(
+        campusId: String?,
+        start: String?,
+        end: String?
+    ) async throws -> [AdminMetricsBookingEventDTO] {
+        let env = try await fetchMetricsEvents(campusId: campusId, type: "bookings", start: start, end: end)
+        return (env.events ?? []).compactMap { $0.asBookingEvent() }
+    }
+
+    static func metricsSignupEvents(
+        campusId: String?,
+        start: String?,
+        end: String?
+    ) async throws -> [AdminMetricsSignupEventDTO] {
+        let env = try await fetchMetricsEvents(campusId: campusId, type: "signups", start: start, end: end)
+        return (env.events ?? []).compactMap { $0.asSignupEvent() }
+    }
+
+    private static func fetchMetricsEvents(
+        campusId: String?,
+        type: String,
+        start: String?,
+        end: String?
+    ) async throws -> AdminMetricsEventsEnvelope {
+        var parts = ["type=\(type)"]
+        if let start, let end, !start.isEmpty, !end.isEmpty {
+            let s = start.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? start
+            let e = end.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? end
+            parts.append("start=\(s)")
+            parts.append("end=\(e)")
+        } else {
+            parts.append("period=snapshot_all")
+        }
+        let base: String
+        if let campusId {
+            let enc = campusId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? campusId
+            base = "admin/campuses/\(enc)/metrics/events"
+        } else {
+            base = "admin/campuses/aggregate/metrics/events"
+        }
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "\(base)?\(parts.joined(separator: "&"))"
+        )
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
+        return try dec.decode(AdminMetricsEventsEnvelope.self, from: data)
     }
 
     /// Backend sends either `{ success, data: { …metrics } }` or a flat `{ success?, …metrics }` object (same keys as `AdminCampusPerformanceDTO`).
@@ -239,20 +348,17 @@ enum ProviderAdminService {
 
     /// `PUT /admin/barbers/:barberRecordId/commission`
     ///
-    /// Pass `platformFeePercent: nil` to clear a custom rate and use the platform default (15%).
+    /// Sets commission-free quota + kickback %. Platform fee rate is global
+    /// (`/admin/platform-settings`), not per-provider.
     static func updateBarberCommission(
         barberRecordId: String,
-        platformFeePercent: Double?,
-        commissionFreeBookingsRemaining: Int
+        commissionFreeBookingsRemaining: Int,
+        kickbackPercent: Double
     ) async throws -> AdminBarberCommissionDTO {
-        var body: [String: Any] = [
+        let body: [String: Any] = [
             "commissionFreeBookingsRemaining": commissionFreeBookingsRemaining,
+            "kickbackPercent": kickbackPercent,
         ]
-        if let platformFeePercent {
-            body["platformFeePercent"] = platformFeePercent
-        } else {
-            body["platformFeePercent"] = NSNull()
-        }
         let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "admin/barbers/\(barberRecordId)/commission",
             method: "PUT",
@@ -262,6 +368,39 @@ enum ProviderAdminService {
         let env = try dec.decode(AdminBarberCommissionEnvelope.self, from: data)
         if let nested = env.data { return nested }
         return try dec.decode(AdminBarberCommissionDTO.self, from: data)
+    }
+
+    /// `PUT /admin/barbers/commission/bulk`
+    ///
+    /// - Parameters:
+    ///   - scope: `"all"` or `"selected"`
+    ///   - barberRecordIds: required when `scope == "selected"`
+    static func bulkUpdateBarberCommission(
+        scope: String,
+        barberRecordIds: [String]? = nil,
+        commissionFreeBookingsRemaining: Int? = nil,
+        kickbackPercent: Double? = nil
+    ) async throws -> Int {
+        var body: [String: Any] = ["scope": scope]
+        if let barberRecordIds {
+            body["barberRecordIds"] = barberRecordIds
+        }
+        if let commissionFreeBookingsRemaining {
+            body["commissionFreeBookingsRemaining"] = commissionFreeBookingsRemaining
+        }
+        if let kickbackPercent {
+            body["kickbackPercent"] = (kickbackPercent * 100).rounded() / 100
+        }
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "admin/barbers/commission/bulk",
+            method: "PUT",
+            jsonBody: body
+        )
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
+        if let env = try? dec.decode(AdminBulkCommissionEnvelope.self, from: data) {
+            return env.data?.updatedCount ?? env.updatedCount ?? barberRecordIds?.count ?? 0
+        }
+        return barberRecordIds?.count ?? 0
     }
 
     // MARK: - Safety (admin moderation)

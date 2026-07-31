@@ -38,6 +38,8 @@ extension Notification.Name {
     static let providerAvailabilityChanged = Notification.Name("ProviderAvailabilityChanged")
     /// Posted when the public discovery pin / manual-location toggle changes (Account settings).
     static let providerDiscoveryLocationChanged = Notification.Name("ProviderDiscoveryLocationChanged")
+    /// Posted when admin updates commission-free quota / kickback so the operator hub can refresh.
+    static let providerCommissionFreeQuotaChanged = Notification.Name("ProviderCommissionFreeQuotaChanged")
 }
 
 extension Notification.Name {

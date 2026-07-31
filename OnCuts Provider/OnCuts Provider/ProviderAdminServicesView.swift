@@ -1,8 +1,19 @@
 import SwiftUI
 
+/// `NSURLErrorCancelled` (-999) when a prior `URLSession` task is cancelled—**not** a user-visible failure.
+private func providerAdminServicesIsBenignRequestCancellation(_ error: Error) -> Bool {
+    if error is CancellationError { return true }
+    if let url = error as? URLError, url.code == .cancelled { return true }
+    let ns = error as NSError
+    return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
+}
+
 /// Admin **Services** tab: same ledger layout as `ProviderBarberServicesView`, but toggling a
 /// service adds/removes it from the campus catalog and sets **price / duration ranges** operators choose within.
 struct ProviderAdminServicesView: View {
+    /// Parent Admin pull-to-refresh bumps this so catalog reloads after the prior `.task` is cancelled.
+    var reloadToken: Int = 0
+
     private enum ProfessionFilter: String, CaseIterable, Identifiable {
         case barber
         case beauty
@@ -43,7 +54,7 @@ struct ProviderAdminServicesView: View {
                     ProgressView().controlSize(.small)
                     Text("Loading services…")
                         .font(.provider(.footnote))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
                 }
                 .frame(maxWidth: .infinity, minHeight: 120)
             } else if let loadError {
@@ -51,7 +62,7 @@ struct ProviderAdminServicesView: View {
                     Text(loadError)
                         .font(.provider(.subheadline))
                         .multilineTextAlignment(.center)
-                        .foregroundStyle(Color.lavaShellCream.opacity(0.85))
+                        .foregroundStyle(ProviderAdminChrome.primaryText.opacity(0.85))
                     Button("Try again") {
                         Task { await load() }
                     }
@@ -64,7 +75,7 @@ struct ProviderAdminServicesView: View {
                     if let toast {
                         Text(toast)
                             .font(.provider(.caption, weight: .semibold))
-                            .foregroundStyle(Color.lavaShellCream)
+                            .foregroundStyle(ProviderAdminChrome.primaryText)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
                             .background(Color.providerOlive.opacity(0.45), in: Capsule())
@@ -72,7 +83,7 @@ struct ProviderAdminServicesView: View {
 
                     Text("Add or remove \(professionFilter.title.lowercased()) services operators can offer, and set the price and duration ranges they may choose within.")
                         .font(.provider(.subheadline))
-                        .foregroundStyle(Color.lavaShellCream.opacity(0.8))
+                        .foregroundStyle(ProviderAdminChrome.primaryText.opacity(0.8))
 
                     Picker("Profession", selection: $professionFilter) {
                         ForEach(ProfessionFilter.allCases) { filter in
@@ -108,7 +119,7 @@ struct ProviderAdminServicesView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .background(Color.providerOlive.opacity(0.85), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .foregroundStyle(Color.lavaShellCream)
+                        .foregroundStyle(ProviderAdminChrome.primaryText)
                     }
                     .buttonStyle(.plain)
 
@@ -119,17 +130,14 @@ struct ProviderAdminServicesView: View {
                     if rows.isEmpty {
                         Text("No \(professionFilter.title.lowercased()) services yet. Add a service to make it available for operators.")
                             .font(.provider(.footnote))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
                     } else {
                         servicesLedger
                     }
                 }
             }
         }
-        .task(id: professionFilter) { await load() }
-        .onChange(of: showDeletedServices) { _, _ in
-            Task { await load() }
-        }
+        .task(id: "\(professionFilter.rawValue)-\(showDeletedServices)-\(reloadToken)") { await load() }
         .confirmationDialog(
             "Remove “\(servicePendingRemoval?.name ?? "")”? Operators will no longer be able to select this service until you add it back.",
             isPresented: Binding(
@@ -155,7 +163,7 @@ struct ProviderAdminServicesView: View {
                     Text(section.category.title)
                         .font(.provider(.caption2, weight: .bold))
                         .tracking(0.6)
-                        .foregroundStyle(Color.lavaShellCream.opacity(0.45))
+                        .foregroundStyle(ProviderAdminChrome.primaryText.opacity(0.45))
                         .padding(.top, index == 0 ? 0 : 16)
                         .padding(.bottom, 8)
 
@@ -187,7 +195,7 @@ struct ProviderAdminServicesView: View {
         VStack(alignment: .leading, spacing: 10) {
             TextField("Service name", text: $addServiceName)
                 .font(.provider(.body, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream)
+                .foregroundStyle(ProviderAdminChrome.primaryText)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(
@@ -260,14 +268,14 @@ struct ProviderAdminServicesView: View {
                 } label: {
                     Image(systemName: isAvailable ? "checkmark.square.fill" : "square")
                         .font(.provider(.title3))
-                        .foregroundStyle(isAvailable ? Color.providerOlive : Color.lavaShellCream.opacity(0.4))
+                        .foregroundStyle(isAvailable ? Color.providerOlive : ProviderAdminChrome.primaryText.opacity(0.4))
                 }
                 .buttonStyle(.plain)
                 .disabled(saving)
 
                 Text(r.name)
                     .font(.provider(.body, weight: .bold))
-                    .foregroundStyle(isAvailable ? Color.lavaShellCream : Color.lavaShellCream.opacity(0.55))
+                    .foregroundStyle(isAvailable ? ProviderAdminChrome.primaryText : ProviderAdminChrome.primaryText.opacity(0.55))
                     .lineLimit(2)
                     .minimumScaleFactor(0.9)
             }
@@ -309,7 +317,7 @@ struct ProviderAdminServicesView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(
-                    isAvailable ? Color.providerOlive.opacity(0.72) : Color.lavaShellCream.opacity(0.14),
+                    isAvailable ? Color.providerOlive.opacity(0.72) : ProviderAdminChrome.primaryText.opacity(0.14),
                     lineWidth: 2
                 )
         )
@@ -338,26 +346,26 @@ struct ProviderAdminServicesView: View {
         HStack(alignment: .center, spacing: 4) {
             Text(label)
                 .font(.provider(.caption, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream.opacity(isEnabled ? 0.62 : 0.38))
+                .foregroundStyle(ProviderAdminChrome.primaryText.opacity(isEnabled ? 0.62 : 0.38))
                 .frame(width: ProviderServicesLedgerStyle.fieldLabelWidth, alignment: .trailing)
 
             HStack(spacing: 3) {
                 if let prefix {
                     Text(prefix)
                         .font(.provider(.caption, weight: .bold))
-                        .foregroundStyle(Color.lavaShellCream.opacity(isEnabled ? 0.55 : 0.35))
+                        .foregroundStyle(ProviderAdminChrome.primaryText.opacity(isEnabled ? 0.55 : 0.35))
                 }
 
                 catalogRangeField(text: minText, isEnabled: isEnabled, needsCommit: needsCommit)
 
                 Text("–")
                     .font(.provider(.caption, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCream.opacity(isEnabled ? 0.45 : 0.28))
+                    .foregroundStyle(ProviderAdminChrome.primaryText.opacity(isEnabled ? 0.45 : 0.28))
 
                 if let prefix {
                     Text(prefix)
                         .font(.provider(.caption, weight: .bold))
-                        .foregroundStyle(Color.lavaShellCream.opacity(isEnabled ? 0.55 : 0.35))
+                        .foregroundStyle(ProviderAdminChrome.primaryText.opacity(isEnabled ? 0.55 : 0.35))
                 }
 
                 catalogRangeField(text: maxText, isEnabled: isEnabled, needsCommit: needsCommit)
@@ -365,7 +373,7 @@ struct ProviderAdminServicesView: View {
                 if let suffix {
                     Text(suffix)
                         .font(.provider(.caption2, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCream.opacity(isEnabled ? 0.55 : 0.35))
+                        .foregroundStyle(ProviderAdminChrome.primaryText.opacity(isEnabled ? 0.55 : 0.35))
                 }
 
                 if isEnabled, needsCommit, let onConfirm, let onCancel {
@@ -384,7 +392,7 @@ struct ProviderAdminServicesView: View {
         TextField("0", text: text)
             .keyboardType(.numberPad)
             .font(.provider(.subheadline, weight: .bold))
-            .foregroundStyle(isEnabled ? Color.lavaShellCream : Color.lavaShellCream.opacity(0.45))
+            .foregroundStyle(isEnabled ? ProviderAdminChrome.primaryText : ProviderAdminChrome.primaryText.opacity(0.45))
             .multilineTextAlignment(.trailing)
             .frame(width: ProviderServicesLedgerStyle.rangeFieldInputWidth)
             .padding(.horizontal, 6)
@@ -406,7 +414,7 @@ struct ProviderAdminServicesView: View {
     private func catalogInputBorder(isAvailable: Bool, needsCommit: Bool) -> some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
             .strokeBorder(
-                needsCommit ? Color.providerOlive : Color.lavaShellCream.opacity(isAvailable ? 0.22 : 0.1),
+                needsCommit ? Color.providerOlive : ProviderAdminChrome.primaryText.opacity(isAvailable ? 0.22 : 0.1),
                 lineWidth: needsCommit ? 2 : 1
             )
     }
@@ -422,7 +430,7 @@ struct ProviderAdminServicesView: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.provider(.title3))
                 .symbolRenderingMode(.palette)
-                .foregroundStyle(Color.lavaShellCream, Color.providerOlive)
+                .foregroundStyle(ProviderAdminChrome.primaryText, Color.providerOlive)
         }
         .buttonStyle(.plain)
         .disabled(saving)
@@ -431,7 +439,7 @@ struct ProviderAdminServicesView: View {
         Button(action: onCancel) {
             Image(systemName: "xmark.circle.fill")
                 .font(.provider(.title2))
-                .foregroundStyle(Color.lavaShellCream.opacity(0.45))
+                .foregroundStyle(ProviderAdminChrome.primaryText.opacity(0.45))
         }
         .buttonStyle(.plain)
         .disabled(saving)
@@ -452,6 +460,7 @@ struct ProviderAdminServicesView: View {
             )
             rows = Self.mappedRows(from: catalog)
         } catch {
+            guard !providerAdminServicesIsBenignRequestCancellation(error) else { return }
             loadError = error.localizedDescription
             rows = []
         }
@@ -482,6 +491,7 @@ struct ProviderAdminServicesView: View {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             toast = nil
         } catch {
+            guard !providerAdminServicesIsBenignRequestCancellation(error) else { return }
             toast = error.localizedDescription
         }
     }
@@ -513,6 +523,7 @@ struct ProviderAdminServicesView: View {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             toast = nil
         } catch {
+            guard !providerAdminServicesIsBenignRequestCancellation(error) else { return }
             toast = error.localizedDescription
             await load()
         }
@@ -545,6 +556,7 @@ struct ProviderAdminServicesView: View {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             toast = nil
         } catch {
+            guard !providerAdminServicesIsBenignRequestCancellation(error) else { return }
             toast = error.localizedDescription
             await load()
         }
@@ -611,6 +623,7 @@ struct ProviderAdminServicesView: View {
         } catch let OnCutsHTTPError.httpStatus(_, msg) {
             addServiceError = msg ?? "Could not add service."
         } catch {
+            guard !providerAdminServicesIsBenignRequestCancellation(error) else { return }
             addServiceError = error.localizedDescription
         }
     }

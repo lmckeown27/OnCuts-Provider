@@ -12,17 +12,19 @@ struct ProviderAdminBarberDetailView: View {
     @State private var isToggling = false
     @State private var isMessaging = false
     @State private var isSavingCommission = false
-    @State private var commissionFeePercentInput = ""
     @State private var commissionFreeRemainingInput = "0"
+    @State private var kickbackPercentInput = "0"
     @State private var commissionSaveMessage: String?
     @State private var errorText: String?
+    private let platformFeePercent: Double
 
-    init(barber: AdminBarberDTO) {
+    init(barber: AdminBarberDTO, platformFeePercent: Double = 15) {
         _barber = State(initialValue: barber)
-        _commissionFeePercentInput = State(initialValue: Self.feePercentInput(from: barber))
         _commissionFreeRemainingInput = State(
             initialValue: String(barber.commissionFreeBookingsRemaining ?? 0)
         )
+        _kickbackPercentInput = State(initialValue: Self.kickbackPercentInput(from: barber))
+        self.platformFeePercent = platformFeePercent
     }
 
     var body: some View {
@@ -52,7 +54,7 @@ struct ProviderAdminBarberDetailView: View {
         .refreshable { await loadBookings() }
         .task { await loadBookings() }
         .providerPageNavigationTitle(barber.displayName)
-        .providerLavaScreenChrome()
+        .background(ProviderAdminChrome.canvasBackground.ignoresSafeArea())
         .onChange(of: barber.id) { _, _ in
             syncCommissionFormFromBarber()
         }
@@ -72,7 +74,7 @@ struct ProviderAdminBarberDetailView: View {
                             .font(.provider(.title3, weight: .semibold))
                         Text(barber.publicLocationDisplay)
                             .font(.provider(.caption))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
                         HStack(spacing: 6) {
                             if barber.hasStripeSetup == true {
                                 tag(text: "Payouts on", tint: Color.green.opacity(0.55))
@@ -80,6 +82,12 @@ struct ProviderAdminBarberDetailView: View {
                                 tag(text: "Stripe pending", tint: Color.orange.opacity(0.55))
                             } else {
                                 tag(text: "No Stripe", tint: Color.white.opacity(0.18))
+                            }
+                            if let free = barber.commissionFreeBookingsRemaining, free > 0 {
+                                tag(text: "\(free) free", tint: Color.green.opacity(0.4))
+                            }
+                            if let kickback = barber.kickbackPercent, kickback > 0 {
+                                tag(text: Self.kickbackTagLabel(kickback), tint: Color.providerOlive.opacity(0.55))
                             }
                         }
                     }
@@ -94,55 +102,55 @@ struct ProviderAdminBarberDetailView: View {
     private var paymentSettingsCard: some View {
         sectionCard(
             title: "Payment settings",
-            subtitle: "Default commission 15% · tips never commissioned"
+            subtitle: "Platform commission \(Self.formatFee(platformFeePercent))% · tips never commissioned"
         ) {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Commission rate (%)")
-                        .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
-                    TextField("15 (default)", text: $commissionFeePercentInput)
-                        .font(.provider(.subheadline))
-                        .foregroundStyle(Color.lavaShellCream)
-                        .keyboardType(.decimalPad)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(
-                            Color.providerScheduleActionBackground,
-                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .strokeBorder(Color.providerScheduleActionBorder, lineWidth: 0.8)
-                        )
-                        .disabled(isSavingCommission)
-                    Text("Leave blank to use the platform default (15%)")
-                        .font(.provider(.caption2))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
                     Text("Commission-free bookings remaining")
                         .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
                     TextField("0", text: $commissionFreeRemainingInput)
                         .font(.provider(.subheadline))
-                        .foregroundStyle(Color.lavaShellCream)
+                        .foregroundStyle(ProviderAdminChrome.primaryText)
                         .keyboardType(.numberPad)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
                         .background(
-                            Color.providerScheduleActionBackground,
+                            ProviderAdminChrome.mutedFill,
                             in: RoundedRectangle(cornerRadius: 10, style: .continuous)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .strokeBorder(Color.providerScheduleActionBorder, lineWidth: 0.8)
+                                .strokeBorder(ProviderAdminChrome.border, lineWidth: 0.8)
                         )
                         .disabled(isSavingCommission)
-                    Text("Next N card bookings take $0 platform fee, then the rate above applies")
+                    Text("Next N card bookings take $0 platform fee (default 5), then \(Self.formatFee(platformFeePercent))% applies")
                         .font(.provider(.caption2))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .foregroundStyle(ProviderAdminChrome.tertiaryText)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Provider kickback %")
+                        .font(.provider(.caption))
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
+                    TextField("0", text: $kickbackPercentInput)
+                        .font(.provider(.subheadline))
+                        .foregroundStyle(ProviderAdminChrome.primaryText)
+                        .keyboardType(.decimalPad)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            ProviderAdminChrome.mutedFill,
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(ProviderAdminChrome.border, lineWidth: 0.8)
+                        )
+                        .disabled(isSavingCommission)
+                    Text("Only on commissionless bookings: platform pays this % of service (not tip) to the provider")
+                        .font(.provider(.caption2))
+                        .foregroundStyle(ProviderAdminChrome.tertiaryText)
                 }
 
                 Button {
@@ -178,10 +186,9 @@ struct ProviderAdminBarberDetailView: View {
                     .disabled(isSavingCommission)
 
                     Button {
-                        commissionFeePercentInput = ""
-                        commissionFreeRemainingInput = "0"
+                        kickbackPercentInput = "10"
                     } label: {
-                        Text("Reset to default")
+                        Text("Set 10% kickback")
                             .font(.provider(.subheadline, weight: .semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
@@ -189,6 +196,18 @@ struct ProviderAdminBarberDetailView: View {
                     .buttonStyle(.bordered)
                     .disabled(isSavingCommission)
                 }
+
+                Button {
+                    commissionFreeRemainingInput = "5"
+                    kickbackPercentInput = "0"
+                } label: {
+                    Text("Reset to default")
+                        .font(.provider(.subheadline, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.bordered)
+                .disabled(isSavingCommission)
             }
         }
     }
@@ -204,9 +223,9 @@ struct ProviderAdminBarberDetailView: View {
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.provider(.caption))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
             }
-            .foregroundStyle(Color.lavaShellCream)
+            .foregroundStyle(ProviderAdminChrome.primaryText)
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -240,7 +259,7 @@ struct ProviderAdminBarberDetailView: View {
                      ? "Customers can see and book this barber."
                      : "Hidden from the consumer marketplace.")
                     .font(.provider(.caption))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .foregroundStyle(ProviderAdminChrome.secondaryText)
             }
             Spacer()
             Toggle("", isOn: Binding(
@@ -265,7 +284,7 @@ struct ProviderAdminBarberDetailView: View {
             if bookings.isEmpty {
                 Text(isLoading ? "Loading bookings…" : "No bookings yet.")
                     .font(.provider(.footnote))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .foregroundStyle(ProviderAdminChrome.secondaryText)
             } else {
                 VStack(spacing: 10) {
                     ForEach(bookings.prefix(50)) { b in
@@ -274,7 +293,7 @@ struct ProviderAdminBarberDetailView: View {
                     if bookings.count > 50 {
                         Text("Showing first 50 of \(bookings.count). Refine on the web dashboard for more.")
                             .font(.provider(.caption2))
-                            .foregroundStyle(Color.lavaShellCreamTertiary)
+                            .foregroundStyle(ProviderAdminChrome.tertiaryText)
                     }
                 }
             }
@@ -300,11 +319,11 @@ struct ProviderAdminBarberDetailView: View {
                 }
             }
             .font(.provider(.caption))
-            .foregroundStyle(Color.lavaShellCreamSecondary)
+            .foregroundStyle(ProviderAdminChrome.secondaryText)
             if let t = b.scheduledTime {
                 Text(t, format: .dateTime.month().day().year().hour().minute())
                     .font(.provider(.caption2))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
             }
             if let r = b.reviewRating {
                 HStack(spacing: 4) {
@@ -313,7 +332,7 @@ struct ProviderAdminBarberDetailView: View {
                     if let text = b.reviewText, !text.isEmpty {
                         Text("· \(text)")
                             .font(.provider(.caption2))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
                             .lineLimit(2)
                     }
                 }
@@ -371,23 +390,19 @@ struct ProviderAdminBarberDetailView: View {
             return
         }
 
-        let feeRaw = commissionFeePercentInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let platformFeePercent: Double?
-        if feeRaw.isEmpty {
-            platformFeePercent = nil
-        } else {
-            guard let pct = Double(feeRaw), pct >= 0, pct <= 100 else {
-                errorText = "Commission rate must be 0–100, or blank for default 15%."
-                return
-            }
-            platformFeePercent = (pct * 100).rounded() / 100
-        }
-
         let freeRaw = commissionFreeRemainingInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let freeRemaining = Int(freeRaw), freeRemaining >= 0 else {
             errorText = "Commission-free bookings must be a whole number ≥ 0."
             return
         }
+
+        let kickbackRaw = kickbackPercentInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let kickbackPercent = Double(kickbackRaw.isEmpty ? "0" : kickbackRaw),
+              kickbackPercent >= 0, kickbackPercent <= 100 else {
+            errorText = "Kickback percent must be between 0 and 100."
+            return
+        }
+        let kickbackRounded = (kickbackPercent * 100).rounded() / 100
 
         isSavingCommission = true
         errorText = nil
@@ -396,17 +411,17 @@ struct ProviderAdminBarberDetailView: View {
         do {
             let updated = try await ProviderAdminService.updateBarberCommission(
                 barberRecordId: recordId,
-                platformFeePercent: platformFeePercent,
-                commissionFreeBookingsRemaining: freeRemaining
+                commissionFreeBookingsRemaining: freeRemaining,
+                kickbackPercent: kickbackRounded
             )
             barber = copyBarber(
                 barber,
-                platformFeePercent: updated.platformFeePercent,
                 commissionFreeBookingsRemaining: updated.commissionFreeBookingsRemaining ?? freeRemaining,
-                clearPlatformFeePercent: updated.platformFeePercent == nil
+                kickbackPercent: updated.kickbackPercent ?? kickbackRounded
             )
             syncCommissionFormFromBarber()
             commissionSaveMessage = "Payment settings saved."
+            NotificationCenter.default.post(name: .providerCommissionFreeQuotaChanged, object: nil)
         } catch let OnCutsHTTPError.httpStatus(code, msg) {
             errorText = msg ?? "Failed to save payment settings (\(code))."
         } catch {
@@ -415,34 +430,38 @@ struct ProviderAdminBarberDetailView: View {
     }
 
     private func syncCommissionFormFromBarber() {
-        commissionFeePercentInput = Self.feePercentInput(from: barber)
         commissionFreeRemainingInput = String(barber.commissionFreeBookingsRemaining ?? 0)
+        kickbackPercentInput = Self.kickbackPercentInput(from: barber)
     }
 
-    private static func feePercentInput(from barber: AdminBarberDTO) -> String {
-        guard let pct = barber.platformFeePercent, pct.isFinite else { return "" }
+    private static func kickbackPercentInput(from barber: AdminBarberDTO) -> String {
+        let pct = barber.kickbackPercent ?? 0
+        guard pct.isFinite else { return "0" }
         if pct.rounded() == pct {
             return String(Int(pct))
         }
         return String(pct)
     }
 
+    private static func kickbackTagLabel(_ percent: Double) -> String {
+        if percent.rounded() == percent {
+            return "\(Int(percent))% kickback"
+        }
+        return String(format: "%.1f%% kickback", percent)
+    }
+
+    private static func formatFee(_ percent: Double) -> String {
+        if percent.rounded() == percent { return String(Int(percent)) }
+        return String(format: "%.1f", percent)
+    }
+
     private func copyBarber(
         _ b: AdminBarberDTO,
         isActive: Bool? = nil,
-        platformFeePercent: Double? = nil,
         commissionFreeBookingsRemaining: Int? = nil,
-        clearPlatformFeePercent: Bool = false
+        kickbackPercent: Double? = nil
     ) -> AdminBarberDTO {
-        let fee: Double?
-        if clearPlatformFeePercent {
-            fee = nil
-        } else if let platformFeePercent {
-            fee = platformFeePercent
-        } else {
-            fee = b.platformFeePercent
-        }
-        return AdminBarberDTO(
+        AdminBarberDTO(
             id: b.id,
             barberRecordId: b.barberRecordId,
             firstName: b.firstName,
@@ -461,8 +480,9 @@ struct ProviderAdminBarberDetailView: View {
             totalVolumeCents: b.totalVolumeCents,
             serviceLocationLabel: b.serviceLocationLabel,
             hasServiceLocation: b.hasServiceLocation,
-            platformFeePercent: fee,
-            commissionFreeBookingsRemaining: commissionFreeBookingsRemaining ?? b.commissionFreeBookingsRemaining
+            platformFeePercent: b.platformFeePercent,
+            commissionFreeBookingsRemaining: commissionFreeBookingsRemaining ?? b.commissionFreeBookingsRemaining,
+            kickbackPercent: kickbackPercent ?? b.kickbackPercent
         )
     }
 
@@ -481,7 +501,7 @@ struct ProviderAdminBarberDetailView: View {
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
                 }
             }
             content()
@@ -490,10 +510,10 @@ struct ProviderAdminBarberDetailView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.providerScheduleCardFill)
+                .fill(ProviderAdminChrome.cardBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(Color.providerScheduleCardStroke, lineWidth: 0.6)
+                        .strokeBorder(ProviderAdminChrome.border, lineWidth: 0.6)
                 )
         )
     }

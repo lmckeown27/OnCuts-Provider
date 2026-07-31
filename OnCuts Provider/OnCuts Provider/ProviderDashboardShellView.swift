@@ -23,6 +23,8 @@ struct ProviderDashboardShellView: View {
     @State private var pendingRescheduleRequestCount = 0
     @State private var hasAwaitingPaymentAttention = false
     @State private var showLocationDeniedGuidance = false
+    @State private var showingAdminDashboard = false
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var bookingsTrayAttentionCount: Int {
         pendingRequestCount + pendingRescheduleRequestCount
@@ -112,6 +114,22 @@ struct ProviderDashboardShellView: View {
                 Task { await refreshHeaderCounts() }
             }) {
                 requestsInboxSheet
+            }
+            .sheet(isPresented: $showingAdminDashboard) {
+                ProviderAdminDashboardView()
+                    .presentationDetents(
+                        horizontalSizeClass == .compact
+                            ? [.fraction(0.98)]
+                            : [.large]
+                    )
+                    .presentationDragIndicator(.hidden)
+                    .presentationCornerRadius(
+                        horizontalSizeClass == .compact
+                            ? ProviderAdminChrome.panelCornerRadiusPhone
+                            : ProviderAdminChrome.panelCornerRadiusPad
+                    )
+                    .frame(maxWidth: ProviderAdminChrome.panelMaxWidth)
+                    .frame(maxWidth: .infinity)
             }
             .fullScreenCover(isPresented: Binding(
                 get: { showsPaymentsOnboardingGate },
@@ -287,7 +305,7 @@ struct ProviderDashboardShellView: View {
 
             if let roleLabel = headerRoleStatusText {
                 Button {
-                    navigator.pushRoute(ProviderShellRoute.adminDashboard)
+                    showingAdminDashboard = true
                 } label: {
                     Text(roleLabel)
                         .fontWeight(.semibold)
@@ -429,7 +447,7 @@ struct ProviderDashboardShellView: View {
             if session.authUser?.hasAdminPrivileges == true {
                 Section("Admin") {
                     profileMenuActionButton("Admin dashboard") {
-                        navigator.pushRoute(ProviderShellRoute.adminDashboard)
+                        showingAdminDashboard = true
                     }
                 }
             }
@@ -537,8 +555,9 @@ struct ProviderDashboardShellView: View {
                 .providerPushedDestinationChrome(for: route)
                 .providerShellBackToolbar()
         case .adminDashboard:
-            ProviderAdminDashboardView()
-                .providerPushedDestinationChrome(for: route)
+            // Admin opens as a stone sheet from the header; keep route for deep-link compatibility.
+            Color.clear
+                .onAppear { showingAdminDashboard = true }
                 .providerShellBackToolbar()
         }
     }

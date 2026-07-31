@@ -29,7 +29,7 @@ struct ProviderAdminUserDetailView: View {
         .refreshable { await loadBookings() }
         .task { await loadBookings() }
         .providerPageNavigationTitle(user.displayName)
-        .providerLavaScreenChrome()
+        .background(ProviderAdminChrome.canvasBackground.ignoresSafeArea())
     }
 
     private var profileCard: some View {
@@ -42,9 +42,9 @@ struct ProviderAdminUserDetailView: View {
                         .font(.provider(.title3, weight: .semibold))
                     Text(user.prettyRole)
                         .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
                     if let cn = user.campusName, !cn.isEmpty {
-                        Text(cn).font(.provider(.caption2)).foregroundStyle(Color.lavaShellCreamTertiary)
+                        Text(cn).font(.provider(.caption2)).foregroundStyle(ProviderAdminChrome.tertiaryText)
                     }
                     if user.isActive == false {
                         Text("Blocked")
@@ -67,7 +67,7 @@ struct ProviderAdminUserDetailView: View {
             if bookings.isEmpty {
                 Text(isLoading ? "Loading bookings…" : "No bookings yet.")
                     .font(.provider(.footnote))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .foregroundStyle(ProviderAdminChrome.secondaryText)
             } else {
                 VStack(spacing: 10) {
                     ForEach(bookings.prefix(50)) { b in
@@ -76,7 +76,7 @@ struct ProviderAdminUserDetailView: View {
                     if bookings.count > 50 {
                         Text("Showing first 50 of \(bookings.count). Refine on the web dashboard for more.")
                             .font(.provider(.caption2))
-                            .foregroundStyle(Color.lavaShellCreamTertiary)
+                            .foregroundStyle(ProviderAdminChrome.tertiaryText)
                     }
                 }
             }
@@ -101,11 +101,11 @@ struct ProviderAdminUserDetailView: View {
                 }
             }
             .font(.provider(.caption))
-            .foregroundStyle(Color.lavaShellCreamSecondary)
+            .foregroundStyle(ProviderAdminChrome.secondaryText)
             if let t = b.scheduledTime {
                 Text(t, format: .dateTime.month().day().year().hour().minute())
                     .font(.provider(.caption2))
-                    .foregroundStyle(Color.lavaShellCreamTertiary)
+                    .foregroundStyle(ProviderAdminChrome.tertiaryText)
             }
             if let r = b.reviewRating {
                 HStack(spacing: 4) {
@@ -114,7 +114,7 @@ struct ProviderAdminUserDetailView: View {
                     if let text = b.reviewText, !text.isEmpty {
                         Text("· \(text)")
                             .font(.provider(.caption2))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
                             .lineLimit(2)
                     }
                 }
@@ -158,7 +158,7 @@ struct ProviderAdminUserDetailView: View {
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.provider(.caption))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
                 }
             }
             content()
