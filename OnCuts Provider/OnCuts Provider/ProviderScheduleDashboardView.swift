@@ -151,14 +151,20 @@ struct ProviderScheduleDashboardView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
-            Task { await loadCommissionFreeRemaining() }
+            Task {
+                await loadBookings()
+                await loadCommissionFreeRemaining()
+            }
         }
         .task(id: weekOffset) {
             cancelBookingMove()
             await loadWeekTimeBlocks()
             await loadGoogleBusyTimes()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .providerBookingsChanged)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .providerBookingsChanged)) { notification in
+            if let snapshot = ProviderBookingChangeNotification.booking(from: notification) {
+                applyLocalBookingSnapshot(snapshot)
+            }
             Task {
                 await loadBookings()
                 await loadCommissionFreeRemaining()
@@ -1027,15 +1033,34 @@ struct ProviderScheduleDashboardView: View {
         do {
             let list = try await ProviderBookingsService.listBookings(role: "barber")
             try Task.checkCancellation()
-            bookings = list
-            ProviderAwaitingPaymentTracker.shared.reconcile(with: list)
+            let merged = ProviderScheduleBookingOverrides.merge(serverList: list)
+            bookings = merged
+            ProviderAwaitingPaymentTracker.shared.reconcile(with: merged)
             errorText = nil
+
+            // List payloads often lag tipDecidedAt / cancelledAt — hydrate without blocking first paint.
+            let enriched = await ProviderBookingsService.enrichLifecycleFieldsForSchedule(merged)
+            try Task.checkCancellation()
+            let finalList = ProviderScheduleBookingOverrides.merge(serverList: enriched)
+            bookings = finalList
+            ProviderAwaitingPaymentTracker.shared.reconcile(with: finalList)
         } catch is CancellationError {
         } catch let error as URLError where error.code == .cancelled {
         } catch {
             guard !providerIsBenignRequestCancellation(error) else { return }
             errorText = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
         }
+    }
+
+    /// Applies an optimistic booking mutation so the calendar updates before list refresh.
+    private func applyLocalBookingSnapshot(_ snapshot: SimpleBookingDTO) {
+        ProviderScheduleBookingOverrides.remember(snapshot)
+        if let index = bookings.firstIndex(where: { $0.id == snapshot.id }) {
+            bookings[index] = snapshot
+        } else {
+            bookings.append(snapshot)
+        }
+        ProviderAwaitingPaymentTracker.shared.reconcile(with: bookings)
     }
 
     private func loadWeeklySchedule() async {

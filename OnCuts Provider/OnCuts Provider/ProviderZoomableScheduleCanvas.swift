@@ -205,7 +205,11 @@ struct ProviderZoomableScheduleCanvas: View {
 
     private var appointments: [ScheduleCanvasAppointment] {
         bookings.compactMap { ScheduleCanvasAppointment.from(booking: $0, calendar: calendar) }
-            .filter { calendar.isDate($0.booking.scheduledTime ?? selectedDay, inSameDayAs: selectedDay) }
+            .filter {
+                let day = $0.booking.providerEffectiveScheduledTime ?? $0.booking.scheduledTime
+                guard let day else { return false }
+                return calendar.isDate(day, inSameDayAs: selectedDay)
+            }
             .sorted { $0.startMinute < $1.startMinute }
     }
 

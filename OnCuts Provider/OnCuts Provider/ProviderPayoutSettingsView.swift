@@ -60,11 +60,6 @@ struct ProviderPayoutSettingsView: View {
             title: "What the Stripe App is",
             body: "The Stripe Dashboard app is optional. Install it from the App Store if you want balances and payout activity on your phone without opening Express in a browser."
         ),
-        FAQItem(
-            id: "cash-card",
-            title: "Cash vs card",
-            body: "Card payments settle through Stripe Connect to your bank. Cash is paid to you directly by the client. OnCuts does not deposit cash into Stripe. Track both in the Analytics tab."
-        ),
     ]
 
     private var isFullyConnected: Bool {

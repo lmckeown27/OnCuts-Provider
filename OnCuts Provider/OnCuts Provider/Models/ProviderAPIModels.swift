@@ -677,17 +677,25 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
     /// Cancelled bookings never count as upcoming paid, even if `paidAt` is still set.
     var isUpcomingPaidAppointment: Bool {
         guard !isCancelledOrRejected else { return false }
-        return statusUpper == "PAID" && completedAt == nil && tipDecidedAt == nil && cancelledAt == nil
+        return statusUpper == "PAID" && completedAt == nil && tipDecidedAt == nil
     }
 
     var isCancelledOrRejected: Bool {
-        if cancelledAt != nil { return true }
-        switch statusUpper {
-        case "CANCELLED", "CANCELED", "REJECTED":
+        switch ProviderBookingStatusDisplay.normalized(status) {
+        case "cancelled", "canceled", "rejected":
             return true
         default:
-            return false
+            // Honor a real cancellation timestamp even if status lags. Ignore epoch /
+            // ReferenceDate noise from loose numeric decoding (e.g. `0`).
+            return hasPlausibleCancelledAt
         }
+    }
+
+    /// True when `cancelledAt` looks like a real API timestamp (not a zero / default).
+    var hasPlausibleCancelledAt: Bool {
+        guard let cancelledAt else { return false }
+        // ~2015-01-01 — rejects Unix 0 and NSDate reference-date defaults.
+        return cancelledAt.timeIntervalSince1970 > 1_420_070_400
     }
 
     /// Old fully-settled `PAID` rows that already have `completedAt`.
@@ -697,12 +705,19 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
 
     /// Operator marked complete; consumer still chooses tip (including $0).
     var isAwaitingTip: Bool {
-        statusUpper == "COMPLETED" && tipDecidedAt == nil
+        statusUpper == "COMPLETED" && !isTipSettled
     }
 
     /// Tip step finished (including $0) — booking is settled from the operator’s POV.
+    ///
+    /// Prefer `tipDecidedAt`. Barber list payloads sometimes omit that timestamp after tip;
+    /// fall back to tip amount / post-tip review so the calendar frees the slot.
     var isTipSettled: Bool {
-        tipDecidedAt != nil
+        if tipDecidedAt != nil { return true }
+        if tipAmountCents != nil { return true }
+        // Satisfaction review is collected after tip on the consumer side.
+        if statusUpper == "COMPLETED", review != nil { return true }
+        return false
     }
 
     /// Unpaid ACCEPTED — still eligible for a free-slot reserve at service pay.

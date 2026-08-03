@@ -23,6 +23,32 @@ enum ProviderBookingsService {
         return bookings
     }
 
+    /// Hydrate tip / cancellation fields that the barber list sometimes omits so the
+    /// calendar can drop settled or cancelled rows. Call after assigning the list so
+    /// Pending / Paid cards appear immediately.
+    static func enrichLifecycleFieldsForSchedule(_ bookings: [SimpleBookingDTO]) async -> [SimpleBookingDTO] {
+        let needsEnrichment = bookings.filter { booking in
+            guard booking.isVisibleOnMainSchedule else { return false }
+            // Tip-pending COMPLETED may already be settled on detail.
+            if booking.isAwaitingTip { return true }
+            // Active row with a cancel stamp — confirm detail so it can leave the calendar.
+            return booking.hasPlausibleCancelledAt
+        }
+        guard !needsEnrichment.isEmpty else { return bookings }
+
+        var byId: [String: SimpleBookingDTO] = [:]
+        for booking in needsEnrichment {
+            guard let detail = try? await fetchBooking(id: booking.id) else { continue }
+            byId[booking.id] = detail
+        }
+        guard !byId.isEmpty else { return bookings }
+
+        return bookings.map { booking in
+            guard let detail = byId[booking.id] else { return booking }
+            return booking.mergingTipLifecycle(from: detail)
+        }
+    }
+
     static func fetchBooking(id: String) async throws -> SimpleBookingDTO {
         let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "bookings-simple/\(id)")
         let dec = OnCutsHTTPClient.jsonDecoderSnake()

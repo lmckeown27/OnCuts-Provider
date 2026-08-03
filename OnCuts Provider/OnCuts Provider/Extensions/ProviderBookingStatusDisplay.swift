@@ -171,6 +171,8 @@ enum ProviderBookingStatusDisplay {
     static func scheduleSlotTitle(for raw: String?) -> String? {
         if isScheduleCompleted(status: raw) { return "Completed" }
         switch normalized(raw) {
+        case "pending":
+            return "Pending"
         case "paid":
             return "Paid"
         case "accepted", "booked", "in_progress":
@@ -301,7 +303,7 @@ extension SimpleBookingDTO {
             return "Awaiting Payment"
         }
         // Tip-pending COMPLETED stays on the calendar as “Completed”.
-        if isAwaitingTip || statusUpper == "COMPLETED" {
+        if isAwaitingTip {
             return "Completed"
         }
         return scheduleSlotTitle
@@ -313,12 +315,12 @@ extension SimpleBookingDTO {
     /// Cancelled / rejected bookings never appear on the calendar.
     var isVisibleOnMainSchedule: Bool {
         guard !isCancelledOrRejected else { return false }
-        switch statusUpper {
-        case "PENDING", "ACCEPTED", "BOOKED", "IN_PROGRESS":
+        switch ProviderBookingStatusDisplay.normalized(status) {
+        case "pending", "accepted", "booked", "in_progress":
             return true
-        case "PAID":
+        case "paid":
             return isUpcomingPaidAppointment
-        case "COMPLETED":
+        case "completed":
             // Keep the appointment on the calendar until the consumer submits a tip (incl. $0).
             return isAwaitingTip
         default:

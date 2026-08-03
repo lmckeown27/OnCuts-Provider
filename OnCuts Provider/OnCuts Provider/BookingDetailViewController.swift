@@ -296,8 +296,7 @@ final class BookingDetailViewController: UIViewController {
             || current.isAwaitingTip
             || paymentRequested
             || ProviderAwaitingPaymentTracker.shared.requestedIds.contains(current.id)
-        let needsLifecycleFields = current.isUpcomingPaidAppointment
-            || (current.statusUpper == "COMPLETED" && current.tipDecidedAt == nil)
+        let needsLifecycleFields = current.isUpcomingPaidAppointment || current.isAwaitingTip
         let mayHaveRescheduleRequest = Self.mayHavePendingRescheduleRequest(current)
         guard awaitingLocally || needsLifecycleFields || mayHaveRescheduleRequest else { return }
 
@@ -321,7 +320,7 @@ final class BookingDetailViewController: UIViewController {
         } else {
             ProviderAwaitingPaymentTracker.shared.clearRequest(for: current.id)
         }
-        NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
+        ProviderBookingChangeNotification.post(booking: current)
     }
 
     private static func isPaymentResolved(_ booking: SimpleBookingDTO) -> Bool {
@@ -1474,7 +1473,7 @@ final class BookingDetailViewController: UIViewController {
                 try await block()
                 self.current = try await ProviderBookingsService.fetchBooking(id: self.current.id)
                 onSuccess?()
-                NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
+                ProviderBookingChangeNotification.post(booking: self.current)
                 await self.onChanged()
             } catch {
                 self.presentError(error)
@@ -1501,7 +1500,7 @@ final class BookingDetailViewController: UIViewController {
                     self.current = self.with(status: optimisticStatus)
                 }
                 onSuccess?()
-                NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)
+                ProviderBookingChangeNotification.post(booking: self.current)
                 await self.onChanged()
             } catch {
                 self.presentError(error)
@@ -1539,9 +1538,23 @@ final class BookingDetailViewController: UIViewController {
             paidAt: current.paidAt,
             completedAt: nextCompletedAt,
             paymentRequestedAt: current.paymentRequestedAt,
-            tipRequestedAt: current.tipRequestedAt,
+            tipRequestedAt: {
+                if newStatus.uppercased() == "COMPLETED" {
+                    return current.tipRequestedAt ?? Date()
+                }
+                if clearCompletedAt {
+                    return nil
+                }
+                return current.tipRequestedAt
+            }(),
             tipDecidedAt: current.tipDecidedAt,
-            cancelledAt: newStatus.uppercased().contains("CANCEL") ? (current.cancelledAt ?? Date()) : current.cancelledAt,
+            cancelledAt: {
+                let upper = newStatus.uppercased()
+                if upper.contains("CANCEL") || upper == "REJECTED" {
+                    return current.cancelledAt ?? Date()
+                }
+                return current.cancelledAt
+            }(),
             tipAmountCents: current.tipAmountCents,
             totalPaidCents: current.totalPaidCents,
             paymentMethod: current.paymentMethod,

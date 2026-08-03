@@ -111,6 +111,39 @@ extension SimpleBookingDTO {
         )
     }
 
+    /// Prefer detail-endpoint tip / completion fields when the barber list omits them.
+    func mergingTipLifecycle(from detail: SimpleBookingDTO) -> SimpleBookingDTO {
+        SimpleBookingDTO(
+            id: id,
+            consumerId: consumerId,
+            barberId: barberId,
+            serviceType: serviceType,
+            priceUsdCents: priceUsdCents,
+            scheduledTime: scheduledTime,
+            status: detail.status ?? status,
+            location: location,
+            notes: notes,
+            serviceName: serviceName,
+            review: review ?? detail.review,
+            paidAt: paidAt ?? detail.paidAt,
+            completedAt: completedAt ?? detail.completedAt,
+            paymentRequestedAt: paymentRequestedAt ?? detail.paymentRequestedAt,
+            tipRequestedAt: tipRequestedAt ?? detail.tipRequestedAt,
+            tipDecidedAt: tipDecidedAt ?? detail.tipDecidedAt,
+            cancelledAt: cancelledAt ?? detail.cancelledAt,
+            tipAmountCents: tipAmountCents ?? detail.tipAmountCents,
+            totalPaidCents: totalPaidCents ?? detail.totalPaidCents,
+            paymentMethod: paymentMethod ?? detail.paymentMethod,
+            commissionFreeApplied: commissionFreeApplied ?? detail.commissionFreeApplied,
+            pendingRescheduleRequest: pendingRescheduleRequest ?? detail.pendingRescheduleRequest,
+            consumer: consumer,
+            consumerName: consumerName,
+            barber: barber,
+            barberName: barberName,
+            conversationId: conversationId ?? detail.conversationId
+        )
+    }
+
     func formattedProviderEffectiveSchedule(reference: Date = .now) -> String {
         guard let time = providerEffectiveScheduledTime else { return "Time TBD" }
         let style = Date.FormatStyle(date: .abbreviated, time: .shortened)
