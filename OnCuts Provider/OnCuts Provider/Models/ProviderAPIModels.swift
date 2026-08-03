@@ -1032,9 +1032,31 @@ struct AdminPlatformStatsDTO: Decodable, Hashable {
     let totalCampuses: Int?
 }
 
-/// `GET/PUT /admin/platform-settings` — global commission percent.
+/// `GET/PUT /admin/platform-settings` — global commission % plus Controls toggles.
 struct AdminPlatformSettingsDTO: Decodable, Hashable {
     let platformFeePercent: Double?
+    /// Controls tab — when false, cash is hidden in payment UIs and rejected server-side.
+    let cashPaymentEnabled: Bool?
+    /// Controls tab — `providers` (discovery home) or `waitlist`.
+    let consumerHomeMode: String?
+
+    var resolvedConsumerHomeMode: AdminConsumerHomeMode {
+        AdminConsumerHomeMode(rawValue: (consumerHomeMode ?? "").lowercased()) ?? .providers
+    }
+}
+
+enum AdminConsumerHomeMode: String, CaseIterable, Identifiable, Hashable {
+    case providers
+    case waitlist
+
+    var id: String { rawValue }
+
+    var chipLabel: String {
+        switch self {
+        case .providers: "Provider cards"
+        case .waitlist: "Waitlist"
+        }
+    }
 }
 
 struct AdminPlatformSettingsEnvelope: Decodable {

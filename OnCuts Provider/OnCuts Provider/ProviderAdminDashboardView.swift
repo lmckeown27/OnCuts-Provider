@@ -14,15 +14,12 @@ private func providerAdminIsBenignRequestCancellation(_ error: Error) -> Bool {
 
 /// Native iOS Admin dashboard.
 ///
-/// Tabs mirror the daily-driver flows of the web `AdminDashboard.tsx`:
-///   * **Performance** — platform totals, **time-series chart** (daily / weekly / monthly / yearly), plus
-///     **campus search** (typeahead) to scope or clear to aggregate headline revenue / bookings / payout metrics.
-///   * **Operators** — **Current** providers with Visible/Hidden, Stripe, and (All Campuses)
-///     Location filters (opened from a filter button). Campus scope uses pin proximity (~8km).
-///     Row location shows `serviceLocationLabel` (never nearest campus name). **Applications** — approve / reject.
-///   * **Users** — every platform user (optionally scoped by campus) with simple in-memory search; tap →
-///     push the admin user-detail screen (consumer bookings).
-///   * **Services** — platform service catalog (price / duration bounds, activate / deactivate).
+/// Tabs mirror the web `AdminDashboard`:
+///   * **Performance** — platform totals, time-series chart, campus search, commission %.
+///   * **Operators** — Current providers + Applications / Onboarding.
+///   * **Users** — directory + nested **Safety** (UGC reports + banned users).
+///   * **Services** — platform service catalog.
+///   * **Controls** — live Cash Option + Consumer home toggles (`platform_settings`).
 struct ProviderAdminDashboardView: View {
     private enum AdminDashboardDestination: Hashable {
         case barber(AdminBarberDTO)
@@ -37,7 +34,7 @@ struct ProviderAdminDashboardView: View {
         case barbers = "Operators"
         case users = "Users"
         case services = "Services"
-        case safety = "Safety"
+        case controls = "Controls"
         var id: String { rawValue }
 
         var systemImage: String {
@@ -46,7 +43,7 @@ struct ProviderAdminDashboardView: View {
             case .barbers: "scissors"
             case .users: "person.2.fill"
             case .services: "list.bullet.rectangle.fill"
-            case .safety: "shield.lefthalf.filled"
+            case .controls: "switch.2"
             }
         }
 
@@ -57,9 +54,16 @@ struct ProviderAdminDashboardView: View {
             case .barbers: "Operators"
             case .users: "Users"
             case .services: "Services"
-            case .safety: "Safety"
+            case .controls: "Controls"
             }
         }
+    }
+
+    /// Outer hub inside Users: directory vs Safety (trust/moderation). Users tab stays selected.
+    enum UsersHubTab: String, CaseIterable, Identifiable {
+        case directory = "Users"
+        case safety = "Safety"
+        var id: String { rawValue }
     }
 
     /// Outer hub inside Operators: roster tools vs onboarding bulk tools.
@@ -153,6 +157,7 @@ struct ProviderAdminDashboardView: View {
     /// Defer heavy tab trees until after the sheet has presented (avoids stack overflow on open).
     @State private var isAdminContentReady = false
     @State private var operatorsHubTab: OperatorsHubTab = .operators
+    @State private var usersHubTab: UsersHubTab = .directory
     @State private var barbersSubTab: BarbersSubTab = .current
     @State private var barberVisibilityFilter: BarberVisibilityFilter = .visible
     @State private var barberStripeFilter: BarberStripeFilter = .all
@@ -214,6 +219,14 @@ struct ProviderAdminDashboardView: View {
     @FocusState private var isPlatformFeeFieldFocused: Bool
     @State private var isLoadingPlatformFee = false
     @State private var isSavingPlatformFee = false
+
+    // Controls tab — Cash Option + Consumer home (same `platform_settings` row as commission %).
+    @State private var cashPaymentEnabled = false
+    @State private var consumerHomeMode: AdminConsumerHomeMode = .providers
+    @State private var isLoadingControls = false
+    @State private var isSavingCashOption = false
+    @State private var isSavingConsumerHome = false
+    @State private var controlsError: String?
 
     // Onboarding hub
     @State private var onboardingScope: OnboardingScope = .all
@@ -284,8 +297,24 @@ struct ProviderAdminDashboardView: View {
                 if newTab == .services {
                     hasMountedServicesTab = true
                 }
+                if newTab == .users, usersHubTab == .safety {
+                    adminLoadGeneration &+= 1
+                    let loadID = adminLoadGeneration
+                    Task { await loadSafety(loadID: loadID) }
+                }
+                if newTab == .controls {
+                    Task { await loadControlsSettings() }
+                }
             }
             .onChange(of: operatorsHubTab) { _, _ in adminSearchFocus = nil }
+            .onChange(of: usersHubTab) { _, hub in
+                adminSearchFocus = nil
+                if hub == .safety {
+                    adminLoadGeneration &+= 1
+                    let loadID = adminLoadGeneration
+                    Task { await loadSafety(loadID: loadID) }
+                }
+            }
             .onChange(of: userSearch) { _, _ in usersVisibleCount = 25 }
             .onChange(of: userRoleFilter) { _, _ in usersVisibleCount = 25 }
             .onChange(of: metricsTimeline) { _, _ in
@@ -520,8 +549,8 @@ struct ProviderAdminDashboardView: View {
         case .services:
             // Placeholder until `hasMountedServicesTab` paints the real Services view above.
             AnyView(Color.clear.frame(minHeight: hasMountedServicesTab ? 0 : 120))
-        case .safety:
-            AnyView(safetyTab)
+        case .controls:
+            AnyView(controlsTab)
         }
     }
 
@@ -2915,6 +2944,24 @@ struct ProviderAdminDashboardView: View {
     }
 
     private var usersTab: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Picker("Users hub", selection: $usersHubTab) {
+                ForEach(UsersHubTab.allCases) { hub in
+                    Text(hub.rawValue).tag(hub)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if usersHubTab == .directory {
+                usersDirectoryCard
+            } else {
+                // Safety stays under Users (Users tab remains selected), matching web.
+                safetyTab
+            }
+        }
+    }
+
+    private var usersDirectoryCard: some View {
         sectionCard(title: "Users", subtitle: usersTabSubtitle) {
             VStack(spacing: 10) {
                 HStack(spacing: 6) {
@@ -3049,11 +3096,114 @@ struct ProviderAdminDashboardView: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - Controls tab
+
+    /// Runtime product toggles on `platform_settings` — Cash Option + Consumer home.
+    /// Saves immediately on change (parity with web Controls). Commission % stays on Performance.
+    private var controlsTab: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let controlsError, !controlsError.isEmpty {
+                Text(controlsError)
+                    .font(.provider(.footnote))
+                    .foregroundStyle(.red)
+            }
+
+            sectionCard(
+                title: "Cash Option",
+                subtitle: nil
+            ) {
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Allow cash payments")
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .foregroundStyle(ProviderAdminChrome.primaryText)
+                        Text(cashPaymentEnabled ? "Cash is available at checkout." : "Card only.")
+                            .font(.provider(.caption))
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
+                    }
+                    Spacer(minLength: 8)
+                    if isSavingCashOption || isLoadingControls {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { cashPaymentEnabled },
+                            set: { newValue in
+                                guard newValue != cashPaymentEnabled else { return }
+                                Task { await saveCashPaymentEnabled(newValue) }
+                            }
+                        )
+                    )
+                    .labelsHidden()
+                    .tint(.providerOlive)
+                    .disabled(isSavingCashOption || isLoadingControls)
+                }
+            }
+
+            sectionCard(
+                title: "Consumer Home",
+                subtitle: nil
+            ) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(AdminConsumerHomeMode.allCases) { mode in
+                        consumerHomeRadioRow(mode)
+                    }
+
+                    HStack(spacing: 8) {
+                        if isSavingConsumerHome || isLoadingControls {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Text(
+                            consumerHomeMode == .providers
+                                ? "Consumers see provider cards on home."
+                                : "Consumers see the waitlist on home."
+                        )
+                        .font(.provider(.caption))
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
+                    }
+                    .padding(.top, 2)
+                }
+            }
+        }
+    }
+
+    private func consumerHomeRadioRow(_ mode: AdminConsumerHomeMode) -> some View {
+        let isSelected = consumerHomeMode == mode
+        let isDisabled = isSavingConsumerHome || isLoadingControls
+        return Button {
+            guard mode != consumerHomeMode else { return }
+            Task { await saveConsumerHomeMode(mode) }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
+                    .font(.provider(.body, weight: .regular))
+                    .foregroundStyle(isSelected ? Color.providerOlive : ProviderAdminChrome.tertiaryText)
+                    .accessibilityHidden(true)
+                Text(mode.chipLabel)
+                    .font(.provider(.subheadline, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(ProviderAdminChrome.primaryText)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
+            .contentShape(Rectangle())
+            .opacity(isDisabled ? 0.55 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .accessibilityLabel(mode.chipLabel)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityHint("Selects this consumer home mode")
+    }
+
     // MARK: - Safety tab
 
-    /// Two stacked sections matching the web Admin **Safety** layout: Reports queue with
-    /// resolve actions on top, banned users with Unban below. Both are filterable; neither is
-    /// campus-scoped (platform-wide moderation surface).
+    /// Two stacked sections matching the web Admin **Safety** layout (under Users): Reports queue
+    /// with resolve actions on top, banned users with Unban below. Both are filterable; neither is
+    /// campus-scoped (platform-wide moderation surface). Peer blocks are not shown here.
     private var safetyTab: some View {
         VStack(alignment: .leading, spacing: 16) {
             reportsSection
@@ -3529,13 +3679,70 @@ struct ProviderAdminDashboardView: View {
         isLoadingPlatformFee = true
         defer { isLoadingPlatformFee = false }
         do {
-            let pct = try await ProviderAdminService.fetchPlatformSettings()
-            platformFeePercent = pct
-            if !isEditingPlatformFee {
-                platformFeeInput = Self.formatFeePercent(pct)
-            }
+            let settings = try await ProviderAdminService.fetchPlatformSettings()
+            applyPlatformSettings(settings, updateFeeEditor: !isEditingPlatformFee)
         } catch {
             // Keep last known / default 15%.
+        }
+    }
+
+    private func loadControlsSettings() async {
+        isLoadingControls = true
+        controlsError = nil
+        defer { isLoadingControls = false }
+        do {
+            let settings = try await ProviderAdminService.fetchPlatformSettings()
+            applyPlatformSettings(settings, updateFeeEditor: false)
+        } catch {
+            guard !providerAdminIsBenignRequestCancellation(error) else { return }
+            controlsError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func applyPlatformSettings(_ settings: AdminPlatformSettingsDTO, updateFeeEditor: Bool) {
+        if let pct = settings.platformFeePercent {
+            platformFeePercent = pct
+            if updateFeeEditor {
+                platformFeeInput = Self.formatFeePercent(pct)
+            }
+        }
+        if let cash = settings.cashPaymentEnabled {
+            cashPaymentEnabled = cash
+        }
+        if settings.consumerHomeMode != nil {
+            consumerHomeMode = settings.resolvedConsumerHomeMode
+        }
+    }
+
+    private func saveCashPaymentEnabled(_ enabled: Bool) async {
+        let previous = cashPaymentEnabled
+        cashPaymentEnabled = enabled
+        isSavingCashOption = true
+        controlsError = nil
+        defer { isSavingCashOption = false }
+        do {
+            let saved = try await ProviderAdminService.updateCashPaymentEnabled(enabled)
+            applyPlatformSettings(saved, updateFeeEditor: false)
+        } catch {
+            cashPaymentEnabled = previous
+            guard !providerAdminIsBenignRequestCancellation(error) else { return }
+            controlsError = (error as? LocalizedError)?.errorDescription ?? "Could not update Cash Option."
+        }
+    }
+
+    private func saveConsumerHomeMode(_ mode: AdminConsumerHomeMode) async {
+        let previous = consumerHomeMode
+        consumerHomeMode = mode
+        isSavingConsumerHome = true
+        controlsError = nil
+        defer { isSavingConsumerHome = false }
+        do {
+            let saved = try await ProviderAdminService.updateConsumerHomeMode(mode)
+            applyPlatformSettings(saved, updateFeeEditor: false)
+        } catch {
+            consumerHomeMode = previous
+            guard !providerAdminIsBenignRequestCancellation(error) else { return }
+            controlsError = (error as? LocalizedError)?.errorDescription ?? "Could not update Consumer home."
         }
     }
 

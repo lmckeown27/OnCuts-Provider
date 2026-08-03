@@ -19,31 +19,55 @@ enum ProviderAdminService {
         )
     }
 
-    // MARK: - Platform settings (global commission %)
+    // MARK: - Platform settings (commission % + Controls toggles)
 
     /// `GET /admin/platform-settings`
-    static func fetchPlatformSettings() async throws -> Double {
+    static func fetchPlatformSettings() async throws -> AdminPlatformSettingsDTO {
         let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "admin/platform-settings")
         let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(AdminPlatformSettingsEnvelope.self, from: data)
-        if let pct = env.data?.platformFeePercent { return pct }
-        let flat = try dec.decode(AdminPlatformSettingsDTO.self, from: data)
-        return flat.platformFeePercent ?? 15
+        if let data = env.data { return data }
+        return try dec.decode(AdminPlatformSettingsDTO.self, from: data)
+    }
+
+    /// Convenience for Performance — commission percent only.
+    static func fetchPlatformFeePercent() async throws -> Double {
+        let settings = try await fetchPlatformSettings()
+        return settings.platformFeePercent ?? 15
+    }
+
+    /// `PUT /admin/platform-settings` — partial body; only supplied keys are updated.
+    @discardableResult
+    static func updatePlatformSettings(_ body: [String: Any]) async throws -> AdminPlatformSettingsDTO {
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "admin/platform-settings",
+            method: "PUT",
+            jsonBody: body
+        )
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
+        let env = try dec.decode(AdminPlatformSettingsEnvelope.self, from: data)
+        if let data = env.data { return data }
+        return (try? dec.decode(AdminPlatformSettingsDTO.self, from: data))
+            ?? AdminPlatformSettingsDTO(
+                platformFeePercent: body["platformFeePercent"] as? Double,
+                cashPaymentEnabled: body["cashPaymentEnabled"] as? Bool,
+                consumerHomeMode: body["consumerHomeMode"] as? String
+            )
     }
 
     /// `PUT /admin/platform-settings` body `{ platformFeePercent }`
     static func updatePlatformSettings(platformFeePercent: Double) async throws -> Double {
         let rounded = (platformFeePercent * 100).rounded() / 100
-        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
-            path: "admin/platform-settings",
-            method: "PUT",
-            jsonBody: ["platformFeePercent": rounded]
-        )
-        let dec = OnCutsHTTPClient.jsonDecoderSnake()
-        let env = try dec.decode(AdminPlatformSettingsEnvelope.self, from: data)
-        if let pct = env.data?.platformFeePercent { return pct }
-        let flat = try? dec.decode(AdminPlatformSettingsDTO.self, from: data)
-        return flat?.platformFeePercent ?? rounded
+        let saved = try await updatePlatformSettings(["platformFeePercent": rounded])
+        return saved.platformFeePercent ?? rounded
+    }
+
+    static func updateCashPaymentEnabled(_ enabled: Bool) async throws -> AdminPlatformSettingsDTO {
+        try await updatePlatformSettings(["cashPaymentEnabled": enabled])
+    }
+
+    static func updateConsumerHomeMode(_ mode: AdminConsumerHomeMode) async throws -> AdminPlatformSettingsDTO {
+        try await updatePlatformSettings(["consumerHomeMode": mode.rawValue])
     }
 
     // MARK: - Campuses
@@ -405,9 +429,8 @@ enum ProviderAdminService {
 
     // MARK: - Safety (admin moderation)
     //
-    // The web Admin **Safety** tab uses only these four endpoints. Peer blocks (`user_blocks`)
-    // are intentionally not exposed here — there is no admin API for arbitrary peer-block
-    // tooling today, and support uses SQL when needed.
+    // Nested under Users on the web Admin dashboard (Users → Safety). Uses these endpoints.
+    // Peer blocks (`user_blocks`) are intentionally not exposed — there is no admin UI for them.
 
     /// `GET /admin/moderation/reports?status=&limit=` — UGC reports queue.
     ///
