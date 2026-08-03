@@ -21,13 +21,22 @@ struct ProviderDashboardShellView: View {
     @State private var unreadConversationCount = 0
     @State private var pendingRequestCount = 0
     @State private var pendingRescheduleRequestCount = 0
-    @State private var hasAwaitingPaymentAttention = false
+    @State private var awaitingPaymentCount = 0
     @State private var showLocationDeniedGuidance = false
     @State private var showingAdminDashboard = false
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var bookingsTrayAttentionCount: Int {
         pendingRequestCount + pendingRescheduleRequestCount
+    }
+
+    /// Yellow awaiting-payment ticker wins over red booking-request tickers.
+    private var bookingsTrayBadgeCount: Int {
+        awaitingPaymentCount > 0 ? awaitingPaymentCount : bookingsTrayAttentionCount
+    }
+
+    private var bookingsTrayBadgeIsAwaitingPayment: Bool {
+        awaitingPaymentCount > 0
     }
 
     /// Present only after a background status check confirms Connect is incomplete.
@@ -358,15 +367,15 @@ struct ProviderDashboardShellView: View {
         }
         .buttonStyle(.plain)
         .overlay(alignment: .topTrailing) {
-            ZStack(alignment: .topTrailing) {
-                if bookingsTrayAttentionCount > 0 {
-                    headerAttentionCountBadge(bookingsTrayAttentionCount)
-                        .offset(x: hasAwaitingPaymentAttention ? -10 : 5, y: -5)
+            if bookingsTrayBadgeCount > 0 {
+                Group {
+                    if bookingsTrayBadgeIsAwaitingPayment {
+                        headerAwaitingPaymentCountBadge(bookingsTrayBadgeCount)
+                    } else {
+                        headerAttentionCountBadge(bookingsTrayBadgeCount)
+                    }
                 }
-                if hasAwaitingPaymentAttention {
-                    awaitingPaymentWarningBadge
-                        .offset(x: 5, y: -5)
-                }
+                .offset(x: 5, y: -5)
             }
         }
         .accessibilityLabel(bookingsTrayAccessibilityLabel)
@@ -382,31 +391,48 @@ struct ProviderDashboardShellView: View {
 
     private var bookingsTrayAccessibilityLabel: String {
         var parts: [String] = ["Bookings"]
-        if pendingRequestCount > 0 {
-            parts.append("\(pendingRequestCount) pending request\(pendingRequestCount == 1 ? "" : "s")")
-        }
-        if pendingRescheduleRequestCount > 0 {
-            parts.append("\(pendingRescheduleRequestCount) schedule change request\(pendingRescheduleRequestCount == 1 ? "" : "s")")
-        }
-        if hasAwaitingPaymentAttention {
-            parts.append("awaiting payment")
+        if awaitingPaymentCount > 0 {
+            parts.append(
+                "\(awaitingPaymentCount) awaiting payment\(awaitingPaymentCount == 1 ? "" : "s")"
+            )
+        } else {
+            if pendingRequestCount > 0 {
+                parts.append("\(pendingRequestCount) pending request\(pendingRequestCount == 1 ? "" : "s")")
+            }
+            if pendingRescheduleRequestCount > 0 {
+                parts.append("\(pendingRescheduleRequestCount) schedule change request\(pendingRescheduleRequestCount == 1 ? "" : "s")")
+            }
         }
         guard parts.count > 1 else { return parts[0] }
         return parts[0] + ", " + parts.dropFirst().joined(separator: ", ")
     }
 
-    /// Yellow warning ticker for completed bookings awaiting consumer payment.
-    private var awaitingPaymentWarningBadge: some View {
-        Text("!")
-            .font(.provider(size: 12, weight: .black))
+    /// Yellow count ticker for Accepted bookings awaiting consumer service payment.
+    @ViewBuilder
+    private func headerAwaitingPaymentCountBadge(_ count: Int) -> some View {
+        let label = count > 99 ? "99+" : "\(count)"
+        let text = Text(label)
+            .font(.provider(size: 11, weight: .bold))
             .foregroundStyle(Color(white: 0.1))
-            .frame(width: 18, height: 18)
-            .background(Color(uiColor: ProviderChatDesignTokens.Color.statusYellow), in: Circle())
-            .overlay(
-                Circle()
-                    .strokeBorder(Color.lavaShellCream.opacity(0.85), lineWidth: 1.5)
-            )
-            .accessibilityLabel("Awaiting payment")
+
+        if count > 9 {
+            text
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Color(uiColor: ProviderChatDesignTokens.Color.statusYellow), in: Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(Color.lavaShellCream.opacity(0.85), lineWidth: 1.5)
+                )
+        } else {
+            text
+                .frame(minWidth: 18, minHeight: 18)
+                .background(Color(uiColor: ProviderChatDesignTokens.Color.statusYellow), in: Circle())
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.lavaShellCream.opacity(0.85), lineWidth: 1.5)
+                )
+        }
     }
 
     /// Circular ticker shared by Chats and Bookings header controls.
@@ -581,7 +607,7 @@ struct ProviderDashboardShellView: View {
         guard let bid = session.barberProfile?.id else {
             pendingRequestCount = 0
             pendingRescheduleRequestCount = 0
-            hasAwaitingPaymentAttention = false
+            awaitingPaymentCount = 0
             syncApplicationIconBadge()
             return
         }
@@ -605,10 +631,10 @@ struct ProviderDashboardShellView: View {
             let bookings = try await ProviderBookingsService.listBookings(role: "barber")
             pendingRescheduleRequestCount = bookings.filter(\.hasPendingRescheduleRequest).count
             ProviderAwaitingPaymentTracker.shared.reconcile(with: bookings)
-            hasAwaitingPaymentAttention = bookings.contains(where: \.isCompletedAwaitingConsumerPayment)
+            awaitingPaymentCount = bookings.filter(\.isAwaitingServicePayment).count
         } catch {
             pendingRescheduleRequestCount = 0
-            hasAwaitingPaymentAttention = false
+            awaitingPaymentCount = 0
         }
     }
 
@@ -635,7 +661,8 @@ struct ProviderDashboardShellView: View {
     /// Keeps the home-screen badge aligned with the in-app Chats + Bookings indicators.
     private func syncApplicationIconBadge() {
         #if os(iOS)
-        let badge = unreadConversationCount + bookingsTrayAttentionCount
+        let badge = unreadConversationCount
+            + (awaitingPaymentCount > 0 ? awaitingPaymentCount : bookingsTrayAttentionCount)
         Task {
             try? await UNUserNotificationCenter.current().setBadgeCount(badge)
         }

@@ -9,8 +9,8 @@ enum ProviderBookingStatusDisplay {
         case all
         case pending
         case accepted
-        case completed
         case paid
+        case completed
         case cancelled
         case rejected
 
@@ -21,8 +21,8 @@ enum ProviderBookingStatusDisplay {
             case .all: return "All"
             case .pending: return "Pending"
             case .accepted: return "Accepted"
-            case .completed: return "Completed"
             case .paid: return "Paid"
+            case .completed: return "Completed"
             case .cancelled: return "Cancelled"
             case .rejected: return "Rejected"
             }
@@ -33,11 +33,14 @@ enum ProviderBookingStatusDisplay {
             let norm = ProviderBookingStatusDisplay.normalized(booking.status)
             switch self {
             case .paid:
-                // Settled bookings — status PAID, or any row with a payment timestamp.
-                return norm == "paid" || booking.paidAt != nil
+                // Upcoming paid appointments (service paid, not yet marked complete).
+                // Legacy finished `PAID`+`completedAt` rows belong with Completed.
+                return booking.isUpcomingPaidAppointment
             case .completed:
-                // Visit finished but not yet paid (cash/card still outstanding).
-                return norm == "completed" && booking.paidAt == nil
+                // Marked complete (tip pending or settled) + legacy finished PAID.
+                return norm == "completed" || booking.isLegacyFinishedPaid
+            case .accepted:
+                return norm == "accepted"
             default:
                 return norm == rawValue
             }
@@ -151,18 +154,12 @@ enum ProviderBookingStatusDisplay {
     }
 
     /// Appointments counted in the weekly summary (`[x] appointments this/that week`).
-    /// Includes pending requests and accepted/booked slots; excludes completed, paid, and cancelled.
+    /// Same set as main-schedule visibility (includes tip-pending Completed).
     static func isUpcomingScheduleAppointment(_ booking: SimpleBookingDTO) -> Bool {
-        guard booking.paidAt == nil else { return false }
-        switch normalized(booking.status) {
-        case "pending", "accepted", "booked", "in_progress":
-            return true
-        default:
-            return false
-        }
+        booking.isVisibleOnMainSchedule
     }
 
-    /// Finished appointments still shown on the main schedule (paid appointments are omitted entirely).
+    /// Status is Completed (label helper). Slot frees only after tip is decided — see ``SimpleBookingDTO/isVisibleOnMainSchedule``.
     static func isScheduleCompleted(status raw: String?) -> Bool {
         switch normalized(raw) {
         case "completed": return true
@@ -170,15 +167,26 @@ enum ProviderBookingStatusDisplay {
         }
     }
 
-    /// Collapses backend statuses into the two schedule labels when applicable.
+    /// Collapses backend statuses into schedule card labels when applicable.
     static func scheduleSlotTitle(for raw: String?) -> String? {
         if isScheduleCompleted(status: raw) { return "Completed" }
-        if isScheduleBooked(status: raw) { return "Booked" }
-        return nil
+        switch normalized(raw) {
+        case "paid":
+            return "Paid"
+        case "accepted", "booked", "in_progress":
+            return "Booked"
+        default:
+            return nil
+        }
     }
 
-    /// Weekly grid appointment block fill — pending (yellow), completed, or upcoming.
+    /// Weekly grid appointment block fill — pending (yellow), paid/completed (light green), or upcoming olive.
     static func scheduleAppointmentFill(for booking: SimpleBookingDTO) -> Color {
+        if booking.isUpcomingPaidAppointment
+            || booking.isAwaitingTip
+            || ProviderBookingStatusDisplay.normalized(booking.status) == "paid" {
+            return Color.providerScheduleCompletedAppointmentFill
+        }
         switch normalized(booking.status) {
         case "pending":
             return Color(uiColor: ProviderChatDesignTokens.Color.statusYellow)
@@ -202,39 +210,44 @@ enum ProviderBookingStatusDisplay {
     #if canImport(UIKit)
     private static func scheduleAppointmentMoveOriginUIColor(for booking: SimpleBookingDTO) -> UIColor {
         let base: UIColor
-        switch normalized(booking.status) {
-        case "pending":
-            base = ProviderChatDesignTokens.Color.statusYellow
-        case "completed":
+        if booking.isUpcomingPaidAppointment
+            || booking.isAwaitingTip
+            || normalized(booking.status) == "paid"
+            || normalized(booking.status) == "completed" {
             base = UIColor(Color.providerScheduleCompletedAppointmentFill)
-        default:
-            base = UIColor(Color.providerScheduleUpcomingAppointmentFill)
+        } else {
+            switch normalized(booking.status) {
+            case "pending":
+                base = ProviderChatDesignTokens.Color.statusYellow
+            default:
+                base = UIColor(Color.providerScheduleUpcomingAppointmentFill)
+            }
         }
         return base.providerMixed(with: .systemGray3, amount: 0.58).withAlphaComponent(0.82)
     }
     #endif
 
-    /// Cancelled and paid bookings are omitted from the main schedule entirely.
+    /// Status-only visibility (legacy). Prefer ``SimpleBookingDTO/isVisibleOnMainSchedule``
+    /// (tip-settled Completed must be filtered with `tipDecidedAt`).
     static func isVisibleOnMainSchedule(status raw: String?) -> Bool {
         switch normalized(raw) {
-        case "cancelled", "canceled", "paid": return false
-        default: return true
+        case "pending", "accepted", "booked", "in_progress", "paid", "completed":
+            return true
+        default:
+            return false
         }
     }
 
-    /// Week chevron tickers — any on-schedule booking outside the viewed week, excluding paid.
+    /// Week chevron tickers — on-schedule bookings outside the viewed week.
     static func countsForWeekNavigationTicker(_ booking: SimpleBookingDTO) -> Bool {
-        guard isVisibleOnMainSchedule(status: booking.status) else { return false }
-        if booking.paidAt != nil { return false }
-        if normalized(booking.status) == "paid" { return false }
+        guard booking.isVisibleOnMainSchedule else { return false }
         return booking.providerEffectiveScheduledTime != nil
     }
 
-    /// Bookings in terminal states cannot have an actionable consumer reschedule request.
-    /// The backend auto-declines pending requests when a booking is cancelled.
+    /// Bookings in terminal / completed states cannot have an actionable consumer reschedule request.
     static func isEligibleForPendingRescheduleRequest(status raw: String?) -> Bool {
         switch normalized(raw) {
-        case "cancelled", "canceled", "rejected", "refunded", "disputed", "completed", "paid":
+        case "cancelled", "canceled", "rejected", "refunded", "disputed", "completed":
             return false
         default:
             return true
@@ -242,11 +255,11 @@ enum ProviderBookingStatusDisplay {
     }
 
     /// Whether a booking still occupies the calendar for overlap / conflict checks.
-    /// Paid and concluded appointments (including completed) no longer block new times.
+    /// Upcoming paid appointments block; completed / cancelled do not.
     static func blocksScheduleConflict(_ booking: SimpleBookingDTO) -> Bool {
-        if booking.paidAt != nil { return false }
+        guard booking.isVisibleOnMainSchedule else { return false }
         switch normalized(booking.status) {
-        case "cancelled", "canceled", "completed", "paid", "rejected", "refunded", "disputed", "pending":
+        case "pending":
             return false
         default:
             return true
@@ -282,9 +295,35 @@ extension SimpleBookingDTO {
         ProviderBookingStatusDisplay.scheduleSlotTitle(for: status) ?? statusDisplayTitle
     }
 
+    /// Label on weekly / day calendar cards (Accepted unpaid → “Awaiting Payment”).
+    var scheduleCardTitle: String {
+        if isAwaitingServicePayment {
+            return "Awaiting Payment"
+        }
+        // Tip-pending COMPLETED stays on the calendar as “Completed”.
+        if isAwaitingTip || statusUpper == "COMPLETED" {
+            return "Completed"
+        }
+        return scheduleSlotTitle
+    }
+
+    /// Calendar occupancy for the new pay-before-complete model:
+    /// `PENDING` / `ACCEPTED` / `IN_PROGRESS`, upcoming `PAID`, and tip-pending `COMPLETED`.
+    /// After tip is decided (`tipDecidedAt`), the slot frees. Legacy finished `PAID`+`completedAt` stays off.
+    /// Cancelled / rejected bookings never appear on the calendar.
     var isVisibleOnMainSchedule: Bool {
-        if paidAt != nil { return false }
-        return ProviderBookingStatusDisplay.isVisibleOnMainSchedule(status: status)
+        guard !isCancelledOrRejected else { return false }
+        switch statusUpper {
+        case "PENDING", "ACCEPTED", "BOOKED", "IN_PROGRESS":
+            return true
+        case "PAID":
+            return isUpcomingPaidAppointment
+        case "COMPLETED":
+            // Keep the appointment on the calendar until the consumer submits a tip (incl. $0).
+            return isAwaitingTip
+        default:
+            return false
+        }
     }
 
     var scheduleAppointmentFillColor: Color {

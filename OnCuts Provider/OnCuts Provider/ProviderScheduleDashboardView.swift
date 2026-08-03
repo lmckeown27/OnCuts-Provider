@@ -20,9 +20,6 @@ struct ProviderScheduleDashboardView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
 
-    private let awaitingPaymentTracker = ProviderAwaitingPaymentTracker.shared
-
-    @State private var awaitingPaymentRefreshTick: Int = 0
     @State private var weekOffset = 0
     @State private var bookings: [SimpleBookingDTO] = []
     @State private var weeklySchedule = WeeklyScheduleDTO()
@@ -176,9 +173,6 @@ struct ProviderScheduleDashboardView: View {
                 await loadWeekTimeBlocks()
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: ProviderAwaitingPaymentTracker.didChangeNotification)) { _ in
-            awaitingPaymentRefreshTick &+= 1
-        }
         .toolbar(.hidden, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .foregroundStyle(Color.lavaShellCream)
@@ -253,8 +247,6 @@ struct ProviderScheduleDashboardView: View {
     private func scheduleContent(gridViewportHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 12) {
-                awaitingPaymentBanner
-                    .simultaneousGesture(manualPlaceKeyboardDismissTap)
                 ZStack(alignment: .topLeading) {
                     VStack(alignment: .leading, spacing: 12) {
                         if session.hasProviderProfile {
@@ -845,61 +837,6 @@ struct ProviderScheduleDashboardView: View {
         return "\(startFmt) – \(endFmt)"
     }
 
-    // MARK: - Awaiting payment
-
-    @ViewBuilder
-    private var awaitingPaymentBanner: some View {
-        let awaiting = awaitingPaymentBookings
-        if !awaiting.isEmpty {
-            VStack(spacing: 8) {
-                ForEach(awaiting) { booking in
-                    awaitingPaymentRow(for: booking)
-                }
-            }
-            .padding(.bottom, 2)
-        }
-    }
-
-    private var awaitingPaymentBookings: [SimpleBookingDTO] {
-        _ = awaitingPaymentRefreshTick
-        return bookings.filter { booking in
-            ProviderAwaitingPaymentTracker.isAwaitingEligible(status: booking.statusUpper, paidAt: booking.paidAt)
-                && (booking.isCompletedAwaitingConsumerPayment
-                    || awaitingPaymentTracker.requestedIds.contains(booking.id))
-        }
-    }
-
-    private func awaitingPaymentRow(for booking: SimpleBookingDTO) -> some View {
-        Button {
-            shellNavigator.pushBooking(booking)
-        } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Awaiting Payment")
-                        .font(.provider(.subheadline, weight: .semibold))
-                    Text(booking.consumerDisplayName)
-                        .font(.provider(.headline))
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .font(.provider(.subheadline, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.providerOlive.opacity(0.22))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(Color.providerOlive.opacity(0.55), lineWidth: 1)
-                    )
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
     // MARK: - Block time sheet prep
 
     private func prepareBlockSheet(dateKey: String, startHHMM: String, endHHMM: String) {
@@ -1082,7 +1019,7 @@ struct ProviderScheduleDashboardView: View {
         guard session.hasProviderProfile else {
             bookings = []
             errorText = nil
-            awaitingPaymentTracker.reconcile(with: [])
+            ProviderAwaitingPaymentTracker.shared.reconcile(with: [])
             return
         }
         isLoadingBookings = true
@@ -1091,7 +1028,7 @@ struct ProviderScheduleDashboardView: View {
             let list = try await ProviderBookingsService.listBookings(role: "barber")
             try Task.checkCancellation()
             bookings = list
-            awaitingPaymentTracker.reconcile(with: list)
+            ProviderAwaitingPaymentTracker.shared.reconcile(with: list)
             errorText = nil
         } catch is CancellationError {
         } catch let error as URLError where error.code == .cancelled {

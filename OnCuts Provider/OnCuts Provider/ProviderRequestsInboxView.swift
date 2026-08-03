@@ -69,7 +69,7 @@ struct ProviderRequestsInboxContent: View {
     @State private var bookingsErrorText: String?
     @State private var hasLoadedBookings = false
     @State private var hasSettledInboxPresentation = false
-    @State private var expandedFilters: Set<ProviderBookingStatusDisplay.Filter> = [.accepted]
+    @State private var expandedFilters: Set<ProviderBookingStatusDisplay.Filter> = [.paid]
     @State private var isRequestedChangesExpanded = true
 
     private static let bookingsContentWidthRatio: CGFloat = 0.75

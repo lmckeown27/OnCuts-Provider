@@ -247,10 +247,6 @@ struct ProviderBookingsDropdownListContent: View {
                 ProviderBookingDetailStatusPill(status: booking.status)
                 if booking.isCommissionless {
                     commissionlessIndicator(confirmed: true)
-                } else if booking.showsPotentialCommissionless(
-                    remainingFreeSlots: session.commissionFreeBookingsRemaining
-                ) {
-                    commissionlessIndicator(confirmed: false)
                 }
                 Spacer(minLength: 0)
                 Text(dateLabel(for: booking, filter: filter))

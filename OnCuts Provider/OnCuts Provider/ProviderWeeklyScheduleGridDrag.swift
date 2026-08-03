@@ -524,7 +524,7 @@ struct ProviderWeeklyScheduleGridBookingCardContent: View {
                     .foregroundStyle(Color.providerScheduleAppointmentPrimaryLabel)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if cardHeight >= 20 {
-                Text(booking.statusDisplayTitle)
+                Text(booking.scheduleCardTitle)
                     .font(.provider(size: statusFontSize, weight: .bold))
                     .foregroundStyle(Color.providerScheduleAppointmentPrimaryLabel)
                     .multilineTextAlignment(.center)

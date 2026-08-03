@@ -749,9 +749,13 @@ private enum ScheduleTimelineDragLayout {
 
 enum ScheduleAppointmentDrag {
     static func isDraggable(_ booking: SimpleBookingDTO) -> Bool {
+        guard booking.scheduledTime != nil else { return false }
         switch ProviderBookingStatusDisplay.normalized(booking.status) {
         case "pending", "accepted":
-            return booking.scheduledTime != nil
+            return true
+        case "paid":
+            // Upcoming paid appointments move like accepted; legacy finished PAID stays fixed.
+            return booking.isUpcomingPaidAppointment
         default:
             return false
         }
@@ -1504,7 +1508,7 @@ private struct SchedulePreciseTimelineCanvas: View {
                         .multilineTextAlignment(.center)
                         .allowsHitTesting(false)
 
-                    Text(ProviderBookingStatusDisplay.title(for: booking.status))
+                    Text(booking.scheduleCardTitle)
                         .font(.provider(size: detailFontSize(for: blockHeight) - 1, weight: .semibold))
                         .foregroundStyle(Color.providerScheduleAppointmentSecondaryLabel)
                         .multilineTextAlignment(.center)

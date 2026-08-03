@@ -287,7 +287,11 @@ struct SimpleBookingDetailPayload: Decodable {
     let location: String?
     let notes: String?
     let paidAt: Date?
+    let completedAt: Date?
     let paymentRequestedAt: Date?
+    let tipRequestedAt: Date?
+    let tipDecidedAt: Date?
+    let cancelledAt: Date?
     let tipAmountCents: Int?
     let totalPaidCents: Int?
     let paymentMethod: String?
@@ -318,7 +322,11 @@ struct SimpleBookingDetailPayload: Decodable {
             serviceName: serviceName,
             review: review,
             paidAt: paidAt,
+            completedAt: completedAt,
             paymentRequestedAt: paymentRequestedAt,
+            tipRequestedAt: tipRequestedAt,
+            tipDecidedAt: tipDecidedAt,
+            cancelledAt: cancelledAt,
             tipAmountCents: tipAmountCents,
             totalPaidCents: totalPaidCents,
             paymentMethod: paymentMethod,
@@ -506,7 +514,14 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
     let serviceName: String?
     let review: SimpleBookingReview?
     let paidAt: Date?
+    /// Set when the operator marks the visit complete (new pay-before-complete model).
+    let completedAt: Date?
     let paymentRequestedAt: Date?
+    let tipRequestedAt: Date?
+    /// Set when the consumer finishes the tip step (including $0).
+    let tipDecidedAt: Date?
+    /// Present when the booking was cancelled (status may still lag on some payloads).
+    let cancelledAt: Date?
     let tipAmountCents: Int?
     let totalPaidCents: Int?
     let paymentMethod: String?
@@ -535,7 +550,11 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
         serviceName: String?,
         review: SimpleBookingReview?,
         paidAt: Date?,
+        completedAt: Date? = nil,
         paymentRequestedAt: Date?,
+        tipRequestedAt: Date? = nil,
+        tipDecidedAt: Date? = nil,
+        cancelledAt: Date? = nil,
         tipAmountCents: Int?,
         totalPaidCents: Int?,
         paymentMethod: String?,
@@ -559,7 +578,11 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
         self.serviceName = serviceName
         self.review = review
         self.paidAt = paidAt
+        self.completedAt = completedAt
         self.paymentRequestedAt = paymentRequestedAt
+        self.tipRequestedAt = tipRequestedAt
+        self.tipDecidedAt = tipDecidedAt
+        self.cancelledAt = cancelledAt
         self.tipAmountCents = tipAmountCents
         self.totalPaidCents = totalPaidCents
         self.paymentMethod = paymentMethod
@@ -586,7 +609,12 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
         serviceName = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .serviceName)
         review = try? container.decodeIfPresent(SimpleBookingReview.self, forKey: .review)
         paidAt = ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .paidAt)
+        completedAt = ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .completedAt)
         paymentRequestedAt = ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .paymentRequestedAt)
+        tipRequestedAt = ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .tipRequestedAt)
+        tipDecidedAt = ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .tipDecidedAt)
+        cancelledAt = ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .cancelledAt)
+            ?? ProviderAPIFlexibleDecoding.optionalDate(from: container, forKey: .canceledAt)
         tipAmountCents = ProviderAPIFlexibleDecoding.optionalInt(from: container, forKey: .tipAmountCents)
         totalPaidCents = ProviderAPIFlexibleDecoding.optionalInt(from: container, forKey: .totalPaidCents)
         paymentMethod = ProviderAPIFlexibleDecoding.optionalString(from: container, forKey: .paymentMethod)
@@ -617,7 +645,12 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
         case serviceName
         case review
         case paidAt
+        case completedAt
         case paymentRequestedAt
+        case tipRequestedAt
+        case tipDecidedAt
+        case cancelledAt
+        case canceledAt
         case tipAmountCents
         case totalPaidCents
         case paymentMethod
@@ -634,16 +667,51 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
     /// Confirmed: free slot already reserved at payment-intent time.
     var isCommissionless: Bool { commissionFreeApplied == true }
 
-    /// Unpaid ACCEPTED / COMPLETED (awaiting pay) — still eligible for a free-slot reserve.
-    var isEligibleForPotentialCommissionless: Bool {
-        guard !isCommissionless, paidAt == nil else { return false }
+    /// ACCEPTED and not yet service-paid — consumer must pay to lock the appointment.
+    var isAwaitingServicePayment: Bool {
+        statusUpper == "ACCEPTED" && paidAt == nil
+    }
+
+    /// Service paid, appointment still upcoming (not marked complete; tip not started).
+    /// Legacy rows that are `PAID` **with** `completedAt` are finished, not upcoming.
+    /// Cancelled bookings never count as upcoming paid, even if `paidAt` is still set.
+    var isUpcomingPaidAppointment: Bool {
+        guard !isCancelledOrRejected else { return false }
+        return statusUpper == "PAID" && completedAt == nil && tipDecidedAt == nil && cancelledAt == nil
+    }
+
+    var isCancelledOrRejected: Bool {
+        if cancelledAt != nil { return true }
         switch statusUpper {
-        case "ACCEPTED", "COMPLETED": return true
-        default: return false
+        case "CANCELLED", "CANCELED", "REJECTED":
+            return true
+        default:
+            return false
         }
     }
 
-    /// Operator still has free slots → next payment on this booking should be commissionless.
+    /// Old fully-settled `PAID` rows that already have `completedAt`.
+    var isLegacyFinishedPaid: Bool {
+        statusUpper == "PAID" && completedAt != nil
+    }
+
+    /// Operator marked complete; consumer still chooses tip (including $0).
+    var isAwaitingTip: Bool {
+        statusUpper == "COMPLETED" && tipDecidedAt == nil
+    }
+
+    /// Tip step finished (including $0) — booking is settled from the operator’s POV.
+    var isTipSettled: Bool {
+        tipDecidedAt != nil
+    }
+
+    /// Unpaid ACCEPTED — still eligible for a free-slot reserve at service pay.
+    var isEligibleForPotentialCommissionless: Bool {
+        guard !isCommissionless, paidAt == nil else { return false }
+        return statusUpper == "ACCEPTED"
+    }
+
+    /// Operator still has free slots → next service payment on this booking should be commissionless.
     func showsPotentialCommissionless(remainingFreeSlots: Int) -> Bool {
         isEligibleForPotentialCommissionless && remainingFreeSlots > 0
     }
@@ -712,24 +780,19 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
         !isCashPayment
     }
 
-    /// Settled booking for revenue analytics — parity with admin
-    /// `status IN ('COMPLETED', 'PAID')`.
+    /// Settled / revenue booking — service paid (upcoming PAID, COMPLETED, or legacy finished PAID).
     var isPaidForRevenueAnalytics: Bool {
+        if paidAt != nil { return true }
         switch statusUpper {
         case "COMPLETED", "PAID":
             return true
         default:
-            return paidAt != nil
+            return false
         }
     }
 
-    /// Completed visit where the provider requested payment and the consumer has not paid yet.
-    var isCompletedAwaitingConsumerPayment: Bool {
-        guard paidAt == nil else { return false }
-        guard ProviderBookingStatusDisplay.normalized(status) == "completed" else { return false }
-        if paymentRequestedAt != nil { return true }
-        return ProviderAwaitingPaymentTracker.shared.requestedIds.contains(id)
-    }
+    /// @available for call sites still using the old name — maps to awaiting tip under the new model.
+    var isCompletedAwaitingConsumerPayment: Bool { isAwaitingTip }
 
     var hasPendingRescheduleRequest: Bool {
         guard ProviderBookingStatusDisplay.isEligibleForPendingRescheduleRequest(status: status) else {

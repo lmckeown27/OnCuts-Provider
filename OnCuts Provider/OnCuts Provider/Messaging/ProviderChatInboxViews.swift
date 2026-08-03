@@ -85,15 +85,15 @@ struct ProviderChatThreadCard: View {
     private var serviceDetailsSection: some View {
         HStack(alignment: .center, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(thread.appointmentTime)
-                    .font(.provider(.caption, weight: .semibold))
-                    .foregroundStyle(thread.isToday ? Color.providerBrandAccent : Color.secondary)
-                Text(thread.appointmentDayLabel)
-                    .font(.provider(.caption, weight: .semibold))
-                    .foregroundStyle(thread.isToday ? Color.providerBrandAccent : Color.secondary)
                 Text(thread.appointmentDateLabel)
                     .font(.provider(.caption, weight: .semibold))
                     .foregroundStyle(Color.secondary)
+                Text(thread.appointmentDayLabel)
+                    .font(.provider(.caption, weight: .semibold))
+                    .foregroundStyle(thread.isToday ? Color.providerBrandAccent : Color.secondary)
+                Text(thread.appointmentTime)
+                    .font(.provider(.caption, weight: .semibold))
+                    .foregroundStyle(thread.isToday ? Color.providerBrandAccent : Color.secondary)
             }
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: true)
