@@ -5,6 +5,8 @@ import SwiftUI
 enum ProviderShellRoute: Hashable {
     case messages
     case account
+    /// Shareable public web booking link for clients (`/web/consumer/book/:barberId`).
+    case bookingLink
     /// Services & pricing: campus catalog (`GET /admin/services`) + barber specialties/pricing (`PUT /barbers/:id`).
     case services
     /// Weekly schedule, one-off time blocks, and Google Calendar wiring (in-app parity for the web

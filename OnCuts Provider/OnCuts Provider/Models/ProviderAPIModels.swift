@@ -1032,13 +1032,20 @@ struct AdminPlatformStatsDTO: Decodable, Hashable {
     let totalCampuses: Int?
 }
 
-/// `GET/PUT /admin/platform-settings` — global commission % plus Controls toggles.
+/// `GET/PUT /admin/platform-settings` — global commission % / on-off plus Controls toggles.
 struct AdminPlatformSettingsDTO: Decodable, Hashable {
     let platformFeePercent: Double?
+    /// When false, all card bookings take $0 platform fee (configured % is preserved).
+    let platformCommissionEnabled: Bool?
     /// Controls tab — when false, cash is hidden in payment UIs and rejected server-side.
     let cashPaymentEnabled: Bool?
     /// Controls tab — `providers` (discovery home) or `waitlist`.
     let consumerHomeMode: String?
+
+    /// Defaults to `true` when omitted (matches web / API default).
+    var isPlatformCommissionEnabled: Bool {
+        platformCommissionEnabled ?? true
+    }
 
     var resolvedConsumerHomeMode: AdminConsumerHomeMode {
         AdminConsumerHomeMode(rawValue: (consumerHomeMode ?? "").lowercased()) ?? .providers

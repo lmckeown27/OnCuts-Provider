@@ -32,6 +32,28 @@ enum AppConfiguration {
         URL(string: "https://oncuts.com/web/barber")!
     }
 
+    /// Public web app origin for shareable client links (uses socket-origin override when set).
+    /// Production prefers `www.oncuts.com` to match marketing booking URLs.
+    static var webAppOriginURL: URL {
+        let origin = messagingSocketOriginURL
+        let host = (origin.host ?? "").lowercased()
+        if host == "oncuts.com" || host == "www.oncuts.com" {
+            return URL(string: "https://www.oncuts.com")!
+        }
+        return origin
+    }
+
+    /// Client booking page for a barber record id (`barbers.id`) — `/web/consumer/book/:barberId`.
+    static func consumerBookingPageURL(barberId: String) -> URL? {
+        let trimmed = barberId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return webAppOriginURL
+            .appendingPathComponent("web")
+            .appendingPathComponent("consumer")
+            .appendingPathComponent("book")
+            .appendingPathComponent(trimmed)
+    }
+
     /// Public legal pages (web `TermsOfServicePage` / `PrivacyPolicyPage` routes).
     static var termsOfServiceURL: URL {
         ProviderAppBranding.termsOfServiceURL

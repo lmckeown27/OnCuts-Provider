@@ -15,8 +15,8 @@ private func providerAdminIsBenignRequestCancellation(_ error: Error) -> Bool {
 /// Native iOS Admin dashboard.
 ///
 /// Tabs mirror the web `AdminDashboard`:
-///   * **Performance** — platform totals, time-series chart, campus search, commission %.
-///   * **Operators** — Current providers + Applications / Onboarding.
+///   * **Performance** — platform totals, chart, campus search, commission % + on/off.
+///   * **Operators** — Current providers + Applications / Onboarding (incl. platform commissionless).
 ///   * **Users** — directory + nested **Safety** (UGC reports + banned users).
 ///   * **Services** — platform service catalog.
 ///   * **Controls** — live Cash Option + Consumer home toggles (`platform_settings`).
@@ -106,21 +106,6 @@ struct ProviderAdminDashboardView: View {
         }
     }
 
-    /// All Universities only — Near campus = pin has a nearest campus within ~8km.
-    enum BarberLocationFilter: String, CaseIterable, Identifiable {
-        case all
-        case nearCampus
-        case unassigned
-        var id: String { rawValue }
-        var segmentTitle: String {
-            switch self {
-            case .all: "All"
-            case .nearCampus: "Near campus"
-            case .unassigned: "Unassigned"
-            }
-        }
-    }
-
     /// Reports status chip on the Safety tab. `all` is the only value that omits the `status`
     /// query parameter when calling `/admin/moderation/reports`. Web defaults to `open`.
     enum ReportsStatusFilter: String, CaseIterable, Identifiable {
@@ -160,8 +145,8 @@ struct ProviderAdminDashboardView: View {
     @State private var usersHubTab: UsersHubTab = .directory
     @State private var barbersSubTab: BarbersSubTab = .current
     @State private var barberVisibilityFilter: BarberVisibilityFilter = .visible
-    @State private var barberStripeFilter: BarberStripeFilter = .all
-    @State private var barberLocationFilter: BarberLocationFilter = .all
+    /// Matches web Admin: Visible operators default to Stripe-ready accounts.
+    @State private var barberStripeFilter: BarberStripeFilter = .setup
     @State private var showingOperatorsFilters = false
     @State private var operatorSearch = ""
     @FocusState private var adminSearchFocus: AdminSearchFocus?
@@ -216,6 +201,9 @@ struct ProviderAdminDashboardView: View {
     @State private var platformFeePercent: Double = 15
     @State private var platformFeeInput = "15"
     @State private var isEditingPlatformFee = false
+    /// When false, all card bookings take $0 platform fee (configured % preserved).
+    @State private var platformCommissionEnabled = true
+    @State private var platformCommissionEnabledDraft = true
     @FocusState private var isPlatformFeeFieldFocused: Bool
     @State private var isLoadingPlatformFee = false
     @State private var isSavingPlatformFee = false
@@ -235,8 +223,8 @@ struct ProviderAdminDashboardView: View {
     @State private var onboardingKickbackInput = "10"
     @State private var onboardingSearch = ""
     @State private var showingOnboardingFilters = false
-    @State private var onboardingStripeFilter: BarberStripeFilter = .all
-    @State private var onboardingLocationFilter: BarberLocationFilter = .all
+    /// Matches web Admin / Operators: default to Stripe-ready (visible) operators.
+    @State private var onboardingStripeFilter: BarberStripeFilter = .setup
     @State private var onboardingFreeFilter: OnboardingFreeFilter = .all
     @State private var onboardingKickbackFilter: OnboardingKickbackFilter = .all
     @State private var isSavingOnboardingBulk = false
@@ -832,7 +820,6 @@ struct ProviderAdminDashboardView: View {
         Menu {
             Button {
                 selectedCampusId = nil
-                barberLocationFilter = .all
                 Task { await loadScopedData() }
             } label: {
                 HStack {
@@ -849,7 +836,6 @@ struct ProviderAdminDashboardView: View {
                 ForEach(sortedCampuses) { campus in
                     Button {
                         selectedCampusId = campus.id
-                        barberLocationFilter = .all
                         Task { await loadScopedData() }
                     } label: {
                         HStack {
@@ -968,7 +954,14 @@ struct ProviderAdminDashboardView: View {
     }
 
     private var platformCommissionAndKPIsCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let commissionChecked = isEditingPlatformFee
+            ? platformCommissionEnabledDraft
+            : platformCommissionEnabled
+        let feeFieldEditable = isEditingPlatformFee
+            && platformCommissionEnabledDraft
+            && !isSavingPlatformFee
+
+        return VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     Text("Platform Commission:")
@@ -978,28 +971,28 @@ struct ProviderAdminDashboardView: View {
                         TextField("15", text: $platformFeeInput)
                             .font(.provider(.body, weight: .semibold))
                             .foregroundStyle(
-                                isEditingPlatformFee
+                                feeFieldEditable
                                     ? ProviderAdminChrome.primaryText
                                     : ProviderAdminChrome.tertiaryText
                             )
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                             .focused($isPlatformFeeFieldFocused)
-                            .disabled(!isEditingPlatformFee || isSavingPlatformFee)
+                            .disabled(!feeFieldEditable)
                             .frame(width: 36)
                         Text("%")
                             .font(.provider(.subheadline))
                             .foregroundStyle(
-                                isEditingPlatformFee
+                                feeFieldEditable
                                     ? ProviderAdminChrome.secondaryText
                                     : ProviderAdminChrome.tertiaryText
                             )
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 8)
-                    .opacity(isEditingPlatformFee ? 1 : 0.72)
+                    .opacity(feeFieldEditable ? 1 : 0.72)
                     .background(
-                        isEditingPlatformFee
+                        feeFieldEditable
                             ? ProviderAdminChrome.cardBackground
                             : ProviderAdminChrome.mutedFill,
                         in: RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -1015,10 +1008,13 @@ struct ProviderAdminDashboardView: View {
                             Task { await savePlatformFee() }
                         } else {
                             platformFeeInput = Self.formatFeePercent(platformFeePercent)
+                            platformCommissionEnabledDraft = platformCommissionEnabled
                             isEditingPlatformFee = true
                             // Focus after the field enables — sync focus while still disabled is a no-op.
                             DispatchQueue.main.async {
-                                isPlatformFeeFieldFocused = true
+                                if platformCommissionEnabledDraft {
+                                    isPlatformFeeFieldFocused = true
+                                }
                             }
                         }
                     } label: {
@@ -1045,6 +1041,43 @@ struct ProviderAdminDashboardView: View {
                 }
                 .fixedSize(horizontal: true, vertical: false)
                 .frame(maxWidth: .infinity)
+
+                // Checkbox reflects commission on/off; label is the opposite CTA (web parity).
+                Button {
+                    guard isEditingPlatformFee, !isSavingPlatformFee else { return }
+                    platformCommissionEnabledDraft.toggle()
+                    if !platformCommissionEnabledDraft {
+                        isPlatformFeeFieldFocused = false
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: commissionChecked ? "checkmark.square.fill" : "square")
+                            .font(.provider(.body, weight: .regular))
+                            .foregroundStyle(
+                                commissionChecked
+                                    ? Color.providerOlive
+                                    : ProviderAdminChrome.tertiaryText
+                            )
+                        Text(commissionChecked ? "Disable Commission" : "Enable Commission")
+                            .font(.provider(.caption))
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
+                        if !platformCommissionEnabled && !isEditingPlatformFee {
+                            commissionlessAllBookingsBadge
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(!isEditingPlatformFee || isSavingPlatformFee || isLoadingPlatformFee)
+                .opacity(isEditingPlatformFee ? 1 : 0.85)
+                .accessibilityLabel(commissionChecked ? "Disable Commission" : "Enable Commission")
+
+                if !platformCommissionEnabled && !isEditingPlatformFee {
+                    Text(
+                        "Commission off. Card bookings take $0 platform fee (rate \(Self.formatFeePercent(platformFeePercent))% saved)."
+                    )
+                    .font(.provider(.caption2))
+                    .foregroundStyle(Color.orange.opacity(0.9))
+                }
             }
 
             Divider().overlay(ProviderAdminChrome.separator)
@@ -2287,16 +2320,6 @@ struct ProviderAdminDashboardView: View {
             default: break
             }
 
-            // Location filters only apply under All Universities (campus list is already proximity-scoped).
-            if selectedCampusId == nil {
-                switch barberLocationFilter {
-                case .all: break
-                case .nearCampus where !barber.isNearCampusBucket: return false
-                case .unassigned where !barber.isLocationUnassigned: return false
-                default: break
-                }
-            }
-
             let q = operatorSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             if !q.isEmpty {
                 let hay = "\(barber.displayName) \(barber.email ?? "") \(barber.publicLocationDisplay)".lowercased()
@@ -2338,18 +2361,16 @@ struct ProviderAdminDashboardView: View {
 
     private var operatorsFiltersAreNonDefault: Bool {
         if barberVisibilityFilter != .visible { return true }
-        if barberVisibilityFilter == .visible, barberStripeFilter != .all { return true }
-        if selectedCampusId == nil, barberLocationFilter != .all { return true }
+        if barberVisibilityFilter == .visible, barberStripeFilter != .setup { return true }
         return false
     }
 
     private var operatorsFilterSummary: String {
         var parts: [String] = [barberVisibilityFilter.segmentTitle]
-        if barberVisibilityFilter == .visible, barberStripeFilter != .all {
+        if barberVisibilityFilter == .visible, barberStripeFilter != .setup {
             parts.append(barberStripeFilter.segmentTitle)
-        }
-        if selectedCampusId == nil, barberLocationFilter != .all {
-            parts.append(barberLocationFilter.segmentTitle)
+        } else if barberVisibilityFilter == .visible {
+            parts.append(BarberStripeFilter.setup.segmentTitle)
         }
         return parts.joined(separator: " · ")
     }
@@ -2361,6 +2382,8 @@ struct ProviderAdminDashboardView: View {
             titleAccessory: {
                 if operatorsHubTab == .operators {
                     operatorsFilterButton
+                } else {
+                    onboardingFilterButton
                 }
             }
         ) {
@@ -2451,14 +2474,6 @@ struct ProviderAdminDashboardView: View {
                     .focused($adminSearchFocus, equals: .onboarding)
                     .submitLabel(.search)
                     .onSubmit { adminSearchFocus = nil }
-                Button {
-                    adminSearchFocus = nil
-                    showingOnboardingFilters = true
-                } label: {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                        .foregroundStyle(ProviderAdminChrome.secondaryText)
-                }
-                .buttonStyle(.plain)
             }
             .padding(10)
             .background(
@@ -2476,16 +2491,55 @@ struct ProviderAdminDashboardView: View {
                 if scope == .all { onboardingSelectedIds = [] }
             }
 
+            // Platform-wide: checked = all card bookings commissionless (commission off).
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Commissionless Bookings")
+                        .font(.provider(.subheadline, weight: .semibold))
+                        .foregroundStyle(ProviderAdminChrome.primaryText)
+                    Text(
+                        platformCommissionEnabled
+                            ? "Per-operator free bookings / kickback below."
+                            : "All card bookings take $0 platform fee."
+                    )
+                    .font(.provider(.caption))
+                    .foregroundStyle(ProviderAdminChrome.secondaryText)
+                }
+                Spacer(minLength: 8)
+                if isSavingPlatformFee || isLoadingPlatformFee {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { !platformCommissionEnabled },
+                        set: { allCommissionless in
+                            guard allCommissionless == platformCommissionEnabled else { return }
+                            Task { await savePlatformCommissionlessAll(allCommissionless) }
+                        }
+                    )
+                )
+                .labelsHidden()
+                .tint(.providerOlive)
+                .disabled(isSavingPlatformFee || isLoadingPlatformFee)
+                .accessibilityLabel("Commissionless bookings for all operators")
+            }
+            .padding(12)
+            .providerAdminCardBackground(cornerRadius: 12)
+
             HStack(alignment: .top, spacing: 12) {
-                onboardingMassApplyColumn(
-                    title: "Commissionless bookings",
-                    text: $onboardingFreeInput,
-                    keyboard: .numberPad,
-                    actionTitle: onboardingScope == .all
-                        ? "Add to All"
-                        : "Add to \(onboardingSelectedIds.count)"
-                ) {
-                    pendingOnboardingBulk = PendingOnboardingBulk(field: .free)
+                if platformCommissionEnabled {
+                    onboardingMassApplyColumn(
+                        title: "Commissionless bookings",
+                        text: $onboardingFreeInput,
+                        keyboard: .numberPad,
+                        actionTitle: onboardingScope == .all
+                            ? "Add to All"
+                            : "Add to \(onboardingSelectedIds.count)"
+                    ) {
+                        pendingOnboardingBulk = PendingOnboardingBulk(field: .free)
+                    }
                 }
 
                 onboardingMassApplyColumn(
@@ -2575,8 +2629,20 @@ struct ProviderAdminDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Olive badge when platform commission is off (all card bookings commissionless).
+    private var commissionlessAllBookingsBadge: some View {
+        Text("Commissionless All Bookings")
+            .font(.provider(.caption2, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Color.providerOlive, in: Capsule())
+            .accessibilityLabel("Commissionless all bookings")
+    }
+
     private func onboardingBarberRow(_ barber: AdminBarberDTO) -> some View {
         let recordId = barber.barberRecordId ?? barber.id
+        let platformCommissionless = !platformCommissionEnabled
         return HStack(alignment: .center, spacing: 10) {
             if onboardingScope == .selected {
                 Button {
@@ -2608,11 +2674,13 @@ struct ProviderAdminDashboardView: View {
                     } else {
                         tag(text: "No Stripe", tint: ProviderAdminChrome.stoneMutedFill)
                     }
-                    Text("\(barber.commissionFreeBookingsRemaining ?? 0) free")
-                        .font(.provider(.caption2))
-                        .foregroundStyle(ProviderAdminChrome.secondaryText)
-                    Text("·")
-                        .foregroundStyle(ProviderAdminChrome.tertiaryText)
+                    if !platformCommissionless {
+                        Text("\(barber.commissionFreeBookingsRemaining ?? 0) free")
+                            .font(.provider(.caption2))
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
+                        Text("·")
+                            .foregroundStyle(ProviderAdminChrome.tertiaryText)
+                    }
                     Text(String(format: "%.1f%% kb", barber.kickbackPercent ?? 0))
                         .font(.provider(.caption2))
                         .foregroundStyle(ProviderAdminChrome.secondaryText)
@@ -2621,12 +2689,16 @@ struct ProviderAdminDashboardView: View {
 
             Spacer(minLength: 4)
 
-            VStack(spacing: 4) {
-                stepperButton(systemName: "plus") {
-                    Task { await adjustOnboarding(barber: barber, field: .free, delta: 1) }
-                }
-                stepperButton(systemName: "minus") {
-                    Task { await adjustOnboarding(barber: barber, field: .free, delta: -1) }
+            if platformCommissionless {
+                commissionlessAllBookingsBadge
+            } else {
+                VStack(spacing: 4) {
+                    stepperButton(systemName: "plus") {
+                        Task { await adjustOnboarding(barber: barber, field: .free, delta: 1) }
+                    }
+                    stepperButton(systemName: "minus") {
+                        Task { await adjustOnboarding(barber: barber, field: .free, delta: -1) }
+                    }
                 }
             }
         }
@@ -2650,8 +2722,6 @@ struct ProviderAdminDashboardView: View {
         barbers.filter { barber in
             if onboardingStripeFilter == .setup, barber.hasStripeSetup != true { return false }
             if onboardingStripeFilter == .notSetup, barber.hasStripeSetup == true { return false }
-            if onboardingLocationFilter == .nearCampus, barber.isLocationUnassigned { return false }
-            if onboardingLocationFilter == .unassigned, !barber.isLocationUnassigned { return false }
             let free = barber.commissionFreeBookingsRemaining ?? 0
             if onboardingFreeFilter == .withFree, free <= 0 { return false }
             if onboardingFreeFilter == .none, free > 0 { return false }
@@ -2665,20 +2735,19 @@ struct ProviderAdminDashboardView: View {
         }
     }
 
+    private var onboardingFiltersAreNonDefault: Bool {
+        if onboardingStripeFilter != .setup { return true }
+        if onboardingFreeFilter != .all { return true }
+        if onboardingKickbackFilter != .all { return true }
+        return false
+    }
+
     private var onboardingFiltersSheet: some View {
         NavigationStack {
             Form {
                 Section("Stripe") {
                     Picker("Stripe", selection: $onboardingStripeFilter) {
                         ForEach(BarberStripeFilter.allCases) { f in
-                            Text(f.segmentTitle).tag(f)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-                Section("Location") {
-                    Picker("Location", selection: $onboardingLocationFilter) {
-                        ForEach(BarberLocationFilter.allCases) { f in
                             Text(f.segmentTitle).tag(f)
                         }
                     }
@@ -2702,6 +2771,14 @@ struct ProviderAdminDashboardView: View {
             .navigationTitle("Onboarding filters")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Reset") {
+                        onboardingStripeFilter = .setup
+                        onboardingFreeFilter = .all
+                        onboardingKickbackFilter = .all
+                    }
+                    .disabled(!onboardingFiltersAreNonDefault)
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { showingOnboardingFilters = false }
                 }
@@ -2709,6 +2786,7 @@ struct ProviderAdminDashboardView: View {
         }
         .providerAdminDismissesKeyboardOnOutsideTap()
         .presentationDetents([.medium])
+        .tint(.providerOlive)
     }
 
     @ViewBuilder
@@ -2727,14 +2805,39 @@ struct ProviderAdminDashboardView: View {
     }
 
     private var operatorsFilterButton: some View {
+        adminFiltersTitleButton(
+            isActive: operatorsFiltersAreNonDefault,
+            accessibilityLabel: "Operator filters",
+            accessibilityValue: operatorsFilterSummary
+        ) {
+            showingOperatorsFilters = true
+        }
+    }
+
+    private var onboardingFilterButton: some View {
+        adminFiltersTitleButton(
+            isActive: onboardingFiltersAreNonDefault,
+            accessibilityLabel: "Onboarding filters",
+            accessibilityValue: onboardingFiltersAreNonDefault ? "Custom filters on" : "Default filters"
+        ) {
+            showingOnboardingFilters = true
+        }
+    }
+
+    private func adminFiltersTitleButton(
+        isActive: Bool,
+        accessibilityLabel: String,
+        accessibilityValue: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button {
             adminSearchFocus = nil
-            showingOperatorsFilters = true
+            action()
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "line.3.horizontal.decrease.circle")
                     .font(.provider(.caption, weight: .semibold))
-                Text(operatorsFiltersAreNonDefault ? "Filters · On" : "Filters")
+                Text(isActive ? "Filters · On" : "Filters")
                     .font(.provider(.caption, weight: .semibold))
                     .lineLimit(1)
             }
@@ -2752,8 +2855,8 @@ struct ProviderAdminDashboardView: View {
         }
         .buttonStyle(.plain)
         .fixedSize()
-        .accessibilityLabel("Operator filters")
-        .accessibilityValue(operatorsFilterSummary)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(accessibilityValue)
     }
 
     private var operatorsFiltersSheet: some View {
@@ -2770,8 +2873,7 @@ struct ProviderAdminDashboardView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Reset") {
                         barberVisibilityFilter = .visible
-                        barberStripeFilter = .all
-                        barberLocationFilter = .all
+                        barberStripeFilter = .setup
                     }
                     .disabled(!operatorsFiltersAreNonDefault)
                 }
@@ -2799,28 +2901,12 @@ struct ProviderAdminDashboardView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: barberVisibilityFilter) { _, newValue in
-                    if newValue != .visible {
-                        barberStripeFilter = .all
-                    }
-                }
             }
 
             if barberVisibilityFilter == .visible {
                 filterControlGroup(title: "Stripe") {
                     Picker("Stripe", selection: $barberStripeFilter) {
                         ForEach(BarberStripeFilter.allCases) { filter in
-                            Text(filter.segmentTitle).tag(filter)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-            }
-
-            if selectedCampusId == nil {
-                filterControlGroup(title: "Location") {
-                    Picker("Location", selection: $barberLocationFilter) {
-                        ForEach(BarberLocationFilter.allCases) { filter in
                             Text(filter.segmentTitle).tag(filter)
                         }
                     }
@@ -3706,6 +3792,11 @@ struct ProviderAdminDashboardView: View {
                 platformFeeInput = Self.formatFeePercent(pct)
             }
         }
+        let commissionOn = settings.isPlatformCommissionEnabled
+        platformCommissionEnabled = commissionOn
+        if updateFeeEditor || !isEditingPlatformFee {
+            platformCommissionEnabledDraft = commissionOn
+        }
         if let cash = settings.cashPaymentEnabled {
             cashPaymentEnabled = cash
         }
@@ -3760,14 +3851,41 @@ struct ProviderAdminDashboardView: View {
         isSavingPlatformFee = true
         defer { isSavingPlatformFee = false }
         do {
-            let saved = try await ProviderAdminService.updatePlatformSettings(platformFeePercent: pct)
-            platformFeePercent = saved
-            platformFeeInput = Self.formatFeePercent(saved)
+            let saved = try await ProviderAdminService.updatePlatformCommission(
+                platformFeePercent: pct,
+                platformCommissionEnabled: platformCommissionEnabledDraft
+            )
+            applyPlatformSettings(saved, updateFeeEditor: true)
             isEditingPlatformFee = false
             isPlatformFeeFieldFocused = false
         } catch let OnCutsHTTPError.httpStatus(code, msg) {
             errorText = msg ?? "Failed to save platform commission (\(code))."
         } catch {
+            presentAdminLoadError(error)
+        }
+    }
+
+    /// Onboarding toggle: checked = all card bookings commissionless (`platformCommissionEnabled` false).
+    private func savePlatformCommissionlessAll(_ allCommissionless: Bool) async {
+        let nextEnabled = !allCommissionless
+        let previous = platformCommissionEnabled
+        platformCommissionEnabled = nextEnabled
+        platformCommissionEnabledDraft = nextEnabled
+        isSavingPlatformFee = true
+        defer { isSavingPlatformFee = false }
+        do {
+            let saved = try await ProviderAdminService.updatePlatformCommission(
+                platformFeePercent: platformFeePercent,
+                platformCommissionEnabled: nextEnabled
+            )
+            applyPlatformSettings(saved, updateFeeEditor: !isEditingPlatformFee)
+        } catch let OnCutsHTTPError.httpStatus(code, msg) {
+            platformCommissionEnabled = previous
+            platformCommissionEnabledDraft = previous
+            errorText = msg ?? "Failed to update commissionless setting (\(code))."
+        } catch {
+            platformCommissionEnabled = previous
+            platformCommissionEnabledDraft = previous
             presentAdminLoadError(error)
         }
     }

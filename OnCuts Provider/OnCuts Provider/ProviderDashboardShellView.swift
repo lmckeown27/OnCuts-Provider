@@ -469,6 +469,9 @@ struct ProviderDashboardShellView: View {
                 profileMenuActionButton("Account") {
                     navigator.pushRoute(ProviderShellRoute.account)
                 }
+                profileMenuActionButton("Booking Link") {
+                    navigator.pushRoute(ProviderShellRoute.bookingLink)
+                }
             }
             if session.authUser?.hasAdminPrivileges == true {
                 Section("Admin") {
@@ -562,6 +565,10 @@ struct ProviderDashboardShellView: View {
                 .providerShellBackToolbar()
         case .account:
             ProviderProfileContent()
+                .providerPushedDestinationChrome(for: route)
+                .providerShellBackToolbar()
+        case .bookingLink:
+            ProviderBookingLinkView()
                 .providerPushedDestinationChrome(for: route)
                 .providerShellBackToolbar()
         case .services:

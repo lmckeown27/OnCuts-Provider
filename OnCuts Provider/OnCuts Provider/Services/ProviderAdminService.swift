@@ -19,7 +19,7 @@ enum ProviderAdminService {
         )
     }
 
-    // MARK: - Platform settings (commission % + Controls toggles)
+    // MARK: - Platform settings (commission % / on-off + Controls toggles)
 
     /// `GET /admin/platform-settings`
     static func fetchPlatformSettings() async throws -> AdminPlatformSettingsDTO {
@@ -50,6 +50,7 @@ enum ProviderAdminService {
         return (try? dec.decode(AdminPlatformSettingsDTO.self, from: data))
             ?? AdminPlatformSettingsDTO(
                 platformFeePercent: body["platformFeePercent"] as? Double,
+                platformCommissionEnabled: body["platformCommissionEnabled"] as? Bool,
                 cashPaymentEnabled: body["cashPaymentEnabled"] as? Bool,
                 consumerHomeMode: body["consumerHomeMode"] as? String
             )
@@ -60,6 +61,29 @@ enum ProviderAdminService {
         let rounded = (platformFeePercent * 100).rounded() / 100
         let saved = try await updatePlatformSettings(["platformFeePercent": rounded])
         return saved.platformFeePercent ?? rounded
+    }
+
+    /// `PUT /admin/platform-settings` — fee % and/or platform-wide commission on/off.
+    @discardableResult
+    static func updatePlatformCommission(
+        platformFeePercent: Double? = nil,
+        platformCommissionEnabled: Bool? = nil
+    ) async throws -> AdminPlatformSettingsDTO {
+        var body: [String: Any] = [:]
+        if let platformFeePercent {
+            body["platformFeePercent"] = (platformFeePercent * 100).rounded() / 100
+        }
+        if let platformCommissionEnabled {
+            body["platformCommissionEnabled"] = platformCommissionEnabled
+        }
+        guard !body.isEmpty else {
+            return try await fetchPlatformSettings()
+        }
+        return try await updatePlatformSettings(body)
+    }
+
+    static func updatePlatformCommissionEnabled(_ enabled: Bool) async throws -> AdminPlatformSettingsDTO {
+        try await updatePlatformSettings(["platformCommissionEnabled": enabled])
     }
 
     static func updateCashPaymentEnabled(_ enabled: Bool) async throws -> AdminPlatformSettingsDTO {
