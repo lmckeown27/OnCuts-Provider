@@ -96,8 +96,11 @@ struct ProviderProfileEditViewRepresentable: UIViewControllerRepresentable {
                         displayName: draft.displayName,
                         bio: draft.bio,
                         instagramHandle: draft.instagramUsername,
-                        specialties: Array(draft.selectedSpecialties).sorted(),
-                        isActive: !draft.hideFromConsumers
+                        specialties: Array(draft.selectedSpecialties).sorted()
+                    )
+                    _ = try await ProviderAuthService.updateMarketplaceHidden(
+                        barberId: barberId,
+                        isHidden: draft.hideFromConsumers
                     )
                     try await session.refreshProfileAfterSignIn()
                     await MainActor.run {

@@ -23,31 +23,21 @@ enum ProviderBarberBusinessAnalyticsEngine {
             return interval.contains(date)
         }
 
-        // Card / cash uses the same population as admin: COMPLETED + PAID (no paidAt gate).
+        // Payment stats use COMPLETED + PAID card bookings (cash is excluded).
         let paidInPeriod = inPeriod.filter(\.isPaidForRevenueAnalytics)
         let grossVolumeCents = paidInPeriod.reduce(0) { $0 + revenueCents(for: $1) }
 
-        var cardVolumeCents = 0
-        var cashVolumeCents = 0
-        var cardCompletionCount = 0
-        var cashCompletionCount = 0
-        for booking in paidInPeriod {
-            let cents = revenueCents(for: booking)
-            if booking.isCashPayment {
-                cashVolumeCents += cents
-                cashCompletionCount += 1
-            } else {
-                // Explicit card *or* null method (legacy Stripe) — matches admin SQL.
-                cardVolumeCents += cents
-                cardCompletionCount += 1
-            }
+        var paymentVolumeCents = 0
+        var paymentCompletionCount = 0
+        for booking in paidInPeriod where !booking.isCashPayment {
+            // Explicit card *or* null method (legacy Stripe).
+            paymentVolumeCents += revenueCents(for: booking)
+            paymentCompletionCount += 1
         }
 
-        let platformCutCents = Int((Double(cardVolumeCents) * platformFeeRate).rounded())
-        let cardTakeHomeCents = max(0, cardVolumeCents - platformCutCents)
-        let cashTakeHomeCents = cashVolumeCents
+        let platformCutCents = Int((Double(paymentVolumeCents) * platformFeeRate).rounded())
+        let takeHomeCents = max(0, paymentVolumeCents - platformCutCents)
         let tipsCents = paidInPeriod.reduce(0) { $0 + max(0, $1.tipAmountCents ?? 0) }
-        let takeHomeCents = cardTakeHomeCents + cashTakeHomeCents
 
         let pendingCount = inPeriod.filter { pendingStatuses.contains($0.statusUpper) }.count
         let upcomingCount = inPeriod.filter { upcomingStatuses.contains($0.statusUpper) }.count
@@ -66,13 +56,9 @@ enum ProviderBarberBusinessAnalyticsEngine {
             bookingCount: paidInPeriod.count,
             uniqueClientCount: uniqueClients,
             chartPoints: chartPoints(from: paidInPeriod, period: period, calendar: calendar, now: now),
-            cardVolumeCents: cardVolumeCents,
-            cardCompletionCount: cardCompletionCount,
-            cashVolumeCents: cashVolumeCents,
-            cashCompletionCount: cashCompletionCount,
+            paymentVolumeCents: paymentVolumeCents,
+            paymentCompletionCount: paymentCompletionCount,
             platformCutCents: platformCutCents,
-            cardTakeHomeCents: cardTakeHomeCents,
-            cashTakeHomeCents: cashTakeHomeCents,
             takeHomeCents: takeHomeCents,
             tipTotalCents: tipsCents,
             pendingCount: pendingCount,
@@ -185,7 +171,7 @@ enum ProviderBarberBusinessAnalyticsEngine {
         paidBookings(in: timeline, from: bookings, calendar: calendar, now: now)
     }
 
-    /// All settled bookings used for Card vs Cash / admin-parity revenue totals.
+    /// All settled bookings used for all-time payment / admin-parity revenue totals.
     static func paidBookings(from bookings: [SimpleBookingDTO]) -> [SimpleBookingDTO] {
         bookings.filter(\.isPaidForRevenueAnalytics)
     }

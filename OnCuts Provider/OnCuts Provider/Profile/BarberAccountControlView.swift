@@ -12,7 +12,9 @@ struct BarberAccountControlView: View {
     @State private var lastName = ""
     @State private var biography = ""
     @State private var instagramHandle = ""
-    @State private var isProfileVisible = true
+    /// Marketplace hide (`isHidden`). Checked = hidden from consumer search. Independent of `isActive`.
+    @State private var isHiddenFromConsumers = false
+    @State private var isSavingVisibility = false
 
     @State private var avatarURL: URL?
     @State private var selectedPhotoItem: PhotosPickerItem?
@@ -50,7 +52,6 @@ struct BarberAccountControlView: View {
             visibilitySection
             accountActionsSection
         }
-        .scrollDisabled(true)
         .scrollDismissesKeyboard(.immediately)
         .providerLavaIntegratedFormSurface()
         .disabled(isDeletingAccount || isUploadingPhoto || isSaving)
@@ -87,7 +88,15 @@ struct BarberAccountControlView: View {
             }
         }
         .onAppear(perform: loadFromSession)
+        .task {
+            await session.refreshMarketplaceVisibilityFromMe()
+            loadFromSession()
+        }
         .onChange(of: session.barberProfile?.id) { _, _ in
+            loadFromSession()
+        }
+        .onChange(of: session.barberProfile?.isHidden) { _, _ in
+            guard !isSavingVisibility else { return }
             loadFromSession()
         }
         .onChange(of: selectedPhotoItem) { _, item in
@@ -379,42 +388,69 @@ struct BarberAccountControlView: View {
 
     private var visibilitySection: some View {
         Section {
-            HStack(alignment: .center, spacing: 12) {
-                Toggle(isOn: $isProfileVisible) {
-                    Text(isProfileVisible ? "Visible to Public" : "Hidden from Public")
-                        .font(.provider(.subheadline, weight: .semibold))
-                        .foregroundStyle(accountFieldPrimaryColor)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.85)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(accountFieldChrome(cornerRadius: 14))
-                .disabled(!isEditingProfile)
-                .animation(.easeInOut(duration: 0.18), value: isEditingProfile)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
+                    Toggle(isOn: hideFromConsumersBinding) {
+                        Text("Hide my profile from consumers")
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .foregroundStyle(accountFieldPrimaryColor)
+                    }
+                    .disabled(isSavingVisibility || session.barberProfile?.id == nil)
+                    .tint(.providerOlive)
 
-                Button {
-                    dismissKeyboard()
-                    showingBlockedUsers = true
-                } label: {
-                    Text("Blocked Users")
-                        .font(.provider(.subheadline, weight: .semibold))
-                        .foregroundStyle(Color.providerOnOliveFill)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(
-                            Color.providerOlive,
-                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        )
+                    Button {
+                        dismissKeyboard()
+                        showingBlockedUsers = true
+                    } label: {
+                        Text("Blocked Users")
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .foregroundStyle(Color.providerOnOliveFill)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .background(
+                                Color.providerOlive,
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize(horizontal: true, vertical: false)
                 }
-                .buttonStyle(.plain)
-                .fixedSize(horizontal: true, vertical: false)
+
+                if isHiddenFromConsumers {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Warning: Profile Hidden")
+                            .font(.provider(.caption, weight: .semibold))
+                            .foregroundStyle(Color.orange)
+                        Text("It will be virtually impossible for consumers to book a service with you while your profile is hidden. Only enable this if you need a temporary break from taking bookings.")
+                            .font(.provider(.caption))
+                            .foregroundStyle(accountFieldPrimaryColor.opacity(0.78))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        Color.orange.opacity(0.16),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
+                }
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(accountFieldChrome(cornerRadius: 14))
             .listRowInsets(EdgeInsets(top: 5, leading: 14, bottom: 5, trailing: 14))
             .listRowBackground(Color.clear)
         }
+    }
+
+    private var hideFromConsumersBinding: Binding<Bool> {
+        Binding(
+            get: { isHiddenFromConsumers },
+            set: { newValue in
+                guard newValue != isHiddenFromConsumers else { return }
+                Task { await saveMarketplaceHidden(newValue) }
+            }
+        )
     }
 
     private var accountActionsSection: some View {
@@ -492,7 +528,7 @@ struct BarberAccountControlView: View {
         biography = bio.isEmpty ? "" : bio
 
         instagramHandle = sanitizedInstagramHandle(barber?.instagramHandle ?? "")
-        isProfileVisible = barber?.isActive ?? true
+        isHiddenFromConsumers = barber?.isHidden == true
         avatarURL = barber?.avatarURL
     }
 
@@ -537,14 +573,40 @@ struct BarberAccountControlView: View {
                 displayName: composedDisplayName,
                 bio: biography.trimmingCharacters(in: .whitespacesAndNewlines),
                 instagramHandle: sanitizedInstagramHandle(instagramHandle),
-                specialties: existingSpecialties,
-                isActive: isProfileVisible
+                specialties: existingSpecialties
             )
             try await session.refreshProfileAfterSignIn()
             return true
         } catch {
             presentAlert(title: "Couldn't save", message: error.localizedDescription)
             return false
+        }
+    }
+
+    @MainActor
+    private func saveMarketplaceHidden(_ hidden: Bool) async {
+        guard let barberId = session.barberProfile?.id else {
+            presentAlert(title: "Couldn't update visibility", message: "Operator profile not loaded yet.")
+            return
+        }
+        let previous = isHiddenFromConsumers
+        isHiddenFromConsumers = hidden
+        session.applyMarketplaceHidden(hidden)
+        isSavingVisibility = true
+        defer { isSavingVisibility = false }
+        do {
+            let confirmed = try await ProviderAuthService.updateMarketplaceHidden(
+                barberId: barberId,
+                isHidden: hidden
+            )
+            isHiddenFromConsumers = confirmed
+            session.applyMarketplaceHidden(confirmed)
+            await session.refreshMarketplaceVisibilityFromMe()
+            isHiddenFromConsumers = session.barberProfile?.isHidden == true
+        } catch {
+            isHiddenFromConsumers = previous
+            session.applyMarketplaceHidden(previous)
+            presentAlert(title: "Couldn't update visibility", message: error.localizedDescription)
         }
     }
 

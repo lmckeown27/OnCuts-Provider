@@ -75,13 +75,10 @@ struct BarberBusinessAnalyticsSnapshot: Hashable {
     let bookingCount: Int
     let uniqueClientCount: Int
     let chartPoints: [BarberAnalyticsChartPoint]
-    let cardVolumeCents: Int
-    let cardCompletionCount: Int
-    let cashVolumeCents: Int
-    let cashCompletionCount: Int
+    /// Settled card (non-cash) volume — the standard payment stats.
+    let paymentVolumeCents: Int
+    let paymentCompletionCount: Int
     let platformCutCents: Int
-    let cardTakeHomeCents: Int
-    let cashTakeHomeCents: Int
     let takeHomeCents: Int
     let tipTotalCents: Int
     let pendingCount: Int

@@ -11,10 +11,47 @@ enum ProviderAvailabilityManagementService {
     // MARK: - Weekly schedule
 
     static func fetchWeeklySchedule(barberId: String) async throws -> WeeklyScheduleDTO {
+        try await fetchAvailability(barberId: barberId).weeklySchedule
+    }
+
+    /// `GET /barbers/:id/availability` — weekly hours plus booking slot interval.
+    static func fetchAvailability(barberId: String) async throws -> (
+        weeklySchedule: WeeklyScheduleDTO,
+        bookingSlotIntervalMinutes: Int
+    ) {
         let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "barbers/\(barberId)/availability")
         let dec = OnCutsHTTPClient.jsonDecoderSnake()
         let env = try dec.decode(WeeklyScheduleEnvelope.self, from: data)
-        return env.data?.weeklySchedule ?? WeeklyScheduleDTO()
+        let schedule = env.data?.weeklySchedule ?? WeeklyScheduleDTO()
+        let interval = env.data?.resolvedBookingSlotIntervalMinutes
+            ?? BookingSlotIntervalMinutesPreset.resolved(
+                ProviderMarketplaceVisibility.int(
+                    in: data,
+                    camelKey: "bookingSlotIntervalMinutes",
+                    snakeKey: "booking_slot_interval_minutes"
+                )
+            )
+        return (schedule, interval)
+    }
+
+    /// Owner-only: how far apart client bookable start times are (`15`, `30`, `45`).
+    @discardableResult
+    static func updateBookingSlotIntervalMinutes(barberId: String, minutes: Int) async throws -> Int {
+        let resolved = BookingSlotIntervalMinutesPreset.resolved(minutes)
+        let enc = barberId.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlPathAllowed) ?? barberId
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "barbers/\(enc)",
+            method: "PUT",
+            jsonBody: [
+                "booking_slot_interval_minutes": resolved,
+                "bookingSlotIntervalMinutes": resolved,
+            ]
+        )
+        return ProviderMarketplaceVisibility.int(
+            in: data,
+            camelKey: "bookingSlotIntervalMinutes",
+            snakeKey: "booking_slot_interval_minutes"
+        ) ?? resolved
     }
 
     static func updateWeeklySchedule(barberId: String, schedule: WeeklyScheduleDTO) async throws {
@@ -140,6 +177,7 @@ enum ProviderAvailabilityEditorPrefetch {
         var calendarError: String?
         var weekly: WeeklyScheduleDTO?
         var weeklyError: String?
+        var bookingSlotIntervalMinutes: Int?
         var timeBlocks: [BarberTimeBlockDTO]?
         var blocksError: String?
     }
@@ -186,6 +224,7 @@ enum ProviderAvailabilityEditorPrefetch {
         snap.calendarError = calendarResult.1
         snap.weekly = weeklyResult.0
         snap.weeklyError = weeklyResult.1
+        snap.bookingSlotIntervalMinutes = weeklyResult.2
         snap.timeBlocks = blocksResult.0
         snap.blocksError = blocksResult.1
         if !Task.isCancelled {
@@ -202,11 +241,12 @@ enum ProviderAvailabilityEditorPrefetch {
         }
     }
 
-    private static func loadWeekly(barberId: String) async -> (WeeklyScheduleDTO?, String?) {
+    private static func loadWeekly(barberId: String) async -> (WeeklyScheduleDTO?, String?, Int?) {
         do {
-            return (try await ProviderAvailabilityManagementService.fetchWeeklySchedule(barberId: barberId), nil)
+            let availability = try await ProviderAvailabilityManagementService.fetchAvailability(barberId: barberId)
+            return (availability.weeklySchedule, nil, availability.bookingSlotIntervalMinutes)
         } catch {
-            return (nil, (error as? LocalizedError)?.errorDescription ?? "Could not load schedule.")
+            return (nil, (error as? LocalizedError)?.errorDescription ?? "Could not load schedule.", nil)
         }
     }
 

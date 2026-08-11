@@ -54,6 +54,11 @@ struct ProviderAvailabilityEditorView: View {
     @State private var isHydratingWeekly = false
     @State private var weeklyAutosaveTask: Task<Void, Never>?
 
+    /// Client bookable start-time step (15 / 30 / 45). Not service duration.
+    @State private var slotIntervalMinutes: BookingSlotIntervalMinutesPreset = .fifteen
+    @State private var showingTimeLimits = false
+    @State private var isSavingSlotInterval = false
+
     // Generic toast / save feedback
     @State private var savedToast: String?
 
@@ -93,7 +98,10 @@ struct ProviderAvailabilityEditorView: View {
                         inlineBanner(text: savedToast, tint: .green)
                     }
                     if showsWeeklyEditorBlockTimeButton {
-                        blockTimeEntryButton
+                        editScheduleActionsRow
+                        if showingTimeLimits {
+                            timeLimitsCard
+                        }
                     }
                     if session.hasProviderProfile, !isLoadingContent, showsAvailabilityActionsRow {
                         availabilityActionsRow
@@ -201,24 +209,113 @@ struct ProviderAvailabilityEditorView: View {
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    /// Compact entry on **Edit Schedule** — opens the Block Time sheet (hub CTA removed).
-    private var blockTimeEntryButton: some View {
-        Button {
-            showingAddBlock = true
+    /// Compact entries on **Edit Schedule** — Block Time + Time Limits (web parity).
+    private var editScheduleActionsRow: some View {
+        HStack(spacing: 10) {
+            Button {
+                showingTimeLimits = false
+                showingAddBlock = true
+            } label: {
+                Text("Block Time")
+                    .font(.provider(.subheadline, weight: .semibold))
+                    .foregroundStyle(Color.providerOnOliveFill)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color.providerOlive)
+                    )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Block Time")
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showingTimeLimits.toggle()
+                }
+            } label: {
+                Text("Time Limits")
+                    .font(.provider(.subheadline, weight: .semibold))
+                    .foregroundStyle(Color.providerOnOliveFill)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(showingTimeLimits ? Color.providerOlive.opacity(0.82) : Color.providerOlive)
+                    )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Time Limits")
+            .accessibilityValue(showingTimeLimits ? "Expanded" : "Collapsed")
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private var timeLimitsCard: some View {
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
+        return VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Time Limits")
+                    .font(.provider(.headline, weight: .semibold))
+                    .foregroundStyle(Color.lavaShellCream)
+                Text("How often clients can book a start time.")
+                    .font(.provider(.subheadline))
+                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(BookingSlotIntervalMinutesPreset.allCases) { preset in
+                    slotIntervalChip(preset)
+                }
+            }
+
+            Text("Current: every \(slotIntervalMinutes.rawValue) minutes")
+                .font(.provider(.subheadline))
+                .foregroundStyle(Color.lavaShellCream)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .accessibilityLabel("Current: every \(slotIntervalMinutes.rawValue) minutes")
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color.providerScheduleCardFill,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.providerScheduleCardStroke, lineWidth: 0.6)
+        )
+    }
+
+    private func slotIntervalChip(_ preset: BookingSlotIntervalMinutesPreset) -> some View {
+        let selected = slotIntervalMinutes == preset
+        let disabled = isSavingSlotInterval || session.barberProfile?.id == nil
+        return Button {
+            Task { await saveSlotInterval(preset) }
         } label: {
-            Text("Block Time")
+            Text(preset.chipLabel)
                 .font(.provider(.subheadline, weight: .semibold))
-                .foregroundStyle(Color.providerOnOliveFill)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+                .foregroundStyle(selected ? Color(uiColor: ProviderAppearance.shellBase) : Color.lavaShellCream)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 11)
                 .background(
-                    Capsule(style: .continuous)
-                        .fill(Color.providerOlive)
+                    selected ? Color.lavaShellCream : Color.providerElevatedSurface,
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(
+                            selected ? Color.lavaShellCream : Color.providerElevatedSurfaceStroke,
+                            lineWidth: 1
+                        )
                 )
         }
         .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, alignment: .center)
-        .accessibilityLabel("Block Time")
+        .disabled(disabled)
+        .opacity(disabled ? 0.6 : 1)
+        .accessibilityLabel(preset.chipLabel)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 
     private func availabilityActionButton(title: String, action: @escaping () -> Void) -> some View {
@@ -695,6 +792,7 @@ struct ProviderAvailabilityEditorView: View {
             // integration is parked. Restore the `calendar:` argument when re-enabling.
             applyLoadedContent(
                 weekly: (snapshot.weekly, snapshot.weeklyError),
+                bookingSlotIntervalMinutes: snapshot.bookingSlotIntervalMinutes,
                 blocks: (snapshot.timeBlocks, snapshot.blocksError)
             )
             scheduleBookings = await fetchScheduleBookings()
@@ -713,7 +811,8 @@ struct ProviderAvailabilityEditorView: View {
         let results = await (weekly, blocks, bookings)
 
         applyLoadedContent(
-            weekly: results.0,
+            weekly: (results.0.0, results.0.1),
+            bookingSlotIntervalMinutes: results.0.2,
             blocks: results.1
         )
         scheduleBookings = results.2
@@ -722,6 +821,7 @@ struct ProviderAvailabilityEditorView: View {
 
     private func applyLoadedContent(
         weekly: (WeeklyScheduleDTO?, String?),
+        bookingSlotIntervalMinutes: Int?,
         blocks: ([BarberTimeBlockDTO]?, String?)
     ) {
         // calendarStatus / calendarError assignments removed while the Google Calendar
@@ -737,6 +837,12 @@ struct ProviderAvailabilityEditorView: View {
             recomputeValidation()
         } else {
             weeklyError = weekly.1
+        }
+
+        if let minutes = bookingSlotIntervalMinutes {
+            slotIntervalMinutes = BookingSlotIntervalMinutesPreset.from(minutes)
+        } else if let fromProfile = session.barberProfile?.bookingSlotIntervalMinutes {
+            slotIntervalMinutes = BookingSlotIntervalMinutesPreset.from(fromProfile)
         }
 
         if let list = blocks.0 {
@@ -766,11 +872,12 @@ struct ProviderAvailabilityEditorView: View {
     }
     #endif
 
-    private func fetchWeeklySchedule(barberId: String) async -> (WeeklyScheduleDTO?, String?) {
+    private func fetchWeeklySchedule(barberId: String) async -> (WeeklyScheduleDTO?, String?, Int?) {
         do {
-            return (try await ProviderAvailabilityManagementService.fetchWeeklySchedule(barberId: barberId), nil)
+            let availability = try await ProviderAvailabilityManagementService.fetchAvailability(barberId: barberId)
+            return (availability.weeklySchedule, nil, availability.bookingSlotIntervalMinutes)
         } catch {
-            return (nil, (error as? LocalizedError)?.errorDescription ?? "Could not load schedule.")
+            return (nil, (error as? LocalizedError)?.errorDescription ?? "Could not load schedule.", nil)
         }
     }
 
@@ -803,6 +910,43 @@ struct ProviderAvailabilityEditorView: View {
             recomputeValidation()
         } else {
             weeklyError = result.1
+        }
+        if let minutes = result.2 {
+            slotIntervalMinutes = BookingSlotIntervalMinutesPreset.from(minutes)
+        }
+    }
+
+    private func saveSlotInterval(_ preset: BookingSlotIntervalMinutesPreset) async {
+        guard let barberId = session.barberProfile?.id else { return }
+        if preset == slotIntervalMinutes {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showingTimeLimits = false
+            }
+            return
+        }
+
+        let previous = slotIntervalMinutes
+        slotIntervalMinutes = preset
+        isSavingSlotInterval = true
+        weeklyError = nil
+        defer { isSavingSlotInterval = false }
+
+        do {
+            let saved = try await ProviderAvailabilityManagementService.updateBookingSlotIntervalMinutes(
+                barberId: barberId,
+                minutes: preset.rawValue
+            )
+            let resolved = BookingSlotIntervalMinutesPreset.from(saved)
+            slotIntervalMinutes = resolved
+            session.applyBookingSlotIntervalMinutes(resolved.rawValue)
+            showSavedToast(resolved.successToast)
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showingTimeLimits = false
+            }
+            NotificationCenter.default.post(name: .providerAvailabilityChanged, object: nil)
+        } catch {
+            slotIntervalMinutes = previous
+            weeklyError = (error as? LocalizedError)?.errorDescription ?? "Could not save time limits."
         }
     }
 

@@ -136,10 +136,13 @@ enum ProviderAuthService {
         guard let p = env.data else {
             throw OnCutsHTTPError.httpStatus(404, env.message)
         }
-        return p
+        // Payload may include both `isHidden` and `is_hidden`; snake-case conversion can drop one.
+        if let hidden = ProviderMarketplaceVisibility.isHidden(in: data) {
+            return p.withMarketplaceHidden(hidden)
+        }
+        return p.withMarketplaceHidden(p.isHidden == true)
     }
 
-    /// `PUT /barbers/:id` — updates `users` display name / Instagram and `barbers` bio, specialties, visibility.
     /// `DELETE /users/:id` — permanent account deletion (web `userService.deleteAccount` parity).
     /// Omit `password` when the account is Apple-linked without a CampusCuts password; the backend
     /// accepts an empty body after the client has confirmed device ownership.
@@ -156,13 +159,13 @@ enum ProviderAuthService {
         )
     }
 
+    /// `PUT /barbers/:id` — display name, Instagram, bio, specialties. Visibility is a separate call.
     static func updateMyBarberProfile(
         barberId: String,
         displayName: String,
         bio: String,
         instagramHandle: String,
-        specialties: [String],
-        isActive: Bool
+        specialties: [String]
     ) async throws {
         let enc = barberId.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlPathAllowed) ?? barberId
         let body: [String: Any] = [
@@ -170,13 +173,50 @@ enum ProviderAuthService {
             "bio": bio,
             "instagram_handle": instagramHandle,
             "specialties": specialties,
-            "is_active": isActive,
         ]
         _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
             path: "barbers/\(enc)",
             method: "PUT",
             jsonBody: body
         )
+    }
+
+    /// Owner-only marketplace hide. Sends both key spellings; does **not** send `isActive`.
+    @discardableResult
+    static func updateMarketplaceHidden(barberId: String, isHidden: Bool) async throws -> Bool {
+        let enc = barberId.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlPathAllowed) ?? barberId
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "barbers/\(enc)",
+            method: "PUT",
+            jsonBody: [
+                "isHidden": isHidden,
+                "is_hidden": isHidden,
+            ]
+        )
+        return ProviderMarketplaceVisibility.isHidden(in: data) ?? isHidden
+    }
+
+    /// `PUT /barbers/:id` — owner-only client cancel full-refund window (`1, 2, 4, 6, 12, 24` hours).
+    @discardableResult
+    static func updateClientCancelRefundHours(barberId: String, hours: Int) async throws -> Int {
+        let allowed = Set(ClientCancelRefundHoursPreset.allCases.map(\.rawValue))
+        let resolved = allowed.contains(hours) ? hours : 1
+        let enc = barberId.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlPathAllowed) ?? barberId
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "barbers/\(enc)",
+            method: "PUT",
+            jsonBody: ["client_cancel_refund_hours": resolved]
+        )
+        let dec = JSONDecoder()
+        dec.keyDecodingStrategy = .convertFromSnakeCase
+        if let env = try? dec.decode(BarberMeEnvelope.self, from: data),
+           let profile = env.data {
+            return profile.resolvedClientCancelRefundHours
+        }
+        if let profile = try? dec.decode(BarberMeProfile.self, from: data) {
+            return profile.resolvedClientCancelRefundHours
+        }
+        return resolved
     }
 }
 

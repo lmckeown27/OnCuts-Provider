@@ -149,6 +149,26 @@ final class ProviderSession {
         await retryProviderProfileSync()
     }
 
+    /// Owner `GET /barbers/me` only — do not use public `GET /barbers/:id` (404 when hidden).
+    func refreshMarketplaceVisibilityFromMe() async {
+        guard let me = try? await ProviderAuthService.fetchBarberMe() else { return }
+        if let active = Self.activeProviderProfile(me) {
+            barberProfile = active
+        } else if let current = barberProfile, current.id == me.id {
+            barberProfile = current.withMarketplaceHidden(me.isHidden == true)
+        }
+    }
+
+    func applyMarketplaceHidden(_ hidden: Bool) {
+        guard let current = barberProfile else { return }
+        barberProfile = current.withMarketplaceHidden(hidden)
+    }
+
+    func applyBookingSlotIntervalMinutes(_ minutes: Int) {
+        guard let current = barberProfile else { return }
+        barberProfile = current.withBookingSlotIntervalMinutes(minutes)
+    }
+
     /// Async so the device-registration DELETE can complete while the JWT is still valid in the
     /// keychain — the request needs a Bearer header to identify which device records belong to
     /// the signed-out account. The call inside `unregisterOnSignOut()` swallows errors, so the

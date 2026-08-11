@@ -4,7 +4,7 @@ struct ProviderBusinessAnalyticsPerformanceView: View {
     let bookings: [SimpleBookingDTO]
     /// Timeline-scoped summary strip metrics.
     let snapshot: BarberBusinessAnalyticsSnapshot
-    /// All-time Card vs Cash (admin parity).
+    /// All-time payment stats (admin parity, card / Stripe).
     let paymentMethodsSnapshot: BarberBusinessAnalyticsSnapshot
     @Binding var metricsTimeline: BarberPerformanceTimeline
 
@@ -15,7 +15,7 @@ struct ProviderBusinessAnalyticsPerformanceView: View {
                 bookings: bookings,
                 timeline: $metricsTimeline
             )
-            cardVsCashCard
+            paymentsCard
             earningsHeroCard
         }
     }
@@ -49,90 +49,58 @@ struct ProviderBusinessAnalyticsPerformanceView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private var cardVsCashCard: some View {
-        ProviderAnalyticsSectionCard(title: "Card vs cash", subtitle: "All time") {
-            VStack(spacing: 12) {
-                paymentTypeBlock(
-                    title: "Card",
-                    volumeCents: paymentMethodsSnapshot.cardVolumeCents,
-                    completionCount: paymentMethodsSnapshot.cardCompletionCount,
-                    platformCutCents: paymentMethodsSnapshot.platformCutCents,
-                    takeHomeCents: paymentMethodsSnapshot.cardTakeHomeCents
-                )
+    private var paymentsCard: some View {
+        ProviderAnalyticsSectionCard(title: "Payments", subtitle: "All time") {
+            VStack(spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Volume")
+                        .font(.provider(.subheadline, weight: .semibold))
+                        .foregroundStyle(Color.lavaShellCream)
+                    Spacer(minLength: 8)
+                    Text(ProviderAnalyticsFormatting.currency(cents: paymentMethodsSnapshot.paymentVolumeCents))
+                        .font(.provider(.subheadline, weight: .bold))
+                        .foregroundStyle(Color.lavaShellCream)
+                        .providerAnalyticsMonospacedValue()
+                }
 
-                Divider().overlay(Color.lavaShellCream.opacity(0.12))
-
-                paymentTypeBlock(
-                    title: "Cash",
-                    volumeCents: paymentMethodsSnapshot.cashVolumeCents,
-                    completionCount: paymentMethodsSnapshot.cashCompletionCount,
-                    platformCutCents: 0,
-                    takeHomeCents: paymentMethodsSnapshot.cashTakeHomeCents
-                )
-            }
-        }
-    }
-
-    private func paymentTypeBlock(
-        title: String,
-        volumeCents: Int,
-        completionCount: Int,
-        platformCutCents: Int,
-        takeHomeCents: Int
-    ) -> some View {
-        VStack(spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(title)
-                    .font(.provider(.subheadline, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCream)
-                Spacer(minLength: 8)
-                Text(ProviderAnalyticsFormatting.currency(cents: volumeCents))
-                    .font(.provider(.subheadline, weight: .bold))
-                    .foregroundStyle(Color.lavaShellCream)
-                    .providerAnalyticsMonospacedValue()
-            }
-
-            metricRow(
-                label: "Paid bookings",
-                value: "\(completionCount)",
-                detail: nil
-            )
-
-            if platformCutCents > 0 {
                 metricRow(
-                    label: "Platform fee",
-                    value: ProviderAnalyticsFormatting.currency(cents: platformCutCents),
-                    detail: nil,
-                    valueColor: .red.opacity(0.88)
+                    label: "Paid bookings",
+                    value: "\(paymentMethodsSnapshot.paymentCompletionCount)",
+                    detail: nil
+                )
+
+                if paymentMethodsSnapshot.platformCutCents > 0 {
+                    metricRow(
+                        label: "Platform fee",
+                        value: ProviderAnalyticsFormatting.currency(cents: paymentMethodsSnapshot.platformCutCents),
+                        detail: nil,
+                        valueColor: .red.opacity(0.88)
+                    )
+                }
+
+                metricRow(
+                    label: "Take-home",
+                    value: ProviderAnalyticsFormatting.currency(cents: paymentMethodsSnapshot.takeHomeCents),
+                    detail: nil
                 )
             }
-
-            metricRow(
-                label: "Take-home",
-                value: ProviderAnalyticsFormatting.currency(cents: takeHomeCents),
-                detail: nil
-            )
         }
     }
 
     private var earningsHeroCard: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             Text("Estimated net take-home")
                 .font(.provider(.caption, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
                 .frame(maxWidth: .infinity, alignment: .center)
 
-            HStack(spacing: 0) {
-                takeHomeComparisonCell(
-                    title: "Card",
-                    value: ProviderAnalyticsFormatting.currency(cents: paymentMethodsSnapshot.cardTakeHomeCents)
-                )
-                takeHomeComparisonCell(
-                    title: "Cash",
-                    value: ProviderAnalyticsFormatting.currency(cents: paymentMethodsSnapshot.cashTakeHomeCents)
-                )
-            }
-
+            Text(ProviderAnalyticsFormatting.currency(cents: paymentMethodsSnapshot.takeHomeCents))
+                .font(.provider(.title2, weight: .bold))
+                .foregroundStyle(Color.lavaShellCream)
+                .providerAnalyticsMonospacedValue()
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .frame(maxWidth: .infinity, alignment: .center)
         }
         .padding(18)
         .background(
@@ -149,21 +117,6 @@ struct ProviderBusinessAnalyticsPerformanceView: View {
                         .strokeBorder(Color.providerOlive.opacity(0.55), lineWidth: 1)
                 )
         )
-    }
-
-    private func takeHomeComparisonCell(title: String, value: String) -> some View {
-        VStack(spacing: 6) {
-            Text(title)
-                .font(.provider(.caption, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
-            Text(value)
-                .font(.provider(.title2, weight: .bold))
-                .foregroundStyle(Color.lavaShellCream)
-                .providerAnalyticsMonospacedValue()
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-        }
-        .frame(maxWidth: .infinity)
     }
 
     private func metricRow(

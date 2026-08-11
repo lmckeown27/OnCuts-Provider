@@ -58,8 +58,7 @@ struct ProfileEditInitialState {
 
         instagramUsername = barber?.instagramHandle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-        let active = barber?.isActive ?? true
-        hideFromConsumers = !active
+        hideFromConsumers = barber?.isHidden == true
 
         var tags = Set(ProfileEditDefaults.selectedSpecialties)
         if let remote = barber?.specialties {

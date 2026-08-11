@@ -1,11 +1,12 @@
 import SwiftUI
 
 /// Payout Settings — pushed from the schedule hub **Payouts** button (same chrome as Edit Schedule / Services Offered).
-/// Column: nav title → **Payouts | Analytics** tabs → scrollable body.
+/// Column: nav title → **Payouts | Analytics | Cancellations** tabs → scrollable body.
 struct ProviderPayoutSettingsView: View {
     private enum MainTab: String, CaseIterable, Identifiable {
         case payouts = "Payouts"
         case analytics = "Analytics"
+        case cancellations = "Cancellations"
         var id: String { rawValue }
     }
 
@@ -32,33 +33,33 @@ struct ProviderPayoutSettingsView: View {
     private static let faqItems: [FAQItem] = [
         FAQItem(
             id: "first-client-delay",
-            title: "First-client money delay",
-            body: "For new Stripe accounts, the first payout commonly takes 7-14 business days. That hold is Stripe’s new-account wait, not an OnCuts delay, and ends once your Connect account is established."
+            title: "Why haven't I received money from my first client?",
+            body: "New Stripe accounts have a one-time wait of about 7 to 14 business days after you link a bank and process your first live card payment. Stripe cannot waive this. Check Stripe Express for any Action Required items. After that wait, payouts follow your normal schedule."
         ),
         FAQItem(
             id: "why-wait",
-            title: "Why that wait exists",
-            body: "Stripe uses the early window to finish KYC, watch for chargebacks, and reduce fraud risk on brand-new payout accounts. Until that clears, card earnings stay in Stripe rather than landing in your bank."
+            title: "Why a wait period after the first transaction?",
+            body: "Stripe holds the first payout so refunds or chargebacks can be covered, your identity can be verified (KYC), and early activity can be checked for fraud. It is required for risk and legal compliance."
         ),
         FAQItem(
             id: "speed-after",
-            title: "Speed after the wait",
-            body: "After the new-account hold, eligible operators can use Instant Payouts when Stripe offers them. Otherwise funds follow your normal Stripe payout schedule (often daily or weekly) into your linked bank."
+            title: "How fast do payouts reach my bank after the first wait?",
+            body: "After the first wait ends, eligible Instant payouts can arrive in minutes. Otherwise Stripe usually pays about 2 business days after funds clear."
         ),
         FAQItem(
             id: "balance-bank",
-            title: "Where to see balance and bank",
-            body: "Open Stripe Express from this screen. Available balance, payout history, and bank details live in Stripe. OnCuts does not keep a separate operator wallet balance."
+            title: "Where can I see my balance or bank details?",
+            body: "Open Stripe Express below for balances, payout history, and bank settings."
         ),
         FAQItem(
             id: "express",
-            title: "What Stripe Express is",
-            body: "Stripe Express is your connected payout dashboard. Use it for bank account, tax details, statements, and transfers from card payments clients make through OnCuts."
+            title: "What is Stripe Express?",
+            body: "Stripe Express is your payout dashboard. Use it to manage your bank account, tax details, balances, and payout history for OnCuts card payments."
         ),
         FAQItem(
             id: "app",
-            title: "What the Stripe App is",
-            body: "The Stripe Dashboard app is optional. Install it from the App Store if you want balances and payout activity on your phone without opening Express in a browser."
+            title: "What is the Stripe App?",
+            body: "Optional phone app from Stripe to check balances and payout activity on the go. It is not required for OnCuts. Get it from the Stripe App card below."
         ),
     ]
 
@@ -129,6 +130,8 @@ struct ProviderPayoutSettingsView: View {
         } label: {
             Text(tab.rawValue)
                 .font(.provider(.subheadline, weight: isSelected ? .semibold : .medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
                 .foregroundStyle(
                     isSelected
                         ? ProviderOliveChromeStyle.adminTabActiveForeground(colorScheme)
@@ -155,6 +158,8 @@ struct ProviderPayoutSettingsView: View {
             payoutsTab
         case .analytics:
             ProviderBusinessAnalyticsView(embedsOwnNavigationStack: false)
+        case .cancellations:
+            ProviderCancellationRefundPolicyView()
         }
     }
 

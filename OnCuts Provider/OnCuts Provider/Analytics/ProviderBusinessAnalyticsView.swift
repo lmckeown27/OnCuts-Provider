@@ -36,7 +36,7 @@ struct ProviderBusinessAnalyticsView: View {
         )
     }
 
-    /// All-time Card vs Cash — parity with Admin Performance (`status IN COMPLETED/PAID`).
+    /// All-time payment stats (`status IN COMPLETED/PAID`, card / Stripe only).
     private var paymentMethodsSnapshot: BarberBusinessAnalyticsSnapshot {
         ProviderBarberBusinessAnalyticsEngine.buildSnapshot(
             bookings: ProviderBarberBusinessAnalyticsEngine.paidBookings(from: bookings),

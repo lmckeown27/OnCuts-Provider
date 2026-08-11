@@ -70,6 +70,8 @@ struct BarberMeProfile: Decodable, Hashable {
     let firstName: String?
     let lastName: String?
     let isActive: Bool?
+    /// Marketplace visibility (`barbers.is_hidden`). Hidden operators stay signed in; they just drop off consumer search.
+    let isHidden: Bool?
     let bio: String?
     let specialties: [String]?
     let instagramHandle: String?
@@ -78,6 +80,11 @@ struct BarberMeProfile: Decodable, Hashable {
     let profilePictureUrl: String?
     /// Operator profession (`barber` / `beauty`) from `barbers.provider_type`.
     let providerType: String?
+    /// Hours before appointment start that a client cancel still gets a full refund.
+    /// Allowed: 1, 2, 4, 6, 12, 24. Invalid/missing → 1.
+    let clientCancelRefundHours: Int?
+    /// Step between client bookable start times (minutes). Allowed: 15, 30, 45. Default 15.
+    let bookingSlotIntervalMinutes: Int?
 
     var avatarURL: URL? {
         ProviderAvatarURL.resolve(profilePictureUrl)
@@ -100,6 +107,154 @@ struct BarberMeProfile: Decodable, Hashable {
         let joined = "\(f) \(l)".trimmingCharacters(in: .whitespacesAndNewlines)
         if !joined.isEmpty { return joined }
         return ""
+    }
+
+    var resolvedClientCancelRefundHours: Int {
+        ClientCancelRefundHoursPreset.resolved(clientCancelRefundHours)
+    }
+
+    var resolvedBookingSlotIntervalMinutes: Int {
+        BookingSlotIntervalMinutesPreset.resolved(bookingSlotIntervalMinutes)
+    }
+
+    /// Inverse of `is_hidden` — matches web “Hide my profile from consumers”.
+    var isVisibleToConsumers: Bool {
+        isHidden != true
+    }
+
+    func withMarketplaceHidden(_ hidden: Bool) -> BarberMeProfile {
+        BarberMeProfile(
+            id: id,
+            userId: userId,
+            name: name,
+            displayName: displayName,
+            firstName: firstName,
+            lastName: lastName,
+            isActive: isActive,
+            isHidden: hidden,
+            bio: bio,
+            specialties: specialties,
+            instagramHandle: instagramHandle,
+            profilePictureUrl: profilePictureUrl,
+            providerType: providerType,
+            clientCancelRefundHours: clientCancelRefundHours,
+            bookingSlotIntervalMinutes: bookingSlotIntervalMinutes
+        )
+    }
+
+    func withBookingSlotIntervalMinutes(_ minutes: Int) -> BarberMeProfile {
+        BarberMeProfile(
+            id: id,
+            userId: userId,
+            name: name,
+            displayName: displayName,
+            firstName: firstName,
+            lastName: lastName,
+            isActive: isActive,
+            isHidden: isHidden,
+            bio: bio,
+            specialties: specialties,
+            instagramHandle: instagramHandle,
+            profilePictureUrl: profilePictureUrl,
+            providerType: providerType,
+            clientCancelRefundHours: clientCancelRefundHours,
+            bookingSlotIntervalMinutes: BookingSlotIntervalMinutesPreset.resolved(minutes)
+        )
+    }
+}
+
+/// Reads marketplace hide from GET/PUT payloads that may include `isHidden`, `is_hidden`, or both.
+enum ProviderMarketplaceVisibility {
+    static func isHidden(in data: Data) -> Bool? {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return nil
+        }
+        let payload = (root["data"] as? [String: Any]) ?? root
+        return bool(payload["isHidden"]) ?? bool(payload["is_hidden"])
+    }
+
+    private static func bool(_ raw: Any?) -> Bool? {
+        if let value = raw as? Bool { return value }
+        if let number = raw as? NSNumber { return number.boolValue }
+        if let text = raw as? String {
+            switch text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "true", "1", "yes": return true
+            case "false", "0", "no": return false
+            default: return nil
+            }
+        }
+        return nil
+    }
+
+    static func int(in data: Data, camelKey: String, snakeKey: String) -> Int? {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return nil
+        }
+        let payload = (root["data"] as? [String: Any]) ?? root
+        return int(payload[camelKey]) ?? int(payload[snakeKey])
+    }
+
+    private static func int(_ raw: Any?) -> Int? {
+        if let value = raw as? Int { return value }
+        if let number = raw as? NSNumber { return number.intValue }
+        if let text = raw as? String, let value = Int(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            return value
+        }
+        return nil
+    }
+}
+
+enum ClientCancelRefundHoursPreset: Int, CaseIterable, Identifiable, Hashable {
+    case one = 1
+    case two = 2
+    case four = 4
+    case six = 6
+    case twelve = 12
+    case twentyFour = 24
+
+    var id: Int { rawValue }
+
+    var chipLabel: String { "\(rawValue)h" }
+
+    var currentFooterLabel: String {
+        rawValue == 1 ? "1 hour before" : "\(rawValue) hours before"
+    }
+
+    var successToast: String {
+        rawValue == 1
+            ? "Clients get a full refund if they cancel at least 1 hour before"
+            : "Clients get a full refund if they cancel at least \(rawValue) hours before"
+    }
+
+    static func resolved(_ hours: Int?) -> Int {
+        let value = hours ?? 1
+        return allCases.contains(where: { $0.rawValue == value }) ? value : 1
+    }
+
+    static func from(_ hours: Int?) -> ClientCancelRefundHoursPreset {
+        ClientCancelRefundHoursPreset(rawValue: resolved(hours)) ?? .one
+    }
+}
+
+/// Step between offered client start times inside weekly hours (not service duration).
+enum BookingSlotIntervalMinutesPreset: Int, CaseIterable, Identifiable, Hashable {
+    case fifteen = 15
+    case thirty = 30
+    case fortyFive = 45
+
+    var id: Int { rawValue }
+
+    var chipLabel: String { "Every \(rawValue) min" }
+
+    var successToast: String { "Clients can book every \(rawValue) minutes." }
+
+    static func resolved(_ minutes: Int?) -> Int {
+        let value = minutes ?? 15
+        return allCases.contains(where: { $0.rawValue == value }) ? value : 15
+    }
+
+    static func from(_ minutes: Int?) -> BookingSlotIntervalMinutesPreset {
+        BookingSlotIntervalMinutesPreset(rawValue: resolved(minutes)) ?? .fifteen
     }
 }
 
@@ -985,6 +1140,11 @@ struct WeeklyScheduleEnvelope: Decodable {
 
 struct WeeklyScheduleData: Decodable {
     let weeklySchedule: WeeklyScheduleDTO?
+    let bookingSlotIntervalMinutes: Int?
+
+    var resolvedBookingSlotIntervalMinutes: Int {
+        BookingSlotIntervalMinutesPreset.resolved(bookingSlotIntervalMinutes)
+    }
 }
 
 // MARK: - Time blocks (GET/POST/DELETE /barbers/:id/time-blocks)
