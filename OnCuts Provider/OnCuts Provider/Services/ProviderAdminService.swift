@@ -51,6 +51,8 @@ enum ProviderAdminService {
             ?? AdminPlatformSettingsDTO(
                 platformFeePercent: body["platformFeePercent"] as? Double,
                 platformCommissionEnabled: body["platformCommissionEnabled"] as? Bool,
+                kickbackPercent: body["kickbackPercent"] as? Double,
+                feeBurden: body["feeBurden"] as? String,
                 cashPaymentEnabled: body["cashPaymentEnabled"] as? Bool,
                 consumerHomeMode: body["consumerHomeMode"] as? String
             )
@@ -63,11 +65,13 @@ enum ProviderAdminService {
         return saved.platformFeePercent ?? rounded
     }
 
-    /// `PUT /admin/platform-settings` — fee % and/or platform-wide commission on/off.
+    /// `PUT /admin/platform-settings` — fee %, on/off, burden, and optional kickback.
     @discardableResult
     static func updatePlatformCommission(
         platformFeePercent: Double? = nil,
-        platformCommissionEnabled: Bool? = nil
+        platformCommissionEnabled: Bool? = nil,
+        feeBurden: AdminFeeBurden? = nil,
+        kickbackPercent: Double? = nil
     ) async throws -> AdminPlatformSettingsDTO {
         var body: [String: Any] = [:]
         if let platformFeePercent {
@@ -75,6 +79,12 @@ enum ProviderAdminService {
         }
         if let platformCommissionEnabled {
             body["platformCommissionEnabled"] = platformCommissionEnabled
+        }
+        if let feeBurden {
+            body["feeBurden"] = feeBurden.rawValue
+        }
+        if let kickbackPercent {
+            body["kickbackPercent"] = (kickbackPercent * 100).rounded() / 100
         }
         guard !body.isEmpty else {
             return try await fetchPlatformSettings()
@@ -92,6 +102,95 @@ enum ProviderAdminService {
 
     static func updateConsumerHomeMode(_ mode: AdminConsumerHomeMode) async throws -> AdminPlatformSettingsDTO {
         try await updatePlatformSettings(["consumerHomeMode": mode.rawValue])
+    }
+
+    // MARK: - Notification templates
+
+    static func listNotificationTemplates() async throws -> [AdminNotificationTemplateDTO] {
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(path: "admin/notification-templates")
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
+        if let env = try? dec.decode(AdminNotificationTemplatesEnvelope.self, from: data),
+           let list = env.data {
+            return list
+        }
+        return (try? dec.decode([AdminNotificationTemplateDTO].self, from: data)) ?? []
+    }
+
+    static func createNotificationTemplate(
+        title: String,
+        body: String,
+        audience: AdminNotificationAudience,
+        label: String? = nil
+    ) async throws -> AdminNotificationTemplateDTO {
+        var payload: [String: Any] = [
+            "title": title,
+            "body": body,
+            "audience": audience.rawValue,
+        ]
+        if let label, !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            payload["label"] = label
+        }
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "admin/notification-templates",
+            method: "POST",
+            jsonBody: payload
+        )
+        return try decodeNotificationTemplate(from: data)
+    }
+
+    static func updateNotificationTemplate(
+        id: String,
+        label: String? = nil,
+        title: String? = nil,
+        body: String? = nil,
+        audience: AdminNotificationAudience? = nil,
+        enabled: Bool? = nil
+    ) async throws -> AdminNotificationTemplateDTO {
+        var payload: [String: Any] = [:]
+        if let label { payload["label"] = label }
+        if let title { payload["title"] = title }
+        if let body { payload["body"] = body }
+        if let audience { payload["audience"] = audience.rawValue }
+        if let enabled { payload["enabled"] = enabled }
+        let enc = id.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlPathAllowed) ?? id
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "admin/notification-templates/\(enc)",
+            method: "PATCH",
+            jsonBody: payload
+        )
+        return try decodeNotificationTemplate(from: data)
+    }
+
+    static func deleteNotificationTemplate(id: String) async throws {
+        let enc = id.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlPathAllowed) ?? id
+        _ = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "admin/notification-templates/\(enc)",
+            method: "DELETE"
+        )
+    }
+
+    static func sendNotificationTemplate(id: String) async throws -> AdminNotificationSendResultDTO {
+        let enc = id.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlPathAllowed) ?? id
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "admin/notification-templates/\(enc)/send",
+            method: "POST"
+        )
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
+        if let env = try? dec.decode(AdminNotificationSendEnvelope.self, from: data),
+           let result = env.data {
+            return result
+        }
+        return (try? dec.decode(AdminNotificationSendResultDTO.self, from: data))
+            ?? AdminNotificationSendResultDTO(queued: nil, audience: nil)
+    }
+
+    private static func decodeNotificationTemplate(from data: Data) throws -> AdminNotificationTemplateDTO {
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
+        if let env = try? dec.decode(AdminNotificationTemplateEnvelope.self, from: data),
+           let row = env.data {
+            return row
+        }
+        return try dec.decode(AdminNotificationTemplateDTO.self, from: data)
     }
 
     // MARK: - Campuses

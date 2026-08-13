@@ -27,4 +27,14 @@ extension View {
     func providerAuthIntegratedScreenChrome() -> some View {
         modifier(ProviderAuthIntegratedScreenChromeModifier())
     }
+
+    /// Typed text on olive auth fields — light ink without toggling keyboard appearance.
+    func providerAuthOliveFieldInk() -> some View {
+        foregroundStyle(Color.providerOnOliveFill)
+            .tint(Color.providerBrandGold)
+            // Lock the field (and its keyboard) to dark so light-mode UITextField
+            // does not keep swapping system-black ink / light keyboard.
+            .colorScheme(.dark)
+    }
 }
+

@@ -1192,11 +1192,15 @@ struct AdminPlatformStatsDTO: Decodable, Hashable {
     let totalCampuses: Int?
 }
 
-/// `GET/PUT /admin/platform-settings` — global commission % / on-off plus Controls toggles.
+/// `GET/PUT /admin/platform-settings` — global fee % / on-off plus Controls toggles.
 struct AdminPlatformSettingsDTO: Decodable, Hashable {
     let platformFeePercent: Double?
-    /// When false, all card bookings take $0 platform fee (configured % is preserved).
+    /// When false, the active burden side is off (configured % is preserved).
     let platformCommissionEnabled: Bool?
+    /// Extra % of service paid to operators on commissionless bookings. Admin-only.
+    let kickbackPercent: Double?
+    /// Which side currently bears the platform fee: `client` or `operator`.
+    let feeBurden: String?
     /// Controls tab — when false, cash is hidden in payment UIs and rejected server-side.
     let cashPaymentEnabled: Bool?
     /// Controls tab — `providers` (discovery home) or `waitlist`.
@@ -1207,8 +1211,42 @@ struct AdminPlatformSettingsDTO: Decodable, Hashable {
         platformCommissionEnabled ?? true
     }
 
+    var resolvedKickbackPercent: Double {
+        kickbackPercent ?? 0
+    }
+
+    var resolvedFeeBurden: AdminFeeBurden {
+        AdminFeeBurden(rawValue: (feeBurden ?? "").lowercased()) ?? .operatorBurden
+    }
+
     var resolvedConsumerHomeMode: AdminConsumerHomeMode {
         AdminConsumerHomeMode(rawValue: (consumerHomeMode ?? "").lowercased()) ?? .providers
+    }
+
+    func isBurdenFeeOn(_ view: AdminFeeBurden) -> Bool {
+        isPlatformCommissionEnabled && resolvedFeeBurden == view
+    }
+}
+
+/// Who pays the platform fee. Segmented Control view on Admin **Platform Pricing**.
+enum AdminFeeBurden: String, CaseIterable, Identifiable, Hashable {
+    case client
+    case operatorBurden = "operator"
+
+    var id: String { rawValue }
+
+    var segmentTitle: String {
+        switch self {
+        case .client: "Client Burden"
+        case .operatorBurden: "Operator Burden"
+        }
+    }
+
+    var feeTitle: String {
+        switch self {
+        case .client: "Service Fee"
+        case .operatorBurden: "Commission"
+        }
     }
 }
 
@@ -1229,6 +1267,106 @@ enum AdminConsumerHomeMode: String, CaseIterable, Identifiable, Hashable {
 struct AdminPlatformSettingsEnvelope: Decodable {
     let success: Bool?
     let data: AdminPlatformSettingsDTO?
+    let message: String?
+}
+
+// MARK: - Admin notification templates (`/admin/notification-templates`)
+
+enum AdminNotificationAudience: String, CaseIterable, Identifiable, Hashable {
+    case consumer
+    case `operator`
+    case both
+
+    var id: String { rawValue }
+
+    var chipLabel: String {
+        switch self {
+        case .consumer: "Consumer"
+        case .operator: "Operator"
+        case .both: "Both"
+        }
+    }
+}
+
+enum AdminNotificationKind: String, Hashable {
+    case system
+    case custom
+}
+
+enum AdminNotificationFilter: String, CaseIterable, Identifiable, Hashable {
+    case all
+    case consumer
+    case `operator`
+
+    var id: String { rawValue }
+
+    var segmentTitle: String {
+        switch self {
+        case .all: "All"
+        case .consumer: "Consumer"
+        case .operator: "Operator"
+        }
+    }
+}
+
+struct AdminNotificationTemplateDTO: Decodable, Hashable, Identifiable {
+    let id: String
+    let key: String?
+    let kind: String?
+    let label: String?
+    let title: String?
+    let body: String?
+    let audience: String?
+    let enabled: Bool?
+    let lastSentAt: String?
+    let placeholders: [String]?
+
+    var resolvedKind: AdminNotificationKind {
+        (kind ?? "").lowercased() == "custom" ? .custom : .system
+    }
+
+    var isCustom: Bool { resolvedKind == .custom }
+
+    var resolvedAudience: AdminNotificationAudience {
+        AdminNotificationAudience(rawValue: (audience ?? "").lowercased()) ?? .both
+    }
+
+    var resolvedLabel: String {
+        let value = (label ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? (title ?? "Notification") : value
+    }
+
+    var resolvedTitle: String { title ?? "" }
+    var resolvedBody: String { body ?? "" }
+    var isEnabled: Bool { enabled ?? true }
+
+    func matches(filter: AdminNotificationFilter) -> Bool {
+        switch filter {
+        case .all: true
+        case .consumer: resolvedAudience == .consumer || resolvedAudience == .both
+        case .operator: resolvedAudience == .operator || resolvedAudience == .both
+        }
+    }
+}
+
+struct AdminNotificationTemplatesEnvelope: Decodable {
+    let success: Bool?
+    let data: [AdminNotificationTemplateDTO]?
+}
+
+struct AdminNotificationTemplateEnvelope: Decodable {
+    let success: Bool?
+    let data: AdminNotificationTemplateDTO?
+}
+
+struct AdminNotificationSendResultDTO: Decodable {
+    let queued: Int?
+    let audience: String?
+}
+
+struct AdminNotificationSendEnvelope: Decodable {
+    let success: Bool?
+    let data: AdminNotificationSendResultDTO?
     let message: String?
 }
 

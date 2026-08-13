@@ -33,6 +33,23 @@ struct ProviderPaymentsOnboardingGuideView: View {
     private static let stripePurple = Color(red: 99 / 255, green: 91 / 255, blue: 255 / 255)
     private static let stripeAboutURL = URL(string: "https://en.wikipedia.org/wiki/Stripe,_Inc.")!
 
+    /// Full-screen guide uses olive auth chrome — never adaptive ink (unreadable in light mode).
+    private var canvasPrimary: Color {
+        embedded ? Color.lavaShellCream : Color.providerOnOliveFill
+    }
+
+    private var canvasSecondary: Color {
+        embedded ? Color.lavaShellCreamSecondary : Color.providerOnOliveFillSecondary
+    }
+
+    private var canvasTertiary: Color {
+        embedded ? Color.lavaShellCreamTertiary : Color.providerOnOliveFillTertiary
+    }
+
+    private var stripeLinkColor: Color {
+        embedded ? Color.blue : Color(red: 0.72, green: 0.88, blue: 1)
+    }
+
     private var status: BarberConnectStatusDTO? { gate.status }
     private var isConnected: Bool { BarberStripeConnectStatus.isFullyConnected(status) }
     private var needsReconnect: Bool { status?.needsReconnect == true }
@@ -41,13 +58,13 @@ struct ProviderPaymentsOnboardingGuideView: View {
         Group {
             if embedded {
                 embeddedChrome
-                    .foregroundStyle(Color.lavaShellCream)
+                    .foregroundStyle(canvasPrimary)
             } else {
                 NavigationStack {
                     guideCanvas
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar { guideToolbar }
-                        .foregroundStyle(Color.lavaShellCream)
+                        .foregroundStyle(canvasPrimary)
                         .tint(Color.providerBrandGold)
                         .providerAuthIntegratedScreenChrome()
                 }
@@ -98,7 +115,6 @@ struct ProviderPaymentsOnboardingGuideView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 4)
             }
-
             guideCanvas
         }
     }
@@ -106,12 +122,21 @@ struct ProviderPaymentsOnboardingGuideView: View {
     @ToolbarContentBuilder
     private var guideToolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            checklistToggleButton
-                .fixedSize(horizontal: true, vertical: false)
+            ChecklistNavBarButton(
+                isOpen: isChecklistOpen,
+                titleColor: ProviderAppearance.primaryText
+            ) {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    isChecklistOpen.toggle()
+                }
+            }
+            .fixedSize()
+            .accessibilityLabel(isChecklistOpen ? "Close checklist" : "Open checklist")
         }
         if !blocking {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Close") { dismiss() }
+                    .font(.provider(.subheadline, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream)
             }
         }
@@ -120,12 +145,16 @@ struct ProviderPaymentsOnboardingGuideView: View {
         }
     }
 
+    /// Labels on nav-bar glass chips — adaptive ink/cream, not on-olive white.
+    private var toolbarChipForeground: Color { Color.lavaShellCream }
+
     private var signOutButton: some View {
         Button("Sign Out") {
             Task { await session.signOut() }
         }
         .font(.provider(.subheadline, weight: .semibold))
-        .foregroundStyle(Color.lavaShellCream)
+        .foregroundStyle(toolbarChipForeground)
+        .buttonStyle(.plain)
         .accessibilityLabel("Sign out")
     }
 
@@ -135,18 +164,23 @@ struct ProviderPaymentsOnboardingGuideView: View {
                 isChecklistOpen.toggle()
             }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: isChecklistOpen ? "chevron.left" : "chevron.right")
-                    .font(.provider(.body, weight: .bold))
+                    .font(.provider(.subheadline, weight: .bold))
                 Text("Checklist")
-                    .font(.provider(.body, weight: .semibold))
+                    .font(.provider(.subheadline, weight: .semibold))
                     .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
-            .foregroundStyle(Color.lavaShellCream)
+            .foregroundStyle(toolbarChipForeground)
+            .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .padding(.horizontal, 10)
-            .frame(minWidth: 120, alignment: .leading)
-            .contentShape(Rectangle())
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.lavaShellCream.opacity(0.22), lineWidth: 0.6)
+            )
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isChecklistOpen ? "Close checklist" : "Open checklist")
@@ -201,7 +235,7 @@ struct ProviderPaymentsOnboardingGuideView: View {
                         .tint(Color.providerBrandGold)
                     Text("Checking Stripe Connect…")
                         .font(.provider(.subheadline))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(canvasSecondary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
@@ -239,7 +273,7 @@ struct ProviderPaymentsOnboardingGuideView: View {
     private var whySeeingGuideBanner: some View {
         Text("You're seeing this because you still need to connect with Stripe to enable safe and secure payments.")
             .font(.provider(.subheadline, weight: .semibold))
-            .foregroundStyle(Color.lavaShellCream)
+            .foregroundStyle(canvasPrimary)
             .fixedSize(horizontal: false, vertical: true)
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -262,11 +296,11 @@ struct ProviderPaymentsOnboardingGuideView: View {
 
             (
                 Text("OnCuts relies on a third-party payment processing system. This third-party is Stripe, which you can read more about ")
-                + Text("here").underline().foregroundColor(.blue)
+                + Text("here").underline().foregroundColor(stripeLinkColor)
                 + Text(".")
             )
             .font(.provider(.body))
-            .foregroundStyle(Color.lavaShellCreamSecondary)
+            .foregroundStyle(canvasSecondary)
             .fixedSize(horizontal: false, vertical: true)
             .contentShape(Rectangle())
             .onTapGesture { openURL(Self.stripeAboutURL) }
@@ -275,17 +309,17 @@ struct ProviderPaymentsOnboardingGuideView: View {
 
             Text("When a client pays you, the transaction is handled by Stripe. Stripe securely moves funds from your customers to your bank account.")
                 .font(.provider(.body))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .foregroundStyle(canvasSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text("Stripe will ask for personal details (date of birth, address, bank account, and more). Interact with the button below to connect payouts with OnCuts.")
                 .font(.provider(.body))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .foregroundStyle(canvasSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text("Stuck on a step? Open Checklist in the top left corner.")
                 .font(.provider(.body, weight: .semibold))
-                .foregroundStyle(Color.lavaShellCream)
+                .foregroundStyle(canvasPrimary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -306,7 +340,7 @@ struct ProviderPaymentsOnboardingGuideView: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.provider(.body, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(Color.providerOnOliveFillSecondary)
                         .padding(8)
                         .contentShape(Rectangle())
                 }
@@ -316,7 +350,7 @@ struct ProviderPaymentsOnboardingGuideView: View {
 
             Text("Static guidance for fields Stripe often asks for. Expanding an item does not verify or mark anything complete.")
                 .font(.provider(.caption))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .foregroundStyle(Color.providerOnOliveFillSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             ScrollView {
@@ -331,6 +365,7 @@ struct ProviderPaymentsOnboardingGuideView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .foregroundStyle(Color.providerOnOliveFill)
         .background(Color.providerOlive)
         .overlay(alignment: .trailing) {
             Rectangle()
@@ -351,12 +386,12 @@ struct ProviderPaymentsOnboardingGuideView: View {
                 HStack(spacing: 10) {
                     Text(item.title)
                         .font(.provider(.subheadline, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCream)
+                        .foregroundStyle(Color.providerOnOliveFill)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Image(systemName: "chevron.down")
                         .font(.provider(.caption, weight: .semibold))
-                        .foregroundStyle(Color.lavaShellCreamTertiary)
+                        .foregroundStyle(Color.providerOnOliveFillTertiary)
                         .rotationEffect(.degrees(expanded ? 180 : 0))
                 }
                 .padding(.horizontal, 12)
@@ -372,7 +407,7 @@ struct ProviderPaymentsOnboardingGuideView: View {
                     HStack(alignment: .top, spacing: 8) {
                         Text(item.detail)
                             .font(.provider(.subheadline))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                            .foregroundStyle(Color.providerOnOliveFillSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
@@ -384,7 +419,7 @@ struct ProviderPaymentsOnboardingGuideView: View {
                             } label: {
                                 Image(systemName: "doc.on.doc")
                                     .font(.provider(.caption, weight: .semibold))
-                                    .foregroundStyle(Color.lavaShellCreamSecondary)
+                                    .foregroundStyle(Color.providerOnOliveFillSecondary)
                                     .padding(6)
                                     .contentShape(Rectangle())
                             }
@@ -554,3 +589,58 @@ struct ProviderPaymentsOnboardingGuideView: View {
         ),
     ]
 }
+
+#if os(iOS)
+/// Nav-bar control that keeps the chevron **and** “Checklist” title (iOS 26 glass toolbars otherwise collapse to the icon).
+private struct ChecklistNavBarButton: UIViewRepresentable {
+    var isOpen: Bool
+    var titleColor: UIColor
+    var action: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(action: action)
+    }
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.addTarget(context.coordinator, action: #selector(Coordinator.tapped), for: .primaryActionTriggered)
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        apply(to: button)
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        context.coordinator.action = action
+        apply(to: button)
+        button.invalidateIntrinsicContentSize()
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
+        uiView.intrinsicContentSize
+    }
+
+    private func apply(to button: UIButton) {
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: isOpen ? "chevron.left" : "chevron.right")
+        config.title = "Checklist"
+        config.imagePadding = 5
+        config.imagePlacement = .leading
+        config.contentInsets = NSDirectionalEdgeInsets(top: 2, leading: 4, bottom: 2, trailing: 6)
+        config.baseForegroundColor = titleColor
+        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = UIFont.systemFont(ofSize: 15, weight: .semibold)
+            return outgoing
+        }
+        button.configuration = config
+        button.accessibilityLabel = isOpen ? "Close checklist" : "Open checklist"
+    }
+
+    final class Coordinator {
+        var action: () -> Void
+        init(action: @escaping () -> Void) { self.action = action }
+        @objc func tapped() { action() }
+    }
+}
+#endif

@@ -148,7 +148,7 @@ struct AuthEntryView: View {
                 }
         }
         .tint(.providerBrandGold)
-        .foregroundStyle(Color.lavaShellCream)
+        .foregroundStyle(Color.providerOnOliveFill)
     }
 
     // MARK: - Integrated landing
@@ -195,7 +195,7 @@ struct AuthEntryView: View {
                                 } label: {
                                     Image(systemName: "xmark")
                                         .font(.system(size: 11, weight: .bold))
-                                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                                        .foregroundStyle(Color.providerOnOliveFillSecondary)
                                         .frame(width: 24, height: 24)
                                         .background(Color.white.opacity(0.14), in: Circle())
                                 }
@@ -248,7 +248,7 @@ struct AuthEntryView: View {
                     if let landingResolutionMessage {
                         Text(landingResolutionMessage)
                             .font(.provider(.caption))
-                            .foregroundStyle(Color.lavaShellCreamSecondary)
+                            .foregroundStyle(Color.providerOnOliveFillSecondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .transition(ProviderRootTransition.passwordFieldPresentation)
                             .animation(ProviderRootTransition.passwordFieldReveal, value: showsLandingEmailResolutionPrompt)
@@ -325,7 +325,11 @@ struct AuthEntryView: View {
         Group {
             switch kind {
             case .email:
-                TextField(placeholder, text: text)
+                TextField(
+                    "",
+                    text: text,
+                    prompt: Text(placeholder).foregroundStyle(Color.providerOnOliveFillTertiary)
+                )
                     .textContentType(.emailAddress)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -334,12 +338,20 @@ struct AuthEntryView: View {
                     #endif
             case .password:
                 if isPasswordVisible?.wrappedValue == true {
-                    TextField(placeholder, text: text)
+                    TextField(
+                        "",
+                        text: text,
+                        prompt: Text(placeholder).foregroundStyle(Color.providerOnOliveFillTertiary)
+                    )
                         .textContentType(.password)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 } else {
-                    SecureField(placeholder, text: text)
+                    SecureField(
+                        "",
+                        text: text,
+                        prompt: Text(placeholder).foregroundStyle(Color.providerOnOliveFillTertiary)
+                    )
                         .textContentType(.password)
                 }
             }
@@ -366,7 +378,7 @@ struct AuthEntryView: View {
                 } label: {
                     Image(systemName: isPasswordVisible.wrappedValue ? "eye.slash" : "eye")
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(Color.lavaShellCreamSecondary)
+                        .foregroundStyle(Color.providerOnOliveFillSecondary)
                         .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
@@ -374,22 +386,21 @@ struct AuthEntryView: View {
                 .accessibilityLabel(isPasswordVisible.wrappedValue ? "Hide password" : "Show password")
             }
         }
-        .foregroundStyle(Color.lavaShellCream)
-        .tint(Color.providerBrandGold)
+        .providerAuthOliveFieldInk()
     }
 
     private var authSocialDivider: some View {
         HStack(spacing: 12) {
             Rectangle()
-                .fill(Color.lavaShellCream.opacity(0.28))
+                .fill(Color.providerOnOliveFill.opacity(0.28))
                 .frame(height: 1)
             Text("Or")
                 .font(.provider(.caption))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .foregroundStyle(Color.providerOnOliveFillSecondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
             Rectangle()
-                .fill(Color.lavaShellCream.opacity(0.28))
+                .fill(Color.providerOnOliveFill.opacity(0.28))
                 .frame(height: 1)
         }
     }

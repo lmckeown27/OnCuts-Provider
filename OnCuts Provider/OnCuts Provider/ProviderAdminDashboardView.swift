@@ -5,7 +5,7 @@ import UIKit
 #endif
 
 /// `NSURLErrorCancelled` (-999) when a prior `URLSession` task is cancelled—**not** a user-visible failure.
-private func providerAdminIsBenignRequestCancellation(_ error: Error) -> Bool {
+func providerAdminIsBenignRequestCancellation(_ error: Error) -> Bool {
     if error is CancellationError { return true }
     if let url = error as? URLError, url.code == .cancelled { return true }
     let ns = error as NSError
@@ -19,7 +19,7 @@ private func providerAdminIsBenignRequestCancellation(_ error: Error) -> Bool {
 ///   * **Operators** — Current providers + Applications / Onboarding (incl. platform commissionless).
 ///   * **Users** — directory + nested **Safety** (UGC reports + banned users).
 ///   * **Services** — platform service catalog.
-///   * **Controls** — live Cash Option + Consumer home toggles (`platform_settings`).
+///   * **Controls** — Consumer Home, Platform Pricing, Notifications (`platform_settings` + templates).
 struct ProviderAdminDashboardView: View {
     private enum AdminDashboardDestination: Hashable {
         case barber(AdminBarberDTO)
@@ -200,15 +200,19 @@ struct ProviderAdminDashboardView: View {
 
     @State private var platformFeePercent: Double = 15
     @State private var platformFeeInput = "15"
-    @State private var isEditingPlatformFee = false
-    /// When false, all card bookings take $0 platform fee (configured % preserved).
+    @State private var isEditingPriceControls = false
+    /// When false, the active burden side takes $0 platform fee (configured % preserved).
     @State private var platformCommissionEnabled = true
     @State private var platformCommissionEnabledDraft = true
+    @State private var feeBurden: AdminFeeBurden = .operatorBurden
+    @State private var pricingBurdenView: AdminFeeBurden = .operatorBurden
+    @State private var platformKickbackPercent: Double = 0
+    @State private var platformKickbackInput = "0"
     @FocusState private var isPlatformFeeFieldFocused: Bool
     @State private var isLoadingPlatformFee = false
     @State private var isSavingPlatformFee = false
 
-    // Controls tab — Cash Option + Consumer home (same `platform_settings` row as commission %).
+    // Controls tab — Consumer Home + Cash Option (immediate) and Platform Pricing (Edit/Save).
     @State private var cashPaymentEnabled = false
     @State private var consumerHomeMode: AdminConsumerHomeMode = .providers
     @State private var isLoadingControls = false
@@ -935,7 +939,7 @@ struct ProviderAdminDashboardView: View {
 
     private var performanceTab: some View {
         VStack(alignment: .leading, spacing: 16) {
-            platformCommissionAndKPIsCard
+            performanceKPIsCard
             metricsModeRow
             switch metricsDisplayMode {
             case .graph:
@@ -953,153 +957,24 @@ struct ProviderAdminDashboardView: View {
         }
     }
 
-    private var platformCommissionAndKPIsCard: some View {
-        let commissionChecked = isEditingPlatformFee
-            ? platformCommissionEnabledDraft
-            : platformCommissionEnabled
-        let feeFieldEditable = isEditingPlatformFee
-            && platformCommissionEnabledDraft
-            && !isSavingPlatformFee
-
-        return VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    Text("Platform Commission:")
-                        .font(.provider(.subheadline, weight: .bold))
-                        .foregroundStyle(ProviderAdminChrome.primaryText)
-                    HStack(spacing: 2) {
-                        TextField("15", text: $platformFeeInput)
-                            .font(.provider(.body, weight: .semibold))
-                            .foregroundStyle(
-                                feeFieldEditable
-                                    ? ProviderAdminChrome.primaryText
-                                    : ProviderAdminChrome.tertiaryText
-                            )
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                            .focused($isPlatformFeeFieldFocused)
-                            .disabled(!feeFieldEditable)
-                            .frame(width: 36)
-                        Text("%")
-                            .font(.provider(.subheadline))
-                            .foregroundStyle(
-                                feeFieldEditable
-                                    ? ProviderAdminChrome.secondaryText
-                                    : ProviderAdminChrome.tertiaryText
-                            )
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 8)
-                    .opacity(feeFieldEditable ? 1 : 0.72)
-                    .background(
-                        feeFieldEditable
-                            ? ProviderAdminChrome.cardBackground
-                            : ProviderAdminChrome.mutedFill,
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(ProviderAdminChrome.border, lineWidth: 1)
-                    )
-
-                    Button {
-                        if isEditingPlatformFee {
-                            isPlatformFeeFieldFocused = false
-                            Task { await savePlatformFee() }
-                        } else {
-                            platformFeeInput = Self.formatFeePercent(platformFeePercent)
-                            platformCommissionEnabledDraft = platformCommissionEnabled
-                            isEditingPlatformFee = true
-                            // Focus after the field enables — sync focus while still disabled is a no-op.
-                            DispatchQueue.main.async {
-                                if platformCommissionEnabledDraft {
-                                    isPlatformFeeFieldFocused = true
-                                }
-                            }
-                        }
-                    } label: {
-                        Group {
-                            if isSavingPlatformFee {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: isEditingPlatformFee ? "checkmark" : "pencil")
-                                    .font(.provider(.body, weight: .semibold))
-                                    .foregroundStyle(
-                                        isEditingPlatformFee
-                                            ? Color.providerOlive
-                                            : ProviderAdminChrome.primaryText
-                                    )
-                            }
-                        }
-                        .frame(width: 36, height: 36)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isSavingPlatformFee || (!isEditingPlatformFee && isLoadingPlatformFee))
-                    .accessibilityLabel(isEditingPlatformFee ? "Save commission" : "Edit commission")
-                }
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(maxWidth: .infinity)
-
-                // Checkbox reflects commission on/off; label is the opposite CTA (web parity).
-                Button {
-                    guard isEditingPlatformFee, !isSavingPlatformFee else { return }
-                    platformCommissionEnabledDraft.toggle()
-                    if !platformCommissionEnabledDraft {
-                        isPlatformFeeFieldFocused = false
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: commissionChecked ? "checkmark.square.fill" : "square")
-                            .font(.provider(.body, weight: .regular))
-                            .foregroundStyle(
-                                commissionChecked
-                                    ? Color.providerOlive
-                                    : ProviderAdminChrome.tertiaryText
-                            )
-                        Text(commissionChecked ? "Disable Commission" : "Enable Commission")
-                            .font(.provider(.caption))
-                            .foregroundStyle(ProviderAdminChrome.secondaryText)
-                        if !platformCommissionEnabled && !isEditingPlatformFee {
-                            commissionlessAllBookingsBadge
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .disabled(!isEditingPlatformFee || isSavingPlatformFee || isLoadingPlatformFee)
-                .opacity(isEditingPlatformFee ? 1 : 0.85)
-                .accessibilityLabel(commissionChecked ? "Disable Commission" : "Enable Commission")
-
-                if !platformCommissionEnabled && !isEditingPlatformFee {
-                    Text(
-                        "Commission off. Card bookings take $0 platform fee (rate \(Self.formatFeePercent(platformFeePercent))% saved)."
-                    )
-                    .font(.provider(.caption2))
-                    .foregroundStyle(Color.orange.opacity(0.9))
-                }
-            }
-
-            Divider().overlay(ProviderAdminChrome.separator)
-
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: 8),
-                    GridItem(.flexible(), spacing: 8),
-                    GridItem(.flexible(), spacing: 8),
-                ],
-                spacing: 8
-            ) {
-                compactKPI(label: "Users", value: "\(stats?.totalUsers ?? 0)")
-                compactKPI(
-                    label: "Bookings",
-                    value: performance.map { "\($0.totalBookings ?? 0)" } ?? "…"
-                )
-                compactKPI(
-                    label: "Operators",
-                    value: performance.map { "\($0.totalBarbers ?? 0)" } ?? "…"
-                )
-            }
+    private var performanceKPIsCard: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.flexible(), spacing: 8),
+                GridItem(.flexible(), spacing: 8),
+                GridItem(.flexible(), spacing: 8),
+            ],
+            spacing: 8
+        ) {
+            compactKPI(label: "Users", value: "\(stats?.totalUsers ?? 0)")
+            compactKPI(
+                label: "Bookings",
+                value: performance.map { "\($0.totalBookings ?? 0)" } ?? "…"
+            )
+            compactKPI(
+                label: "Operators",
+                value: performance.map { "\($0.totalBarbers ?? 0)" } ?? "…"
+            )
         }
         .padding(14)
         .providerAdminCardBackground(cornerRadius: 14)
@@ -3184,8 +3059,7 @@ struct ProviderAdminDashboardView: View {
 
     // MARK: - Controls tab
 
-    /// Runtime product toggles on `platform_settings` — Cash Option + Consumer home.
-    /// Saves immediately on change (parity with web Controls). Commission % stays on Performance.
+    /// Runtime product toggles — Consumer Home, Platform Pricing, Notifications.
     private var controlsTab: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let controlsError, !controlsError.isEmpty {
@@ -3194,23 +3068,210 @@ struct ProviderAdminDashboardView: View {
                     .foregroundStyle(.red)
             }
 
-            sectionCard(
-                title: "Cash Option",
-                subtitle: nil
-            ) {
-                HStack(alignment: .center, spacing: 12) {
+            controlsSectionCard(title: "Consumer Home") {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(AdminConsumerHomeMode.allCases) { mode in
+                        consumerHomeRadioRow(mode)
+                    }
+
+                    if isSavingConsumerHome || isLoadingControls {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text(isSavingConsumerHome ? "Saving…" : "Loading…")
+                                .font(.provider(.caption))
+                                .foregroundStyle(ProviderAdminChrome.secondaryText)
+                        }
+                    }
+                }
+            }
+
+            platformPricingCard
+
+            ProviderAdminNotificationControlsView()
+        }
+    }
+
+    private func controlsSectionCard<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.provider(.caption2, weight: .semibold))
+                .foregroundStyle(ProviderAdminChrome.secondaryText)
+                .textCase(.uppercase)
+                .tracking(0.6)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .providerAdminCardBackground(cornerRadius: 16)
+    }
+
+    private var platformPricingCard: some View {
+        let commissionChecked = isEditingPriceControls
+            ? platformCommissionEnabledDraft
+            : isBurdenFeeOn(pricingBurdenView)
+        let feeFieldEditable = isEditingPriceControls
+            && platformCommissionEnabledDraft
+            && !isSavingPlatformFee
+
+        return controlsSectionCard(title: "Platform Pricing") {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 4) {
+                    ForEach(AdminFeeBurden.allCases) { item in
+                        let selected = pricingBurdenView == item
+                        Button {
+                            selectPricingBurdenView(item)
+                        } label: {
+                            Text(item.segmentTitle)
+                                .font(.provider(.caption, weight: .semibold))
+                                .foregroundStyle(
+                                    selected
+                                        ? ProviderAdminChrome.primaryText
+                                        : ProviderAdminChrome.secondaryText
+                                )
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background {
+                                    if selected {
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .fill(ProviderAdminChrome.cardBackground)
+                                            .shadow(color: Color.primary.opacity(0.06), radius: 1, y: 1)
+                                    }
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isLoadingPlatformFee)
+                    }
+                }
+                .padding(4)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(ProviderAdminChrome.mutedFill)
+                )
+
+                HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Allow cash payments")
+                        Text(pricingBurdenView.feeTitle)
                             .font(.provider(.subheadline, weight: .semibold))
                             .foregroundStyle(ProviderAdminChrome.primaryText)
-                        Text(cashPaymentEnabled ? "Cash is available at checkout." : "Card only.")
+                        Text(burdenHelperText)
                             .font(.provider(.caption))
                             .foregroundStyle(ProviderAdminChrome.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    HStack(spacing: 8) {
+                        HStack(spacing: 2) {
+                            TextField("15", text: Binding(
+                                get: {
+                                    isEditingPriceControls
+                                        ? platformFeeInput
+                                        : Self.formatFeePercent(platformFeePercent)
+                                },
+                                set: { if isEditingPriceControls { platformFeeInput = $0 } }
+                            ))
+                                .font(.provider(.subheadline, weight: .semibold))
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .focused($isPlatformFeeFieldFocused)
+                                .disabled(!feeFieldEditable)
+                                .frame(width: 40)
+                            Text("%")
+                                .font(.provider(.caption))
+                                .foregroundStyle(ProviderAdminChrome.secondaryText)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 8)
+                        .opacity(feeFieldEditable ? 1 : 0.7)
+                        .background(
+                            feeFieldEditable
+                                ? ProviderAdminChrome.cardBackground
+                                : ProviderAdminChrome.mutedFill,
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(ProviderAdminChrome.border, lineWidth: 1)
+                        )
+
+                        Toggle(
+                            "",
+                            isOn: Binding(
+                                get: { commissionChecked },
+                                set: { newValue in
+                                    guard isEditingPriceControls, !isSavingPlatformFee else { return }
+                                    platformCommissionEnabledDraft = newValue
+                                    if !newValue { isPlatformFeeFieldFocused = false }
+                                }
+                            )
+                        )
+                        .labelsHidden()
+                        .tint(.providerOlive)
+                        .disabled(!isEditingPriceControls || isSavingPlatformFee || isLoadingPlatformFee)
+                    }
+                }
+
+                if pricingBurdenView == .operatorBurden {
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Kickback")
+                                .font(.provider(.subheadline, weight: .semibold))
+                                .foregroundStyle(ProviderAdminChrome.primaryText)
+                            Text("Extra % of service paid from the platform to the operator, only on commissionless bookings. Changing this rate updates every operator.")
+                                .font(.provider(.caption))
+                                .foregroundStyle(ProviderAdminChrome.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 8)
+                        HStack(spacing: 2) {
+                            TextField("0", text: Binding(
+                                get: {
+                                    isEditingPriceControls
+                                        ? platformKickbackInput
+                                        : Self.formatFeePercent(platformKickbackPercent)
+                                },
+                                set: { if isEditingPriceControls { platformKickbackInput = $0 } }
+                            ))
+                                .font(.provider(.subheadline, weight: .semibold))
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .disabled(!isEditingPriceControls || isSavingPlatformFee || isLoadingPlatformFee)
+                                .frame(width: 40)
+                            Text("%")
+                                .font(.provider(.caption))
+                                .foregroundStyle(ProviderAdminChrome.secondaryText)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 8)
+                        .opacity(isEditingPriceControls ? 1 : 0.7)
+                        .background(
+                            isEditingPriceControls
+                                ? ProviderAdminChrome.cardBackground
+                                : ProviderAdminChrome.mutedFill,
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(ProviderAdminChrome.border, lineWidth: 1)
+                        )
+                    }
+                }
+
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Cash Option")
+                            .font(.provider(.subheadline, weight: .semibold))
+                            .foregroundStyle(ProviderAdminChrome.primaryText)
+                        Text("Admin↔admin bookings only. Consumer/operator bookings never show cash.")
+                            .font(.provider(.caption))
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 8)
                     if isSavingCashOption || isLoadingControls {
-                        ProgressView()
-                            .controlSize(.small)
+                        ProgressView().controlSize(.small)
                     }
                     Toggle(
                         "",
@@ -3226,34 +3287,101 @@ struct ProviderAdminDashboardView: View {
                     .tint(.providerOlive)
                     .disabled(isSavingCashOption || isLoadingControls)
                 }
-            }
 
-            sectionCard(
-                title: "Consumer Home",
-                subtitle: nil
-            ) {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(AdminConsumerHomeMode.allCases) { mode in
-                        consumerHomeRadioRow(mode)
-                    }
-
-                    HStack(spacing: 8) {
-                        if isSavingConsumerHome || isLoadingControls {
-                            ProgressView()
-                                .controlSize(.small)
+                HStack(spacing: 8) {
+                    if isEditingPriceControls {
+                        Button {
+                            isPlatformFeeFieldFocused = false
+                            Task { await savePriceControls() }
+                        } label: {
+                            if isSavingPlatformFee {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Text("Save")
+                            }
                         }
-                        Text(
-                            consumerHomeMode == .providers
-                                ? "Consumers see provider cards on home."
-                                : "Consumers see the waitlist on home."
-                        )
-                        .font(.provider(.caption))
-                        .foregroundStyle(ProviderAdminChrome.secondaryText)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.providerOlive)
+                        .controlSize(.small)
+                        .disabled(isLoadingPlatformFee || isSavingPlatformFee)
+                        Button("Cancel") {
+                            cancelEditPriceControls()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(isSavingPlatformFee)
+                    } else {
+                        Button("Edit") {
+                            startEditPriceControls()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.providerOlive)
+                        .controlSize(.small)
+                        .disabled(isLoadingPlatformFee)
                     }
-                    .padding(.top, 2)
+                }
+
+                if isLoadingPlatformFee || isSavingPlatformFee || isSavingCashOption || isSavingConsumerHome {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(isSavingPlatformFee || isSavingCashOption || isSavingConsumerHome ? "Saving…" : "Loading…")
+                            .font(.provider(.caption))
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
+                    }
                 }
             }
         }
+    }
+
+    private var burdenHelperText: String {
+        let n = Self.formatFeePercent(platformFeePercent)
+        let feeOn = isEditingPriceControls
+            ? platformCommissionEnabledDraft
+            : isBurdenFeeOn(pricingBurdenView)
+        switch pricingBurdenView {
+        case .client:
+            return feeOn
+                ? "\(n)% added to the client's checkout. The platform keeps that Service Fee. The operator keeps the listed price. Tips never commissioned."
+                : "Off — clients pay the listed price only (saved rate \(n)%)."
+        case .operatorBurden:
+            return feeOn
+                ? "\(n)% of service amount taken from the operator. Tips are never commissioned."
+                : "Off — card bookings take $0 fee (saved rate \(n)%)."
+        }
+    }
+
+    private func isBurdenFeeOn(_ view: AdminFeeBurden) -> Bool {
+        platformCommissionEnabled && feeBurden == view
+    }
+
+    private func selectPricingBurdenView(_ next: AdminFeeBurden) {
+        guard next != pricingBurdenView else { return }
+        pricingBurdenView = next
+        isEditingPriceControls = false
+        isPlatformFeeFieldFocused = false
+        platformFeeInput = Self.formatFeePercent(platformFeePercent)
+        platformKickbackInput = Self.formatFeePercent(platformKickbackPercent)
+        platformCommissionEnabledDraft = isBurdenFeeOn(next)
+    }
+
+    private func startEditPriceControls() {
+        platformFeeInput = Self.formatFeePercent(platformFeePercent)
+        platformKickbackInput = Self.formatFeePercent(platformKickbackPercent)
+        platformCommissionEnabledDraft = isBurdenFeeOn(pricingBurdenView)
+        isEditingPriceControls = true
+        DispatchQueue.main.async {
+            if platformCommissionEnabledDraft {
+                isPlatformFeeFieldFocused = true
+            }
+        }
+    }
+
+    private func cancelEditPriceControls() {
+        platformFeeInput = Self.formatFeePercent(platformFeePercent)
+        platformKickbackInput = Self.formatFeePercent(platformKickbackPercent)
+        platformCommissionEnabledDraft = isBurdenFeeOn(pricingBurdenView)
+        isEditingPriceControls = false
+        isPlatformFeeFieldFocused = false
     }
 
     private func consumerHomeRadioRow(_ mode: AdminConsumerHomeMode) -> some View {
@@ -3766,7 +3894,7 @@ struct ProviderAdminDashboardView: View {
         defer { isLoadingPlatformFee = false }
         do {
             let settings = try await ProviderAdminService.fetchPlatformSettings()
-            applyPlatformSettings(settings, updateFeeEditor: !isEditingPlatformFee)
+            applyPlatformSettings(settings, updateFeeEditor: !isEditingPriceControls)
         } catch {
             // Keep last known / default 15%.
         }
@@ -3794,8 +3922,14 @@ struct ProviderAdminDashboardView: View {
         }
         let commissionOn = settings.isPlatformCommissionEnabled
         platformCommissionEnabled = commissionOn
-        if updateFeeEditor || !isEditingPlatformFee {
-            platformCommissionEnabledDraft = commissionOn
+        feeBurden = settings.resolvedFeeBurden
+        platformKickbackPercent = settings.resolvedKickbackPercent
+        if updateFeeEditor {
+            platformKickbackInput = Self.formatFeePercent(platformKickbackPercent)
+            pricingBurdenView = feeBurden
+        }
+        if updateFeeEditor || !isEditingPriceControls {
+            platformCommissionEnabledDraft = isBurdenFeeOn(pricingBurdenView)
         }
         if let cash = settings.cashPaymentEnabled {
             cashPaymentEnabled = cash
@@ -3842,24 +3976,36 @@ struct ProviderAdminDashboardView: View {
         return String(format: "%.1f", pct)
     }
 
-    private func savePlatformFee() async {
+    private func savePriceControls() async {
         guard let pct = Double(platformFeeInput.trimmingCharacters(in: .whitespacesAndNewlines)),
               pct >= 0, pct <= 100 else {
-            errorText = "Commission percent must be between 0 and 100."
+            controlsError = "Percent must be between 0 and 100."
             return
         }
+        let kickbackRaw = Double(platformKickbackInput.trimmingCharacters(in: .whitespacesAndNewlines))
+        if pricingBurdenView == .operatorBurden {
+            guard let kickbackRaw, kickbackRaw >= 0, kickbackRaw <= 100 else {
+                controlsError = "Kickback must be between 0 and 100."
+                return
+            }
+        }
         isSavingPlatformFee = true
+        controlsError = nil
         defer { isSavingPlatformFee = false }
         do {
+            let kickbackChanged = pricingBurdenView == .operatorBurden
+                && (kickbackRaw ?? platformKickbackPercent) != platformKickbackPercent
             let saved = try await ProviderAdminService.updatePlatformCommission(
                 platformFeePercent: pct,
-                platformCommissionEnabled: platformCommissionEnabledDraft
+                platformCommissionEnabled: platformCommissionEnabledDraft,
+                feeBurden: pricingBurdenView,
+                kickbackPercent: kickbackChanged ? kickbackRaw : nil
             )
             applyPlatformSettings(saved, updateFeeEditor: true)
-            isEditingPlatformFee = false
+            isEditingPriceControls = false
             isPlatformFeeFieldFocused = false
         } catch let OnCutsHTTPError.httpStatus(code, msg) {
-            errorText = msg ?? "Failed to save platform commission (\(code))."
+            controlsError = msg ?? "Failed to save platform pricing (\(code))."
         } catch {
             presentAdminLoadError(error)
         }
@@ -3878,7 +4024,7 @@ struct ProviderAdminDashboardView: View {
                 platformFeePercent: platformFeePercent,
                 platformCommissionEnabled: nextEnabled
             )
-            applyPlatformSettings(saved, updateFeeEditor: !isEditingPlatformFee)
+            applyPlatformSettings(saved, updateFeeEditor: !isEditingPriceControls)
         } catch let OnCutsHTTPError.httpStatus(code, msg) {
             platformCommissionEnabled = previous
             platformCommissionEnabledDraft = previous
