@@ -69,7 +69,9 @@ enum ProviderRequestTriageEngine {
                     available: false,
                     intervals: [],
                     bookedSlots: [],
-                    slots: []
+                    slots: [],
+                    appointmentDurationMinutes: nil,
+                    bookingSlotIntervalMinutes: nil
                 )
                 availabilityCache[dayKey] = dayData
             }

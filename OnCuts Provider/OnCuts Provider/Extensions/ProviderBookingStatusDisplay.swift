@@ -184,6 +184,9 @@ enum ProviderBookingStatusDisplay {
 
     /// Weekly grid appointment block fill — pending (yellow), paid/completed (light green), or upcoming olive.
     static func scheduleAppointmentFill(for booking: SimpleBookingDTO) -> Color {
+        if booking.isAwaitingServicePayment || booking.isAwaitingPostCompletePayment {
+            return Color(uiColor: ProviderChatDesignTokens.Color.statusYellow)
+        }
         if booking.isUpcomingPaidAppointment
             || booking.isAwaitingTip
             || ProviderBookingStatusDisplay.normalized(booking.status) == "paid" {
@@ -212,7 +215,9 @@ enum ProviderBookingStatusDisplay {
     #if canImport(UIKit)
     private static func scheduleAppointmentMoveOriginUIColor(for booking: SimpleBookingDTO) -> UIColor {
         let base: UIColor
-        if booking.isUpcomingPaidAppointment
+        if booking.isAwaitingServicePayment || booking.isAwaitingPostCompletePayment {
+            base = ProviderChatDesignTokens.Color.statusYellow
+        } else if booking.isUpcomingPaidAppointment
             || booking.isAwaitingTip
             || normalized(booking.status) == "paid"
             || normalized(booking.status) == "completed" {
@@ -269,13 +274,13 @@ enum ProviderBookingStatusDisplay {
     }
 }
 
-/// Status pill matching `BookingDetailViewController` — solid olive for accepted, etc.
+/// Status pill matching `BookingDetailViewController` — mode-aware operator labels.
 struct ProviderBookingDetailStatusPill: View {
-    let status: String?
+    let booking: SimpleBookingDTO
 
     var body: some View {
-        let colors = ProviderBookingStatusDisplay.detailPillColors(for: status)
-        Text(ProviderBookingStatusDisplay.title(for: status))
+        let colors = ProviderBookingStatusDisplay.detailPillColors(for: booking.status)
+        Text(booking.operatorStatusBadgeTitle)
             .font(.provider(.caption, weight: .semibold))
             .foregroundStyle(colors.foreground)
             .padding(.horizontal, 8)
@@ -286,7 +291,24 @@ struct ProviderBookingDetailStatusPill: View {
 
 extension SimpleBookingDTO {
     var statusDisplayTitle: String {
-        ProviderBookingStatusDisplay.title(for: status)
+        operatorStatusBadgeTitle
+    }
+
+    /// Mode-aware badge for operator surfaces (calendar / lists / detail).
+    var operatorStatusBadgeTitle: String {
+        if isAwaitingServicePayment {
+            return "Awaiting Payment"
+        }
+        if isConfirmedUnpaidAccepted {
+            return "Confirmed"
+        }
+        if isAwaitingPostCompletePayment {
+            return "Awaiting Payment"
+        }
+        if isAwaitingTip {
+            return "Awaiting Tip"
+        }
+        return ProviderBookingStatusDisplay.title(for: status)
     }
 
     var statusDisplayTint: Color {
@@ -297,9 +319,19 @@ extension SimpleBookingDTO {
         ProviderBookingStatusDisplay.scheduleSlotTitle(for: status) ?? statusDisplayTitle
     }
 
-    /// Label on weekly / day calendar cards (Accepted unpaid → “Awaiting Payment”).
+    /// Label on weekly / day calendar cards.
+    /// - on_accept unpaid ACCEPTED → “Awaiting Payment”
+    /// - after_complete unpaid ACCEPTED → “Confirmed”
+    /// - after_complete unpaid COMPLETED → “Awaiting Payment”
+    /// - on_accept tip-pending COMPLETED → “Completed”
     var scheduleCardTitle: String {
         if isAwaitingServicePayment {
+            return "Awaiting Payment"
+        }
+        if isConfirmedUnpaidAccepted {
+            return "Confirmed"
+        }
+        if isAwaitingPostCompletePayment {
             return "Awaiting Payment"
         }
         // Tip-pending COMPLETED stays on the calendar as “Completed”.
@@ -309,10 +341,11 @@ extension SimpleBookingDTO {
         return scheduleSlotTitle
     }
 
-    /// Calendar occupancy for the new pay-before-complete model:
-    /// `PENDING` / `ACCEPTED` / `IN_PROGRESS`, upcoming `PAID`, and tip-pending `COMPLETED`.
-    /// After tip is decided (`tipDecidedAt`), the slot frees. Legacy finished `PAID`+`completedAt` stays off.
-    /// Cancelled / rejected bookings never appear on the calendar.
+    /// Calendar occupancy:
+    /// - Both modes: `PENDING` / `ACCEPTED` / `IN_PROGRESS` occupy the slot.
+    /// - on_accept: upcoming `PAID` + tip-pending `COMPLETED`.
+    /// - after_complete: unpaid `COMPLETED` until consumer pays; early `PAID` after
+    ///   complete is finished and does not occupy.
     var isVisibleOnMainSchedule: Bool {
         guard !isCancelledOrRejected else { return false }
         switch ProviderBookingStatusDisplay.normalized(status) {
@@ -321,8 +354,12 @@ extension SimpleBookingDTO {
         case "paid":
             return isUpcomingPaidAppointment
         case "completed":
-            // Keep the appointment on the calendar until the consumer submits a tip (incl. $0).
-            return isAwaitingTip
+            switch paymentTimingMode {
+            case .onAccept:
+                return isAwaitingTip
+            case .afterComplete:
+                return paidAt == nil
+            }
         default:
             return false
         }

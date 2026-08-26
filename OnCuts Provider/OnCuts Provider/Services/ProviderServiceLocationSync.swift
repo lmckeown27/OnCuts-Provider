@@ -3,6 +3,14 @@ import Foundation
 
 /// Syncs the operator's device GPS to the public discovery pin when manual location is off.
 enum ProviderServiceLocationSync {
+    enum SyncError: LocalizedError {
+        case deviceUpdateIgnored
+
+        var errorDescription: String? {
+            "Couldn't update your location from this device. Try again in a moment."
+        }
+    }
+
     /// Fetches a one-shot GPS fix and PUTs `source: "device"`.
     /// Returns the server pin (may include `ignoredDeviceUpdate` when web-only is locked).
     @MainActor
@@ -12,12 +20,14 @@ enum ProviderServiceLocationSync {
         let fetcher = OneShotLocationFetcher(timeout: timeout)
         let location = try await fetcher.fetch()
         let label = await reverseGeocodeLabel(for: location)
-        return try await ProviderBarberServiceLocationService.update(
+        let pin = try await ProviderBarberServiceLocationService.update(
             latitude: location.coordinate.latitude,
             longitude: location.coordinate.longitude,
             label: label,
             source: "device"
         )
+        try throwIfDeviceUpdateIgnored(pin)
+        return pin
     }
 
     /// Turns manual lock on/off. When turning off, immediately refreshes from device GPS.
@@ -26,9 +36,26 @@ enum ProviderServiceLocationSync {
         if enabled {
             return try await ProviderBarberServiceLocationService.update(webOnly: true)
         }
-        // Restore device priority, then overwrite the public pin from this device.
-        _ = try await ProviderBarberServiceLocationService.update(webOnly: false)
-        return try await syncDeviceLocation()
+        // Resume device tracking in one request so the server can replace a manual pin atomically.
+        let fetcher = OneShotLocationFetcher(timeout: 15)
+        let location = try await fetcher.fetch()
+        let label = await reverseGeocodeLabel(for: location)
+        let pin = try await ProviderBarberServiceLocationService.update(
+            latitude: location.coordinate.latitude,
+            longitude: location.coordinate.longitude,
+            label: label,
+            source: "device",
+            webOnly: false
+        )
+        try throwIfDeviceUpdateIgnored(pin)
+        return pin
+    }
+
+    @MainActor
+    private static func throwIfDeviceUpdateIgnored(_ pin: BarberServiceLocationDTO) throws {
+        if pin.ignoredDeviceUpdate {
+            throw SyncError.deviceUpdateIgnored
+        }
     }
 
     @MainActor

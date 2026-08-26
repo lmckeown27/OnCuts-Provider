@@ -244,7 +244,7 @@ struct ProviderBookingsDropdownListContent: View {
                 .font(.provider(.subheadline))
                 .foregroundStyle(Color.lavaShellCreamSecondary)
             HStack(spacing: 8) {
-                ProviderBookingDetailStatusPill(status: booking.status)
+                ProviderBookingDetailStatusPill(booking: booking)
                 if booking.isCommissionless {
                     commissionlessIndicator(confirmed: true)
                 }
@@ -295,7 +295,7 @@ struct ProviderBookingsDropdownListContent: View {
                 .foregroundStyle(Color.lavaShellCreamSecondary)
 
             HStack {
-                ProviderBookingDetailStatusPill(status: booking.status)
+                ProviderBookingDetailStatusPill(booking: booking)
                 Spacer(minLength: 0)
             }
 

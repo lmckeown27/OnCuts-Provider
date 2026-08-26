@@ -26,7 +26,11 @@ struct ProviderPendingRequestScheduleEditor: View {
         return cal
     }
 
-    private static let scheduleStepMinutes = 15
+    private static let defaultScheduleStepMinutes = 15
+
+    private var scheduleStepMinutes: Int {
+        dayAvailability?.resolvedBookingSlotIntervalMinutes ?? Self.defaultScheduleStepMinutes
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -118,6 +122,9 @@ struct ProviderPendingRequestScheduleEditor: View {
         if let combined = calendar.date(from: merged) {
             selectedDateTime = combined
         }
+        if hasUserEditedSelection {
+            snapToNearestSelectableTime()
+        }
     }
 
     @ViewBuilder
@@ -166,6 +173,21 @@ struct ProviderPendingRequestScheduleEditor: View {
     }
 
     private var allSelectableStartTimes: [Int] {
+        var times = bookableStartTimes
+
+        // Keep the current appointment visible/selectable until the provider edits.
+        if shouldPreserveInitialSelection {
+            let current = selectedMinutesOfDay
+            if !times.contains(current) {
+                times.append(current)
+            }
+        }
+
+        return times.sorted()
+    }
+
+    /// Valid bookable starts for the selected day (interval-anchored grid).
+    private var bookableStartTimes: [Int] {
         let intervals = dayAvailability?.intervals ?? []
         var times: [Int] = []
         var seen = Set<Int>()
@@ -180,16 +202,8 @@ struct ProviderPendingRequestScheduleEditor: View {
                         seen.insert(minute)
                         times.append(minute)
                     }
-                    minute += Self.scheduleStepMinutes
+                    minute += scheduleStepMinutes
                 }
-            }
-        }
-
-        // Keep the current appointment visible/selectable until the provider edits.
-        if shouldPreserveInitialSelection {
-            let current = selectedMinutesOfDay
-            if !seen.contains(current) {
-                times.append(current)
             }
         }
 
@@ -278,13 +292,24 @@ struct ProviderPendingRequestScheduleEditor: View {
     }
 
     private func snapToSelectableTimeIfNeeded() {
-        if shouldPreserveInitialSelection { return }
-        let times = allSelectableStartTimes
+        if shouldPreserveInitialSelection, !hasUserEditedSelection { return }
+        snapToNearestSelectableTime()
+    }
+
+    private func snapToNearestSelectableTime() {
+        let times = bookableStartTimes
         guard !times.isEmpty else { return }
-        if times.contains(selectedMinutesOfDay) { return }
-        if let first = times.first {
-            selectStartTime(first)
+        let current = selectedMinutesOfDay
+        if times.contains(current) { return }
+        guard let nearest = times.min(by: { lhs, rhs in
+            let dl = abs(lhs - current)
+            let dr = abs(rhs - current)
+            if dl != dr { return dl < dr }
+            return lhs < rhs
+        }) else {
+            return
         }
+        selectStartTime(nearest)
     }
 
     private var dayTaskKey: String {
@@ -341,7 +366,7 @@ struct ProviderPendingRequestScheduleEditor: View {
         guard let slots = dayAvailability?.slots, !slots.isEmpty else { return true }
 
         let appointmentMinutes = ProviderScheduleHourlySlot.bookableSlotMinutes
-        for offset in stride(from: 0, to: appointmentMinutes, by: Self.scheduleStepMinutes) {
+        for offset in stride(from: 0, to: appointmentMinutes, by: scheduleStepMinutes) {
             let minuteMark = startMinutes + offset
             let timeKey = ProviderScheduleHourlySlot.hhmm(from: minuteMark)
             guard let slot = slots.first(where: { $0.time == timeKey }) else { return false }

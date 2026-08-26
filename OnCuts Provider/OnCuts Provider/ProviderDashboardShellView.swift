@@ -265,6 +265,7 @@ struct ProviderDashboardShellView: View {
         // Background Connect check — guide presents only if status comes back incomplete.
         if session.hasProviderProfile {
             await stripeOnboardingGate.refresh()
+            await ProviderFrontendConfigStore.shared.refresh()
             await syncDiscoveryLocationIfNeeded()
         }
     }
@@ -638,7 +639,7 @@ struct ProviderDashboardShellView: View {
             let bookings = try await ProviderBookingsService.listBookings(role: "barber")
             pendingRescheduleRequestCount = bookings.filter(\.hasPendingRescheduleRequest).count
             ProviderAwaitingPaymentTracker.shared.reconcile(with: bookings)
-            awaitingPaymentCount = bookings.filter(\.isAwaitingServicePayment).count
+            awaitingPaymentCount = bookings.filter(\.countsTowardAwaitingPaymentBadge).count
         } catch {
             pendingRescheduleRequestCount = 0
             awaitingPaymentCount = 0

@@ -21,15 +21,17 @@ import UIKit
 /// Sites (2) and (3) are SwiftUI navigation destinations, so this VC is bridged into
 /// SwiftUI via `BookingDetailHost` (defined at the bottom of this file).
 ///
-/// **Action surface** (pay-before-complete model, matches web operator):
+/// **Action surface** (branches on `paymentTimingMode` from frontend-config):
 ///
 /// | Status                         | Visible actions                                      |
 /// |--------------------------------|------------------------------------------------------|
 /// | PENDING                        | Accept · Decline · Reschedule                        |
-/// | ACCEPTED (unpaid)              | Awaiting payment · Reschedule · Cancel               |
-/// | PAID (upcoming)                | Mark Complete · Reschedule · Cancel (may refund)     |
-/// | COMPLETED (tip undecided)      | Awaiting tip · Undo Complete → PAID                  |
-/// | COMPLETED / tip decided        | (read-only)                                          |
+/// | ACCEPTED unpaid (`on_accept`)  | Awaiting payment · Reschedule · Cancel               |
+/// | ACCEPTED unpaid (`after_complete`) | Mark Complete · Reschedule · Cancel              |
+/// | PAID (upcoming, `on_accept`)   | Mark Complete · Reschedule · Cancel (may refund)     |
+/// | COMPLETED tip undecided (`on_accept`) | Awaiting tip · Undo → PAID                    |
+/// | COMPLETED unpaid (`after_complete`)   | Awaiting payment · Undo → ACCEPTED            |
+/// | COMPLETED / tip or pay settled | (read-only)                                          |
 ///
 /// All mutations go through `ProviderBookingsService`. On success the supplied
 /// `onChanged` callback fires so the parent (list / dashboard / chat) can refresh.
@@ -292,11 +294,12 @@ final class BookingDetailViewController: UIViewController {
     /// Refreshes from `GET /bookings-simple/:id` when payment / tip / complete fields may
     /// have changed since the list payload was loaded.
     private func refreshBookingDetailsIfNeeded() async {
-        let awaitingLocally = current.isAwaitingServicePayment
-            || current.isAwaitingTip
+        let awaitingLocally = current.countsTowardAwaitingPaymentBadge
             || paymentRequested
             || ProviderAwaitingPaymentTracker.shared.requestedIds.contains(current.id)
-        let needsLifecycleFields = current.isUpcomingPaidAppointment || current.isAwaitingTip
+        let needsLifecycleFields = current.canMarkComplete
+            || current.isAwaitingTip
+            || current.isAwaitingPostCompletePayment
         let mayHaveRescheduleRequest = Self.mayHavePendingRescheduleRequest(current)
         guard awaitingLocally || needsLifecycleFields || mayHaveRescheduleRequest else { return }
 
@@ -309,8 +312,8 @@ final class BookingDetailViewController: UIViewController {
     }
 
     private func clearAwaitingPaymentStateIfResolved() {
-        // Clear session tracker once neither service-pay nor tip is outstanding.
-        guard !current.isAwaitingServicePayment, !current.isAwaitingTip else { return }
+        // Clear session tracker once neither service-pay / tip / post-complete pay is outstanding.
+        guard !current.countsTowardAwaitingPaymentBadge else { return }
         let wasTracked = paymentRequested
             || ProviderAwaitingPaymentTracker.shared.requestedIds.contains(current.id)
         guard wasTracked else { return }
@@ -324,11 +327,11 @@ final class BookingDetailViewController: UIViewController {
     }
 
     private static func isPaymentResolved(_ booking: SimpleBookingDTO) -> Bool {
-        !booking.isAwaitingServicePayment && !booking.isAwaitingTip
+        !booking.countsTowardAwaitingPaymentBadge
     }
 
     private static func canShowAwaitingPayment(for booking: SimpleBookingDTO) -> Bool {
-        booking.isAwaitingServicePayment || booking.isAwaitingTip
+        booking.countsTowardAwaitingPaymentBadge
     }
 
     private static func mayHavePendingRescheduleRequest(_ booking: SimpleBookingDTO) -> Bool {
@@ -438,7 +441,7 @@ final class BookingDetailViewController: UIViewController {
         titleRow.alignment = .firstBaseline
         titleRow.translatesAutoresizingMaskIntoConstraints = false
 
-        let capsule = makeStatusCapsule(forStatus: current.statusUpper)
+        let capsule = makeStatusCapsule(for: current)
         capsule.translatesAutoresizingMaskIntoConstraints = false
 
         var statusPills: [UIView] = [capsule]
@@ -475,13 +478,12 @@ final class BookingDetailViewController: UIViewController {
         return row
     }
 
-    /// Builds a pill that color-codes the booking status. The label text is the raw
-    /// upper-case status (`PENDING`, `ACCEPTED`, …) — kept in sync with the legacy
-    /// SwiftUI badge so the inbox / list / detail screens read identically.
-    private func makeStatusCapsule(forStatus status: String) -> UIView {
+    /// Builds a pill that color-codes the booking status (mode-aware operator label).
+    private func makeStatusCapsule(for booking: SimpleBookingDTO) -> UIView {
+        let status = booking.statusUpper
         let (background, foreground) = statusPalette(for: status)
         let label = UILabel()
-        label.text = status.isEmpty ? "—" : ProviderBookingStatusDisplay.title(for: status)
+        label.text = booking.operatorStatusBadgeTitle
         label.font = .provider(size: 11, weight: .heavy)
         label.textColor = foreground
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -967,7 +969,7 @@ final class BookingDetailViewController: UIViewController {
             fullWidthButtons.append(
                 makeInertStatusButton(title: "Awaiting Payment", icon: "hourglass")
             )
-        } else if current.isUpcomingPaidAppointment {
+        } else if current.canMarkComplete {
             fullWidthButtons.append(
                 makePrimaryActionButton(
                     title: "Mark Complete",
@@ -976,23 +978,40 @@ final class BookingDetailViewController: UIViewController {
                     action: #selector(markCompleteTapped)
                 )
             )
+        } else if current.isAwaitingPostCompletePayment {
+            fullWidthButtons.append(
+                makeInertStatusButton(title: "Awaiting Payment", icon: "hourglass")
+            )
+            if current.canUndoComplete {
+                fullWidthButtons.append(
+                    makePrimaryActionButton(
+                        title: "Undo Complete",
+                        icon: "arrow.uturn.backward",
+                        background: Token.accent,
+                        foreground: .white,
+                        action: #selector(undoCompleteTapped)
+                    )
+                )
+            }
         } else if current.isAwaitingTip {
             fullWidthButtons.append(
                 makeInertStatusButton(title: "Awaiting Tip", icon: "hourglass")
             )
-            fullWidthButtons.append(
-                makePrimaryActionButton(
-                    title: "Undo Complete",
-                    icon: "arrow.uturn.backward",
-                    background: Token.accent,
-                    foreground: .white,
-                    action: #selector(undoCompleteTapped)
+            if current.canUndoComplete {
+                fullWidthButtons.append(
+                    makePrimaryActionButton(
+                        title: "Undo Complete",
+                        icon: "arrow.uturn.backward",
+                        background: Token.accent,
+                        foreground: .white,
+                        action: #selector(undoCompleteTapped)
+                    )
                 )
-            )
+            }
         }
 
-        // Reschedule / Cancel for unpaid accepted and upcoming paid appointments.
-        let canRescheduleOrCancel = current.isAwaitingServicePayment || current.isUpcomingPaidAppointment
+        // Reschedule / Cancel for active accepted (any mode) and upcoming paid appointments.
+        let canRescheduleOrCancel = current.isAcceptedActive || current.isUpcomingPaidAppointment
         if canRescheduleOrCancel {
             secondaryButtons.append(
                 makeSecondaryActionButton(
@@ -1320,7 +1339,8 @@ final class BookingDetailViewController: UIViewController {
     }
 
     @objc private func markCompleteTapped() {
-        guard current.isUpcomingPaidAppointment else { return }
+        guard current.canMarkComplete else { return }
+        let mode = current.paymentTimingMode
         run(optimisticStatus: nil) {
             try await ProviderBookingsService.markComplete(id: self.current.id)
         } onSuccess: { [weak self] in
@@ -1330,17 +1350,31 @@ final class BookingDetailViewController: UIViewController {
                 completedAt: Date(),
                 clearCompletedAt: false
             )
+            // Tip (`on_accept`) or service payment (`after_complete`) is now outstanding.
+            self.paymentRequested = true
+            ProviderAwaitingPaymentTracker.shared.markRequested(self.current.id)
+            let message: String = {
+                switch mode {
+                case .onAccept:
+                    return "Tip request sent to customer"
+                case .afterComplete:
+                    return "Payment request sent to customer"
+                }
+            }()
+            self.presentToast(title: "Marked complete", message: message)
         }
     }
 
     @objc private func undoCompleteTapped() {
-        // New model: undo Mark Complete returns the booking to upcoming PAID.
+        guard current.canUndoComplete else { return }
+        let undoStatus = current.paymentTimingMode.paysOnAccept ? "PAID" : "ACCEPTED"
         paymentRequested = false
         run(optimisticStatus: nil) {
             try await ProviderBookingsService.undoComplete(id: self.current.id)
         } onSuccess: { [weak self] in
             guard let self else { return }
-            self.current = self.with(status: "PAID", completedAt: nil, clearCompletedAt: true)
+            self.current = self.with(status: undoStatus, completedAt: nil, clearCompletedAt: true)
+            ProviderAwaitingPaymentTracker.shared.clearRequest(for: self.current.id)
         }
     }
 
@@ -1417,15 +1451,25 @@ final class BookingDetailViewController: UIViewController {
     }
 
     private func performReschedule(to date: Date) {
+        guard let barberId = barberTableId ?? current.barberId else {
+            presentError(NSError(
+                domain: "BookingDetail",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Barber profile is required to reschedule this booking."]
+            ))
+            return
+        }
+        var snappedTime = date
         run(optimisticStatus: nil) {
-            try await ProviderBookingsService.reschedule(
-                id: self.current.id,
-                scheduledTimeISO: date.campusCutsISO8601String(),
+            snappedTime = try await ProviderBookingsService.rescheduleWithDayAlignment(
+                barberId: barberId,
+                bookingId: self.current.id,
+                proposedTime: date,
                 location: nil,
                 notes: nil
             )
         } onSuccess: { [weak self] in
-            self?.applyOptimisticScheduledTime(date)
+            self?.applyOptimisticScheduledTime(snappedTime)
         }
     }
 

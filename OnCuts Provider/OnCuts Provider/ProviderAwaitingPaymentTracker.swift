@@ -3,10 +3,10 @@ import Observation
 
 // MARK: - ProviderAwaitingPaymentTracker
 
-/// Derives operator “waiting” banners from server booking fields under the
-/// pay-before-complete model:
-/// - **Awaiting payment** — `ACCEPTED` with no `paidAt` (consumer must pay to lock)
-/// - **Awaiting tip** — `COMPLETED` with no `tipDecidedAt`
+/// Derives operator “waiting” banners from server booking fields, branched on
+/// `ProviderFrontendConfigStore.paymentTimingMode`:
+/// - **on_accept** — unpaid `ACCEPTED` (service pay) or tip-pending `COMPLETED`
+/// - **after_complete** — unpaid `COMPLETED` only (confirmed `ACCEPTED` is not waiting)
 ///
 /// The legacy session-local “Request Payment” ID set is retained only so existing
 /// dashboard `.onReceive` refresh wiring keeps working; reconcile now rebuilds from
@@ -18,7 +18,7 @@ final class ProviderAwaitingPaymentTracker {
 
     static let didChangeNotification = Notification.Name("ProviderAwaitingPaymentTrackerDidChange")
 
-    /// IDs currently shown in waiting banners (service pay + tip). Updated by `reconcile`.
+    /// IDs currently shown in waiting banners. Updated by `reconcile`.
     private(set) var requestedIds: Set<String> = [] {
         didSet {
             guard oldValue != requestedIds else { return }
@@ -45,7 +45,7 @@ final class ProviderAwaitingPaymentTracker {
     func reconcile(with bookings: [SimpleBookingDTO]) {
         requestedIds = Set(
             bookings
-                .filter { $0.isAwaitingServicePayment || $0.isAwaitingTip }
+                .filter(\.countsTowardAwaitingPaymentBadge)
                 .map(\.id)
         )
     }
@@ -58,18 +58,20 @@ final class ProviderAwaitingPaymentTracker {
         booking.isAwaitingTip
     }
 
-    /// @available — old name; true when either service pay or tip is outstanding.
+    /// @available — old name; prefer `countsTowardAwaitingPaymentBadge`.
     static func isAwaitingEligible(status: String, paidAt: Date? = nil) -> Bool {
-        if paidAt != nil {
-            // Tip-wait uses COMPLETED + tipDecidedAt; status alone is insufficient.
-            return false
-        }
+        if paidAt != nil { return false }
         let s = status.uppercased()
-        return s == "ACCEPTED" || s == "COMPLETED"
+        switch ProviderPaymentTiming.mode {
+        case .onAccept:
+            return s == "ACCEPTED" || s == "COMPLETED"
+        case .afterComplete:
+            return s == "COMPLETED"
+        }
     }
 
     static func awaitingPaymentBookings(from bookings: [SimpleBookingDTO]) -> [SimpleBookingDTO] {
-        bookings.filter(\.isAwaitingServicePayment)
+        bookings.filter(\.countsTowardAwaitingPaymentBadge)
     }
 
     static func awaitingTipBookings(from bookings: [SimpleBookingDTO]) -> [SimpleBookingDTO] {
@@ -77,6 +79,6 @@ final class ProviderAwaitingPaymentTracker {
     }
 
     static func hasCompletedAwaitingPayment(in bookings: [SimpleBookingDTO]) -> Bool {
-        bookings.contains(where: \.isAwaitingTip)
+        bookings.contains(where: \.isCompletedAwaitingConsumerPayment)
     }
 }

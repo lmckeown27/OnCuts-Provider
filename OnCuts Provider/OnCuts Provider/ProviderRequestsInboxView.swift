@@ -443,17 +443,22 @@ struct ProviderRequestsInboxContent: View {
 
     private func performReschedule(booking: SimpleBookingDTO, to date: Date) async {
         let keepExpanded = triageItems.first(where: { $0.row.bookingId == booking.id })?.id
+        guard let barberId = session.barberProfile?.id else {
+            requestsErrorText = "Barber profile is required to reschedule this booking."
+            return
+        }
         do {
-            try await ProviderBookingsService.reschedule(
-                id: booking.id,
-                scheduledTimeISO: date.campusCutsISO8601String(),
+            let snapped = try await ProviderBookingsService.rescheduleWithDayAlignment(
+                barberId: barberId,
+                bookingId: booking.id,
+                proposedTime: date,
                 location: booking.location,
                 notes: booking.notes
             )
 
             let refreshed = (try? await ProviderBookingsService.fetchBooking(id: booking.id))
-                ?? booking.updatingScheduledTime(date, clearPendingReschedule: true)
-            let merged = mergeRescheduledBooking(refreshed, rescheduledTo: date)
+                ?? booking.updatingScheduledTime(snapped, clearPendingReschedule: true)
+            let merged = mergeRescheduledBooking(refreshed, rescheduledTo: snapped)
             replaceBookingInItems(merged)
 
             NotificationCenter.default.post(name: .providerBookingsChanged, object: nil)

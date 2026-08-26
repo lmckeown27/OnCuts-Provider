@@ -873,13 +873,14 @@ struct ProviderScheduleDashboardView: View {
     private func reloadAll() async {
         // Kick commission-free off with the rest of the hub — sequential awaits left it
         // painting a beat after schedule / discovery chrome.
+        async let config: () = ProviderFrontendConfigStore.shared.refresh()
         async let commissionFree: () = loadCommissionFreeRemaining()
         async let bookings: () = loadBookings()
         async let schedule: () = loadWeeklySchedule()
         async let blocks: () = loadWeekTimeBlocks()
         async let google: () = loadGoogleCalendarStatusAndBusyTimes()
         async let discovery: () = loadDiscoveryLocationStatus(seedManualField: false)
-        _ = await (commissionFree, bookings, schedule, blocks, google, discovery)
+        _ = await (config, commissionFree, bookings, schedule, blocks, google, discovery)
     }
 
     private func loadCommissionFreeRemaining() async {
@@ -1155,12 +1156,17 @@ struct ProviderScheduleDashboardView: View {
 
     private func confirmBookingMove(_ proposal: ScheduleAppointmentTimeChangeProposal) async {
         guard !isSavingBookingMove else { return }
+        guard let barberId = session.barberProfile?.id else {
+            errorText = "Barber profile is required to move this appointment."
+            return
+        }
         isSavingBookingMove = true
         defer { isSavingBookingMove = false }
         do {
-            try await ProviderBookingsService.reschedule(
-                id: proposal.booking.id,
-                scheduledTimeISO: proposal.proposedTime.campusCutsISO8601String(),
+            _ = try await ProviderBookingsService.rescheduleWithDayAlignment(
+                barberId: barberId,
+                bookingId: proposal.booking.id,
+                proposedTime: proposal.proposedTime,
                 location: proposal.booking.location,
                 notes: proposal.booking.notes
             )

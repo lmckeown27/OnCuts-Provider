@@ -822,9 +822,38 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
     /// Confirmed: free slot already reserved at payment-intent time.
     var isCommissionless: Bool { commissionFreeApplied == true }
 
-    /// ACCEPTED and not yet service-paid — consumer must pay to lock the appointment.
-    var isAwaitingServicePayment: Bool {
+    /// Platform payment timing from `GET /platform/frontend-config` (defaults to pay-on-accept).
+    var paymentTimingMode: PaymentTimingMode {
+        ProviderPaymentTiming.mode
+    }
+
+    /// Raw ACCEPTED + unpaid (mode-agnostic). Used for commissionless eligibility.
+    var isAcceptedUnpaid: Bool {
         statusUpper == "ACCEPTED" && paidAt == nil
+    }
+
+    /// Active accepted appointment (confirmed or awaiting pre-service pay).
+    var isAcceptedActive: Bool {
+        guard !isCancelledOrRejected else { return false }
+        return statusUpper == "ACCEPTED"
+    }
+
+    /// ACCEPTED unpaid under **pay-on-accept** — consumer must pay before Mark Complete.
+    /// Under **after_complete**, unpaid ACCEPTED is confirmed (not awaiting payment).
+    var isAwaitingServicePayment: Bool {
+        paymentTimingMode.paysOnAccept && isAcceptedUnpaid
+    }
+
+    /// Unpaid ACCEPTED when payment is after complete — treat as confirmed, not stuck on pay.
+    var isConfirmedUnpaidAccepted: Bool {
+        !paymentTimingMode.paysOnAccept && isAcceptedUnpaid
+    }
+
+    /// COMPLETED and still unpaid — only meaningful under **after_complete**.
+    var isAwaitingPostCompletePayment: Bool {
+        guard !paymentTimingMode.paysOnAccept else { return false }
+        guard !isCancelledOrRejected else { return false }
+        return statusUpper == "COMPLETED" && paidAt == nil
     }
 
     /// Service paid, appointment still upcoming (not marked complete; tip not started).
@@ -833,6 +862,38 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
     var isUpcomingPaidAppointment: Bool {
         guard !isCancelledOrRejected else { return false }
         return statusUpper == "PAID" && completedAt == nil && tipDecidedAt == nil
+    }
+
+    /// Whether the operator can Mark Complete for the current payment-timing mode.
+    var canMarkComplete: Bool {
+        guard !isCancelledOrRejected else { return false }
+        switch paymentTimingMode {
+        case .onAccept:
+            return isUpcomingPaidAppointment
+        case .afterComplete:
+            return isAcceptedActive
+        }
+    }
+
+    /// Undo Complete is allowed before tip (`on_accept`) or before pay (`after_complete`).
+    var canUndoComplete: Bool {
+        guard statusUpper == "COMPLETED", !isCancelledOrRejected else { return false }
+        switch paymentTimingMode {
+        case .onAccept:
+            return !isTipSettled
+        case .afterComplete:
+            return paidAt == nil
+        }
+    }
+
+    /// Operator “awaiting payment” list / yellow badge (mode-aware).
+    var countsTowardAwaitingPaymentBadge: Bool {
+        switch paymentTimingMode {
+        case .onAccept:
+            return isAwaitingServicePayment || isAwaitingTip
+        case .afterComplete:
+            return isAwaitingPostCompletePayment
+        }
     }
 
     var isCancelledOrRejected: Bool {
@@ -859,8 +920,10 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
     }
 
     /// Operator marked complete; consumer still chooses tip (including $0).
+    /// Only under **pay-on-accept** — after_complete folds tip into the post-complete payment.
     var isAwaitingTip: Bool {
-        statusUpper == "COMPLETED" && !isTipSettled
+        guard paymentTimingMode.paysOnAccept else { return false }
+        return statusUpper == "COMPLETED" && !isTipSettled
     }
 
     /// Tip step finished (including $0) — booking is settled from the operator’s POV.
@@ -875,10 +938,16 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
         return false
     }
 
-    /// Unpaid ACCEPTED — still eligible for a free-slot reserve at service pay.
+    /// Unpaid booking still eligible for a free-slot reserve at service pay
+    /// (`ACCEPTED` on-accept, or unpaid `COMPLETED` after-complete).
     var isEligibleForPotentialCommissionless: Bool {
         guard !isCommissionless, paidAt == nil else { return false }
-        return statusUpper == "ACCEPTED"
+        switch paymentTimingMode {
+        case .onAccept:
+            return statusUpper == "ACCEPTED"
+        case .afterComplete:
+            return statusUpper == "ACCEPTED" || statusUpper == "COMPLETED"
+        }
     }
 
     /// Operator still has free slots → next service payment on this booking should be commissionless.
@@ -961,8 +1030,10 @@ struct SimpleBookingDTO: Decodable, Identifiable, Hashable {
         }
     }
 
-    /// @available for call sites still using the old name — maps to awaiting tip under the new model.
-    var isCompletedAwaitingConsumerPayment: Bool { isAwaitingTip }
+    /// @available — tip wait (`on_accept`) or post-complete pay wait (`after_complete`).
+    var isCompletedAwaitingConsumerPayment: Bool {
+        isAwaitingTip || isAwaitingPostCompletePayment
+    }
 
     var hasPendingRescheduleRequest: Bool {
         guard ProviderBookingStatusDisplay.isEligibleForPendingRescheduleRequest(status: status) else {
@@ -1010,6 +1081,8 @@ struct BarberAvailabilityDayData: Decodable {
     let intervals: [BarberAvailabilityIntervalDTO]?
     let bookedSlots: [BarberAvailabilityBookedSlotDTO]?
     let slots: [BarberAvailabilitySlotDTO]?
+    let appointmentDurationMinutes: Int?
+    let bookingSlotIntervalMinutes: Int?
 }
 
 // MARK: - Weekly schedule editor (PUT /barbers/:id body: { weekly_schedule: WeeklyScheduleDTO })

@@ -63,6 +63,7 @@ final class ProviderSession {
             barberProfile = nil
             commissionFreeBookingsRemaining = 0
             pendingProviderEnrollment = false
+            ProviderFrontendConfigStore.shared.resetToDefault()
         } else {
             do {
                 let me = try await ProviderAuthService.fetchAuthMe()
@@ -70,6 +71,7 @@ final class ProviderSession {
                 await ProviderAuthService.syncAccessTokenForElevatedPrivileges(me)
                 await syncBarberProfileFromServer()
                 signedIn = true
+                await ProviderFrontendConfigStore.shared.refresh(force: true)
                 await ProviderPushDeviceRegistration.refreshAfterSignIn()
             } catch {
                 ProviderAuthService.clearSession()
@@ -78,6 +80,7 @@ final class ProviderSession {
                 barberProfile = nil
                 commissionFreeBookingsRemaining = 0
                 pendingProviderEnrollment = false
+                ProviderFrontendConfigStore.shared.resetToDefault()
             }
         }
         withAnimation(ProviderRootTransition.animation) {
@@ -115,6 +118,7 @@ final class ProviderSession {
             await ProviderAuthService.syncAccessTokenForElevatedPrivileges(authUser)
         }
         await syncBarberProfileFromServer()
+        await ProviderFrontendConfigStore.shared.refresh(force: true)
     }
 
     /// `GET /barbers/me`, then public `GET /barbers/user/:id` to auto-provision a row when the DB role allows.
@@ -183,6 +187,7 @@ final class ProviderSession {
         try await ProviderAuthService.deleteAccount(userId: id, password: password)
         ProviderAuthService.clearSession()
         ProviderAwaitingPaymentTracker.shared.clearAll()
+        ProviderFrontendConfigStore.shared.resetToDefault()
         #if os(iOS)
         GoogleSignInAppSupport.signOutSDK()
         #endif
@@ -207,6 +212,7 @@ final class ProviderSession {
         // have a booking with a colliding UUID — astronomically unlikely but trivial to
         // foreclose).
         ProviderAwaitingPaymentTracker.shared.clearAll()
+        ProviderFrontendConfigStore.shared.resetToDefault()
         #if os(iOS)
         GoogleSignInAppSupport.signOutSDK()
         #endif

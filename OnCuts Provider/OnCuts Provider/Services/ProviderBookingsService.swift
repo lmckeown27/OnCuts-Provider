@@ -29,8 +29,8 @@ enum ProviderBookingsService {
     static func enrichLifecycleFieldsForSchedule(_ bookings: [SimpleBookingDTO]) async -> [SimpleBookingDTO] {
         let needsEnrichment = bookings.filter { booking in
             guard booking.isVisibleOnMainSchedule else { return false }
-            // Tip-pending COMPLETED may already be settled on detail.
-            if booking.isAwaitingTip { return true }
+            // Tip-pending or unpaid post-complete may already be settled on detail.
+            if booking.isAwaitingTip || booking.isAwaitingPostCompletePayment { return true }
             // Active row with a cancel stamp — confirm detail so it can leave the calendar.
             return booking.hasPlausibleCancelledAt
         }
@@ -100,6 +100,48 @@ enum ProviderBookingsService {
             method: "PUT",
             jsonBody: body
         )
+    }
+
+    /// Snaps `proposedTime` to the target day's bookable grid, then reschedules.
+    @discardableResult
+    static func rescheduleWithDayAlignment(
+        barberId: String,
+        bookingId: String,
+        proposedTime: Date,
+        durationMinutes: Int = ProviderScheduleHourlySlot.bookableSlotMinutes,
+        location: String?,
+        notes: String?,
+        timeZone: TimeZone = .current
+    ) async throws -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+
+        let dayData = try await ProviderAvailabilityService.getDayAvailability(
+            barberId: barberId,
+            date: proposedTime,
+            timeZone: timeZone
+        )
+        let intervals = dayData.intervals ?? []
+        let slotInterval = dayData.resolvedBookingSlotIntervalMinutes
+        let appointmentDuration = durationMinutes > 0
+            ? durationMinutes
+            : dayData.resolvedAppointmentDurationMinutes
+
+        let snapped = ProviderBookingSlotAlignment.snapToNearestBookableStart(
+            proposed: proposedTime,
+            intervals: intervals,
+            slotIntervalMinutes: slotInterval,
+            appointmentDurationMinutes: appointmentDuration,
+            calendar: calendar
+        ) ?? proposedTime
+
+        try await reschedule(
+            id: bookingId,
+            scheduledTimeISO: snapped.campusCutsISO8601String(),
+            location: location,
+            notes: notes
+        )
+        return snapped
     }
 
     static func cancelBooking(id: String, reason: String?) async throws {
