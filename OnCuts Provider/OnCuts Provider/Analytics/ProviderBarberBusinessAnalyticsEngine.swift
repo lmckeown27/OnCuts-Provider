@@ -190,11 +190,13 @@ enum ProviderBarberBusinessAnalyticsEngine {
     }
 
     static func enrichClients(_ clients: [BarberClient], conversations: [ConversationRow]) -> [BarberClient] {
+        // Conversations can repeat the same other-user id (e.g. multiple threads); uniquing avoids a fatal Dictionary crash.
         let byUserId: [String: ConversationOtherUser] = Dictionary(
-            uniqueKeysWithValues: conversations.compactMap { row in
+            conversations.compactMap { row -> (String, ConversationOtherUser)? in
                 guard let user = row.otherUser, let id = user.id else { return nil }
                 return (id, user)
-            }
+            },
+            uniquingKeysWith: { _, latest in latest }
         )
 
         return clients.map { client in
