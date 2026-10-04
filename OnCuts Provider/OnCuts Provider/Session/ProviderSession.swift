@@ -173,6 +173,11 @@ final class ProviderSession {
         barberProfile = current.withBookingSlotIntervalMinutes(minutes)
     }
 
+    func applyMaxAdvanceBookingDays(_ days: Int) {
+        guard let current = barberProfile else { return }
+        barberProfile = current.withMaxAdvanceBookingDays(days)
+    }
+
     /// Async so the device-registration DELETE can complete while the JWT is still valid in the
     /// keychain — the request needs a Bearer header to identify which device records belong to
     /// the signed-out account. The call inside `unregisterOnSignOut()` swallows errors, so the

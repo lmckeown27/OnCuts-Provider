@@ -59,6 +59,15 @@ struct ProviderAvailabilityEditorView: View {
     @State private var showingTimeLimits = false
     @State private var isSavingSlotInterval = false
 
+    /// How many days ahead a client may book. Saved only when the operator confirms.
+    @State private var maxAdvanceBookingDays = 30
+    @State private var showingMaxAdvance = false
+    @State private var isEditingAdvanceDays = false
+    @State private var advanceDaysDraft = "30"
+    @State private var isSavingAdvanceDays = false
+    @State private var advanceDaysError: String?
+    @FocusState private var isAdvanceDaysFieldFocused: Bool
+
     // Generic toast / save feedback
     @State private var savedToast: String?
 
@@ -102,6 +111,9 @@ struct ProviderAvailabilityEditorView: View {
                         if showingTimeLimits {
                             timeLimitsCard
                         }
+                        if showingMaxAdvance {
+                            maxAdvanceCard
+                        }
                     }
                     if session.hasProviderProfile, !isLoadingContent, showsAvailabilityActionsRow {
                         availabilityActionsRow
@@ -135,8 +147,24 @@ struct ProviderAvailabilityEditorView: View {
         .onChange(of: weekly) { _, _ in
             scheduleWeeklyAutosave()
         }
+        .onChange(of: isEditingAdvanceDays) { _, editing in
+            isAdvanceDaysFieldFocused = editing
+        }
         .onDisappear {
             weeklyAutosaveTask?.cancel()
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                if isEditingAdvanceDays {
+                    Spacer()
+                    Button {
+                        Task { await confirmAdvanceBookingDays() }
+                    } label: {
+                        Image(systemName: "checkmark")
+                    }
+                    .accessibilityLabel("Save booking window")
+                }
+            }
         }
         .task {
             await loadAll()
@@ -209,60 +237,202 @@ struct ProviderAvailabilityEditorView: View {
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    /// Compact entries on **Edit Schedule** — Block Time + Time Limits (web parity).
+    /// Compact entries on **Edit Schedule** — Block Time, Time Limits, and Max Advance.
     private var editScheduleActionsRow: some View {
-        HStack(spacing: 10) {
-            Button {
-                showingTimeLimits = false
-                showingAddBlock = true
-            } label: {
-                Text("Block Time")
-                    .font(.provider(.subheadline, weight: .semibold))
-                    .foregroundStyle(Color.providerOnOliveFill)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(Color.providerOlive)
-                    )
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Block Time")
-
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    showingTimeLimits.toggle()
-                }
-            } label: {
-                Text("Time Limits")
-                    .font(.provider(.subheadline, weight: .semibold))
-                    .foregroundStyle(Color.providerOnOliveFill)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(showingTimeLimits ? Color.providerOlive.opacity(0.82) : Color.providerOlive)
-                    )
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Time Limits")
-            .accessibilityValue(showingTimeLimits ? "Expanded" : "Collapsed")
+        HStack(spacing: 8) {
+            blockTimeButton
+            timeLimitsButton
+            maxAdvanceButton
         }
         .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private var blockTimeButton: some View {
+        Button {
+            showingTimeLimits = false
+            showingMaxAdvance = false
+            showingAddBlock = true
+        } label: {
+            Text("Block Time")
+                .font(.provider(.subheadline, weight: .semibold))
+                .foregroundStyle(Color.providerOnOliveFill)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 12)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.providerOlive)
+                )
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel("Block Time")
+    }
+
+    private var timeLimitsButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                if !showingTimeLimits { showingMaxAdvance = false }
+                showingTimeLimits.toggle()
+            }
+        } label: {
+            Text("Time Limits")
+                .font(.provider(.subheadline, weight: .semibold))
+                .foregroundStyle(Color.providerOnOliveFill)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 12)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(showingTimeLimits ? Color.providerOlive.opacity(0.82) : Color.providerOlive)
+                )
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel("Time Limits")
+        .accessibilityValue(showingTimeLimits ? "Expanded" : "Collapsed")
+    }
+
+    private var maxAdvanceButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                if !showingMaxAdvance {
+                    showingTimeLimits = false
+                    advanceDaysError = nil
+                    advanceDaysDraft = String(maxAdvanceBookingDays)
+                    isEditingAdvanceDays = false
+                } else {
+                    isEditingAdvanceDays = false
+                    isAdvanceDaysFieldFocused = false
+                }
+                showingMaxAdvance.toggle()
+            }
+        } label: {
+            Text("Max Advance")
+                .font(.provider(.subheadline, weight: .semibold))
+                .foregroundStyle(Color.providerOnOliveFill)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 12)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(showingMaxAdvance ? Color.providerOlive.opacity(0.82) : Color.providerOlive)
+                )
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel("Max Advance")
+        .accessibilityValue(showingMaxAdvance ? "Expanded" : "Collapsed")
+    }
+
+    private var maxAdvanceCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Max days in advance a client can book")
+                .font(.provider(.subheadline))
+                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 14) {
+                VStack(spacing: 2) {
+                    Button {
+                        stepAdvanceBookingDays(1)
+                    } label: {
+                        Image(systemName: "chevron.up")
+                            .font(.system(size: 22, weight: .bold))
+                            .frame(width: 44, height: 32)
+                    }
+                    .accessibilityLabel("Increase days")
+
+                    Button {
+                        stepAdvanceBookingDays(-1)
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 22, weight: .bold))
+                            .frame(width: 44, height: 32)
+                    }
+                    .disabled((Int(advanceDaysDraft) ?? 1) <= 1)
+                    .accessibilityLabel("Decrease days")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.lavaShellCream)
+                .disabled(!isEditingAdvanceDays || isSavingAdvanceDays)
+
+                TextField("30", text: $advanceDaysDraft)
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.center)
+                    .font(.provider(.title2, weight: .semibold))
+                    .foregroundStyle(Color.lavaShellCream)
+                    .frame(width: 88, height: 56)
+                    .background(
+                        Color.providerElevatedSurface,
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
+                    .focused($isAdvanceDaysFieldFocused)
+                    .disabled(!isEditingAdvanceDays || isSavingAdvanceDays)
+                    .onSubmit { Task { await confirmAdvanceBookingDays() } }
+                    .onChange(of: advanceDaysDraft) { _, newValue in
+                        let digits = newValue.filter(\.isNumber)
+                        if digits != newValue { advanceDaysDraft = digits }
+                    }
+                    .accessibilityLabel("Days ahead clients may book")
+
+                Button {
+                    if isEditingAdvanceDays {
+                        Task { await confirmAdvanceBookingDays() }
+                    } else {
+                        advanceDaysError = nil
+                        advanceDaysDraft = String(maxAdvanceBookingDays)
+                        isEditingAdvanceDays = true
+                    }
+                } label: {
+                    Image(systemName: isEditingAdvanceDays ? "checkmark" : "pencil")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(Color.providerOnOliveFill)
+                        .frame(width: 52, height: 52)
+                        .background(Circle().fill(Color.providerOlive))
+                }
+                .buttonStyle(.plain)
+                .disabled(isSavingAdvanceDays)
+                .accessibilityLabel(isEditingAdvanceDays ? "Save booking window" : "Edit booking window")
+            }
+            .frame(maxWidth: .infinity)
+
+            if let advanceDaysError, !advanceDaysError.isEmpty {
+                Text(advanceDaysError)
+                    .font(.provider(.caption))
+                    .foregroundStyle(.red.opacity(0.9))
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color.providerScheduleCardFill,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.providerScheduleCardStroke, lineWidth: 0.6)
+        )
     }
 
     private var timeLimitsCard: some View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
         return VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Time Limits")
-                    .font(.provider(.headline, weight: .semibold))
-                    .foregroundStyle(Color.lavaShellCream)
-                Text("How often clients can book a start time.")
-                    .font(.provider(.subheadline))
-                    .foregroundStyle(Color.lavaShellCreamSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text("The interval between appointment times clients can book")
+                .font(.provider(.subheadline))
+                .foregroundStyle(Color.lavaShellCreamSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .fixedSize(horizontal: false, vertical: true)
 
             LazyVGrid(columns: columns, spacing: 8) {
                 ForEach(BookingSlotIntervalMinutesPreset.allCases) { preset in
@@ -790,12 +960,16 @@ struct ProviderAvailabilityEditorView: View {
            let snapshot = await ProviderAvailabilityEditorPrefetch.takeSnapshot(for: barberId) {
             // `snapshot.calendarStatus` / `calendarError` are ignored while the Google Calendar
             // integration is parked. Restore the `calendar:` argument when re-enabling.
+            async let advanceDays = fetchMaxAdvanceBookingDays()
+            async let bookings = fetchScheduleBookings()
+            let (days, loadedBookings) = await (advanceDays, bookings)
             applyLoadedContent(
                 weekly: (snapshot.weekly, snapshot.weeklyError),
                 bookingSlotIntervalMinutes: snapshot.bookingSlotIntervalMinutes,
-                blocks: (snapshot.timeBlocks, snapshot.blocksError)
+                blocks: (snapshot.timeBlocks, snapshot.blocksError),
+                maxAdvanceBookingDays: days
             )
-            scheduleBookings = await fetchScheduleBookings()
+            scheduleBookings = loadedBookings
             await prepareWeeklyEditor()
             return
         }
@@ -808,12 +982,14 @@ struct ProviderAvailabilityEditorView: View {
         async let weekly = fetchWeeklySchedule(barberId: barberId)
         async let blocks = fetchTimeBlocks(barberId: barberId)
         async let bookings = fetchScheduleBookings()
-        let results = await (weekly, blocks, bookings)
+        async let advanceDays = fetchMaxAdvanceBookingDays()
+        let results = await (weekly, blocks, bookings, advanceDays)
 
         applyLoadedContent(
             weekly: (results.0.0, results.0.1),
             bookingSlotIntervalMinutes: results.0.2,
-            blocks: results.1
+            blocks: results.1,
+            maxAdvanceBookingDays: results.3
         )
         scheduleBookings = results.2
         await prepareWeeklyEditor()
@@ -822,7 +998,8 @@ struct ProviderAvailabilityEditorView: View {
     private func applyLoadedContent(
         weekly: (WeeklyScheduleDTO?, String?),
         bookingSlotIntervalMinutes: Int?,
-        blocks: ([BarberTimeBlockDTO]?, String?)
+        blocks: ([BarberTimeBlockDTO]?, String?),
+        maxAdvanceBookingDays: Int
     ) {
         // calendarStatus / calendarError assignments removed while the Google Calendar
         // integration is parked. Restore alongside the `calendar:` parameter when re-enabling.
@@ -843,6 +1020,11 @@ struct ProviderAvailabilityEditorView: View {
             slotIntervalMinutes = BookingSlotIntervalMinutesPreset.from(minutes)
         } else if let fromProfile = session.barberProfile?.bookingSlotIntervalMinutes {
             slotIntervalMinutes = BookingSlotIntervalMinutesPreset.from(fromProfile)
+        }
+
+        if !isEditingAdvanceDays {
+            self.maxAdvanceBookingDays = maxAdvanceBookingDays
+            advanceDaysDraft = String(maxAdvanceBookingDays)
         }
 
         if let list = blocks.0 {
@@ -914,6 +1096,63 @@ struct ProviderAvailabilityEditorView: View {
         if let minutes = result.2 {
             slotIntervalMinutes = BookingSlotIntervalMinutesPreset.from(minutes)
         }
+    }
+
+    private func fetchMaxAdvanceBookingDays() async -> Int {
+        if let me = try? await ProviderAuthService.fetchBarberMe() {
+            let days = me.resolvedMaxAdvanceBookingDays
+            session.applyMaxAdvanceBookingDays(days)
+            return days
+        }
+        return session.barberProfile?.resolvedMaxAdvanceBookingDays ?? 30
+    }
+
+    private func stepAdvanceBookingDays(_ delta: Int) {
+        let current = Int(advanceDaysDraft) ?? maxAdvanceBookingDays
+        advanceDaysDraft = String(max(1, current + delta))
+    }
+
+    private func confirmAdvanceBookingDays() async {
+        guard !isSavingAdvanceDays else { return }
+        guard let barberId = session.barberProfile?.id else { return }
+        let trimmed = advanceDaysDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let days = Int(trimmed), days > 0 else {
+            advanceDaysError = "Enter at least 1 day."
+            return
+        }
+
+        isSavingAdvanceDays = true
+        advanceDaysError = nil
+        defer { isSavingAdvanceDays = false }
+
+        do {
+            let saved = try await ProviderAvailabilityManagementService.updateMaxAdvanceBookingDays(
+                barberId: barberId,
+                days: days
+            )
+            maxAdvanceBookingDays = saved
+            advanceDaysDraft = String(saved)
+            session.applyMaxAdvanceBookingDays(saved)
+            isAdvanceDaysFieldFocused = false
+            isEditingAdvanceDays = false
+        } catch {
+            advanceDaysError = Self.advanceBookingDaysErrorMessage(error)
+        }
+    }
+
+    private static func advanceBookingDaysErrorMessage(_ error: Error) -> String {
+        if let http = error as? OnCutsHTTPError,
+           case .httpStatus(_, let message) = http,
+           let message,
+           let data = message.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let text = (object["error"] as? String) ?? (object["message"] as? String)
+            if let text, !text.isEmpty { return text }
+        }
+        if let described = (error as? LocalizedError)?.errorDescription, !described.isEmpty, !described.hasPrefix("{") {
+            return described
+        }
+        return "Could not save how far ahead clients can book."
     }
 
     private func saveSlotInterval(_ preset: BookingSlotIntervalMinutesPreset) async {

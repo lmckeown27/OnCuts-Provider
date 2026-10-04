@@ -85,6 +85,8 @@ struct BarberMeProfile: Decodable, Hashable {
     let clientCancelRefundHours: Int?
     /// Step between client bookable start times (minutes). Allowed: 15, 30, 45. Default 15.
     let bookingSlotIntervalMinutes: Int?
+    /// How many days ahead a client may book. Positive integer; missing or null is 30.
+    let maxAdvanceBookingDays: Int?
 
     var avatarURL: URL? {
         ProviderAvatarURL.resolve(profilePictureUrl)
@@ -117,6 +119,12 @@ struct BarberMeProfile: Decodable, Hashable {
         BookingSlotIntervalMinutesPreset.resolved(bookingSlotIntervalMinutes)
     }
 
+    /// Effective advance-booking window. Missing, null, zero, and negatives are 30.
+    var resolvedMaxAdvanceBookingDays: Int {
+        guard let maxAdvanceBookingDays, maxAdvanceBookingDays > 0 else { return 30 }
+        return maxAdvanceBookingDays
+    }
+
     /// Inverse of `is_hidden` — matches web “Hide my profile from consumers”.
     var isVisibleToConsumers: Bool {
         isHidden != true
@@ -138,7 +146,8 @@ struct BarberMeProfile: Decodable, Hashable {
             profilePictureUrl: profilePictureUrl,
             providerType: providerType,
             clientCancelRefundHours: clientCancelRefundHours,
-            bookingSlotIntervalMinutes: bookingSlotIntervalMinutes
+            bookingSlotIntervalMinutes: bookingSlotIntervalMinutes,
+            maxAdvanceBookingDays: maxAdvanceBookingDays
         )
     }
 
@@ -158,7 +167,29 @@ struct BarberMeProfile: Decodable, Hashable {
             profilePictureUrl: profilePictureUrl,
             providerType: providerType,
             clientCancelRefundHours: clientCancelRefundHours,
-            bookingSlotIntervalMinutes: BookingSlotIntervalMinutesPreset.resolved(minutes)
+            bookingSlotIntervalMinutes: BookingSlotIntervalMinutesPreset.resolved(minutes),
+            maxAdvanceBookingDays: maxAdvanceBookingDays
+        )
+    }
+
+    func withMaxAdvanceBookingDays(_ days: Int) -> BarberMeProfile {
+        BarberMeProfile(
+            id: id,
+            userId: userId,
+            name: name,
+            displayName: displayName,
+            firstName: firstName,
+            lastName: lastName,
+            isActive: isActive,
+            isHidden: isHidden,
+            bio: bio,
+            specialties: specialties,
+            instagramHandle: instagramHandle,
+            profilePictureUrl: profilePictureUrl,
+            providerType: providerType,
+            clientCancelRefundHours: clientCancelRefundHours,
+            bookingSlotIntervalMinutes: bookingSlotIntervalMinutes,
+            maxAdvanceBookingDays: days > 0 ? days : 30
         )
     }
 }

@@ -54,6 +54,30 @@ enum ProviderAvailabilityManagementService {
         ) ?? resolved
     }
 
+    /// Owner-only: how many days ahead a client may book. Sends `max_advance_booking_days` only.
+    @discardableResult
+    static func updateMaxAdvanceBookingDays(barberId: String, days: Int) async throws -> Int {
+        guard days > 0 else {
+            throw OnCutsHTTPError.httpStatus(
+                400,
+                "max_advance_booking_days must be a positive integer or null"
+            )
+        }
+        let enc = barberId.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlPathAllowed) ?? barberId
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "barbers/\(enc)",
+            method: "PUT",
+            jsonBody: ["max_advance_booking_days": days]
+        )
+        let saved = ProviderMarketplaceVisibility.int(
+            in: data,
+            camelKey: "maxAdvanceBookingDays",
+            snakeKey: "max_advance_booking_days"
+        )
+        if let saved, saved > 0 { return saved }
+        return days
+    }
+
     static func updateWeeklySchedule(barberId: String, schedule: WeeklyScheduleDTO) async throws {
         let body: [String: Any] = [
             // Backend column key is snake_case (`weekly_schedule`) — see `barber.controller.ts`.
