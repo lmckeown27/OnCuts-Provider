@@ -284,6 +284,44 @@ final class BookingDetailViewController: UIViewController {
         Task { @MainActor in
             await Task.yield()
             await refreshBookingDetailsIfNeeded()
+            if current.tipDecidedAt == nil, current.statusUpper == "COMPLETED" {
+                if let fresh = try? await ProviderBookingsService.fetchBooking(id: current.id) {
+                    current = fresh
+                }
+            }
+            considerPortfolioPrompt()
+        }
+    }
+
+    /// After the tip is decided, ask once to add this booking’s service to the portfolio.
+    private func considerPortfolioPrompt() {
+        guard current.tipDecidedAt != nil else { return }
+        guard !ProviderPortfolioPromptMemory.wasDismissed(current.id) else { return }
+        guard presentedViewController == nil else { return }
+        guard let barberId = barberTableId ?? current.barberId,
+              !barberId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+        let bookingId = current.id
+        let serviceName = current.serviceDisplayName
+        Task { @MainActor in
+            let alreadyAdded = (try? await ProviderOperatorPortfolioService.containsBooking(
+                barberId: barberId,
+                bookingId: bookingId
+            )) ?? false
+            guard !alreadyAdded, self.presentedViewController == nil else {
+                if alreadyAdded { ProviderPortfolioPromptMemory.dismiss(bookingId) }
+                return
+            }
+            let sheet = ProviderPostServicePortfolioView(
+                barberId: barberId,
+                bookingId: bookingId,
+                serviceName: serviceName
+            ) { [weak self] in
+                self?.dismiss(animated: true)
+            }
+            let host = UIHostingController(rootView: sheet)
+            host.modalPresentationStyle = .formSheet
+            self.present(host, animated: true)
         }
     }
 

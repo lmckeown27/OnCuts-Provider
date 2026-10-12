@@ -70,7 +70,8 @@ enum OnCutsHTTPClient {
         fieldName: String,
         fileName: String,
         mimeType: String,
-        fileData: Data
+        fileData: Data,
+        textFields: [String: String] = [:]
     ) async throws -> Data {
         let base = AppConfiguration.apiV1BaseTrimmed
         let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
@@ -80,6 +81,9 @@ enum OnCutsHTTPClient {
 
         let boundary = "Boundary-\(UUID().uuidString)"
         var body = Data()
+        for (name, value) in textFields {
+            body.appendMultipartText(name: name, value: value, boundary: boundary)
+        }
         body.appendMultipartField(
             name: fieldName,
             fileName: fileName,
@@ -132,6 +136,13 @@ enum OnCutsHTTPClient {
 }
 
 private extension Data {
+    mutating func appendMultipartText(name: String, value: String, boundary: String) {
+        append("--\(boundary)\r\n".data(using: .utf8)!)
+        append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
+        append(value.data(using: .utf8)!)
+        append("\r\n".data(using: .utf8)!)
+    }
+
     mutating func appendMultipartField(
         name: String,
         fileName: String,

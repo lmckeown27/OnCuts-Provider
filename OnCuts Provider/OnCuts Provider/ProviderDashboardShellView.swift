@@ -24,6 +24,7 @@ struct ProviderDashboardShellView: View {
     @State private var awaitingPaymentCount = 0
     @State private var showLocationDeniedGuidance = false
     @State private var showingAdminDashboard = false
+    @State private var showingPortfolio = false
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var bookingsTrayAttentionCount: Int {
@@ -123,6 +124,10 @@ struct ProviderDashboardShellView: View {
                 Task { await refreshHeaderCounts() }
             }) {
                 requestsInboxSheet
+            }
+            .sheet(isPresented: $showingPortfolio) {
+                ProviderPortfolioView()
+                    .environment(session)
             }
             .sheet(isPresented: $showingAdminDashboard) {
                 ProviderAdminDashboardView()
@@ -313,25 +318,25 @@ struct ProviderDashboardShellView: View {
 
             Spacer(minLength: 8)
 
-            if let roleLabel = headerRoleStatusText {
+            if session.hasProviderProfile {
                 Button {
-                    showingAdminDashboard = true
+                    showingPortfolio = true
                 } label: {
-                    Text(roleLabel)
+                    Text("Portfolio")
                         .fontWeight(.semibold)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(ProviderOliveChromeStyle.headerPillFill(colorScheme), in: Capsule())
+                        .background(ProviderOliveChromeStyle.headerPillFill(colorScheme), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .overlay(
-                            Capsule()
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .strokeBorder(ProviderOliveChromeStyle.headerPillBorder(colorScheme), lineWidth: 0.5)
                         )
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(ProviderOliveChromeStyle.headerPillForeground(colorScheme))
-                .accessibilityLabel("Admin dashboard")
+                .accessibilityLabel("Portfolio")
             }
 
             Spacer(minLength: 8)
@@ -344,11 +349,6 @@ struct ProviderDashboardShellView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(.ultraThinMaterial, ignoresSafeAreaEdges: [])
-    }
-
-    /// Shown in the center of the header when the signed-in user has admin privileges.
-    private var headerRoleStatusText: String? {
-        session.authUser?.hasAdminPrivileges == true ? "Admin" : nil
     }
 
     private var requestsTrayButton: some View {
@@ -472,6 +472,11 @@ struct ProviderDashboardShellView: View {
                 }
                 profileMenuActionButton("Booking Link") {
                     navigator.pushRoute(ProviderShellRoute.bookingLink)
+                }
+                if session.hasProviderProfile {
+                    profileMenuActionButton("Portfolio") {
+                        showingPortfolio = true
+                    }
                 }
             }
             if session.authUser?.hasAdminPrivileges == true {
