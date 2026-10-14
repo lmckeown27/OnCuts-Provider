@@ -18,8 +18,8 @@ func providerAdminIsBenignRequestCancellation(_ error: Error) -> Bool {
 ///   * **Performance** — platform totals, chart, campus search, commission % + on/off.
 ///   * **Operators** — Current providers + Applications / Onboarding (incl. platform commissionless).
 ///   * **Users** — directory + nested **Safety** (UGC reports + banned users).
-///   * **Services** — platform service catalog.
-///   * **Controls** — Consumer Home, Platform Pricing, Notifications (`platform_settings` + templates).
+///   * **Controls** — Consumer Home, Pricing, Notifications, and the service catalog, one at a time.
+///   * **Data** — uploaded profile pictures, portfolio, and chat files.
 struct ProviderAdminDashboardView: View {
     private enum AdminDashboardDestination: Hashable {
         case barber(AdminBarberDTO)
@@ -27,14 +27,15 @@ struct ProviderAdminDashboardView: View {
     }
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var adminDetailPath = NavigationPath()
+    @Environment(\.dismiss) private var dismiss
+    @State private var adminDetail: AdminDashboardDestination?
 
     enum Tab: String, CaseIterable, Identifiable {
-        case performance = "Statistics"
+        case performance = "Performance"
         case barbers = "Operators"
         case users = "Users"
-        case services = "Services"
         case controls = "Controls"
+        case data = "Data"
         var id: String { rawValue }
 
         var systemImage: String {
@@ -42,21 +43,22 @@ struct ProviderAdminDashboardView: View {
             case .performance: "chart.xyaxis.line"
             case .barbers: "scissors"
             case .users: "person.2.fill"
-            case .services: "list.bullet.rectangle.fill"
             case .controls: "switch.2"
+            case .data: "externaldrive"
             }
         }
 
         /// Compact label under the tab icon — fits five segments on narrow phones.
-        var tabLabel: String {
-            switch self {
-            case .performance: "Statistics"
-            case .barbers: "Operators"
-            case .users: "Users"
-            case .services: "Services"
-            case .controls: "Controls"
-            }
-        }
+        var tabLabel: String { rawValue }
+    }
+
+    /// One Controls page at a time. Notifications and Services stay mounted after first open.
+    enum ControlsSection: String, CaseIterable, Identifiable {
+        case home = "Consumer Home"
+        case pricing = "Pricing"
+        case notifications = "Notifications"
+        case services = "Services"
+        var id: String { rawValue }
     }
 
     /// Outer hub inside Users: directory vs Safety (trust/moderation). Users tab stays selected.
@@ -136,9 +138,11 @@ struct ProviderAdminDashboardView: View {
     }
 
     @State private var tab: Tab = .performance
-    /// Services stays mounted after first visit to avoid a cold reload flash — but must not
-    /// mount on first Admin open (that + Performance blew the stack: EXC_BAD_ACCESS code=2).
+    @State private var controlsSection: ControlsSection = .home
+    /// Services and Notifications stay mounted after first visit so an edit is not discarded
+    /// when switching Controls tabs. They must not mount on first Admin open.
     @State private var hasMountedServicesTab = false
+    @State private var hasMountedNotifications = false
     /// Defer heavy tab trees until after the sheet has presented (avoids stack overflow on open).
     @State private var isAdminContentReady = false
     @State private var operatorsHubTab: OperatorsHubTab = .operators
@@ -237,6 +241,7 @@ struct ProviderAdminDashboardView: View {
     /// Bumped by Admin pull-to-refresh so the nested Services tab reloads instead of only
     /// having its in-flight `.task` cancelled.
     @State private var servicesReloadToken = 0
+    @State private var dataReloadToken = 0
     /// Invalidates in-flight Admin reloads so a cancelled pull-to-refresh cannot overwrite
     /// newer results (or wipe lists) with empty/`cancelled` outcomes.
     @State private var adminLoadGeneration = 0
@@ -274,20 +279,16 @@ struct ProviderAdminDashboardView: View {
     }
 
     private var adminNavigationRoot: some View {
-        NavigationStack(path: $adminDetailPath) {
-            adminDashboardChrome
-                .navigationDestination(for: AdminDashboardDestination.self) { destination in
-                    adminDestination(destination)
-                }
-        }
+        adminDashboardChrome
     }
 
     private var adminBodyWithOnChanges: some View {
         adminNavigationRoot
             .onChange(of: tab) { _, newTab in
                 adminSearchFocus = nil
-                if newTab == .services {
-                    hasMountedServicesTab = true
+                adminDetail = nil
+                if newTab == .controls {
+                    mountControlsSectionIfNeeded(controlsSection)
                 }
                 if newTab == .users, usersHubTab == .safety {
                     adminLoadGeneration &+= 1
@@ -297,6 +298,9 @@ struct ProviderAdminDashboardView: View {
                 if newTab == .controls {
                     Task { await loadControlsSettings() }
                 }
+            }
+            .onChange(of: controlsSection) { _, section in
+                mountControlsSectionIfNeeded(section)
             }
             .onChange(of: operatorsHubTab) { _, _ in adminSearchFocus = nil }
             .onChange(of: usersHubTab) { _, hub in
@@ -361,93 +365,6 @@ struct ProviderAdminDashboardView: View {
                 adminSearchFocus = nil
                 isPlatformFeeFieldFocused = false
             }
-            .sheet(isPresented: $showingOperatorsFilters) {
-                operatorsFiltersSheet
-            }
-            .sheet(isPresented: $showingOnboardingFilters) {
-                onboardingFiltersSheet
-            }
-            .confirmationDialog(
-                pendingReportResolutionTitle,
-                isPresented: Binding(
-                    get: { pendingReportResolution != nil },
-                    set: { if !$0 { pendingReportResolution = nil } }
-                ),
-                titleVisibility: .visible,
-                actions: { reportResolutionDialogActions },
-                message: { reportResolutionDialogMessage }
-            )
-            .confirmationDialog(
-                pendingUnbanTitle,
-                isPresented: Binding(
-                    get: { pendingUnban != nil },
-                    set: { if !$0 { pendingUnban = nil } }
-                ),
-                titleVisibility: .visible,
-                actions: { unbanDialogActions },
-                message: { unbanDialogMessage }
-            )
-            .confirmationDialog(
-                pendingOnboardingBulkTitle,
-                isPresented: Binding(
-                    get: { pendingOnboardingBulk != nil },
-                    set: { if !$0 { pendingOnboardingBulk = nil } }
-                ),
-                titleVisibility: .visible,
-                actions: { onboardingBulkDialogActions },
-                message: { onboardingBulkDialogMessage }
-            )
-    }
-
-    @ViewBuilder private var reportResolutionDialogActions: some View {
-        if let pending = pendingReportResolution {
-            Button(pending.action.displayLabel, role: pending.action.bansUser ? .destructive : nil) {
-                let captured = pending
-                pendingReportResolution = nil
-                Task { await applyReportResolution(captured) }
-            }
-            Button("Cancel", role: .cancel) { pendingReportResolution = nil }
-        }
-    }
-
-    @ViewBuilder private var reportResolutionDialogMessage: some View {
-        if let pending = pendingReportResolution {
-            Text(pendingReportResolutionMessage(for: pending))
-        }
-    }
-
-    @ViewBuilder private var unbanDialogActions: some View {
-        if let target = pendingUnban {
-            Button("Unban") {
-                let captured = target
-                pendingUnban = nil
-                Task { await applyUnban(captured) }
-            }
-            Button("Cancel", role: .cancel) { pendingUnban = nil }
-        }
-    }
-
-    @ViewBuilder private var unbanDialogMessage: some View {
-        if let target = pendingUnban {
-            Text("\(target.displayName) will be able to sign in, get discovered, and make bookings again. You can re-ban them later if needed.")
-        }
-    }
-
-    @ViewBuilder private var onboardingBulkDialogActions: some View {
-        if let pending = pendingOnboardingBulk {
-            Button("Apply", role: .destructive) {
-                let captured = pending
-                pendingOnboardingBulk = nil
-                Task { await applyOnboardingBulk(captured) }
-            }
-            Button("Cancel", role: .cancel) { pendingOnboardingBulk = nil }
-        }
-    }
-
-    @ViewBuilder private var onboardingBulkDialogMessage: some View {
-        if let pending = pendingOnboardingBulk {
-            Text(pendingOnboardingBulkMessage(for: pending))
-        }
     }
 
     @ViewBuilder
@@ -466,26 +383,47 @@ struct ProviderAdminDashboardView: View {
     private var adminDashboardChrome: some View {
         VStack(spacing: 0) {
             adminSheetHeader
-            tabPicker
-                .padding(.horizontal, 16)
-                .padding(.bottom, 10)
-                .background(ProviderAdminChrome.stoneBackground)
-
-            if isAdminContentReady {
-                ScrollView {
-                    adminScrollBody
+            ZStack(alignment: .top) {
+                VStack(spacing: 0) {
+                    tabPicker
                         .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .frame(maxWidth: ProviderAdminChrome.panelMaxWidth)
-                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, tab == .controls ? 0 : 10)
+                        .background(ProviderAdminChrome.stoneBackground)
+                    if tab == .controls {
+                        controlsSectionBar
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+                            .padding(.bottom, 10)
+                            .background(ProviderAdminChrome.stoneBackground)
+                    }
+
+                    if isAdminContentReady {
+                        ScrollView {
+                            adminScrollBody
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .frame(maxWidth: ProviderAdminChrome.panelMaxWidth)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .scrollContentBackground(.hidden)
+                        .refreshable { await loadAll() }
+                    } else {
+                        ProgressView()
+                            .controlSize(.regular)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .padding(.vertical, 48)
+                    }
                 }
-                .scrollContentBackground(.hidden)
-                .refreshable { await loadAll() }
-            } else {
-                ProgressView()
-                    .controlSize(.regular)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.vertical, 48)
+
+                if adminDetail != nil {
+                    adminDetailCover
+                }
+                if showingOperatorsFilters || showingOnboardingFilters || showingUsersFilters {
+                    adminFiltersCover
+                }
+                if pendingReportResolution != nil || pendingUnban != nil || pendingOnboardingBulk != nil {
+                    adminConfirmCover
+                }
             }
         }
         .background(ProviderAdminChrome.stoneBackground.ignoresSafeArea())
@@ -496,6 +434,154 @@ struct ProviderAdminDashboardView: View {
             isAdminContentReady = true
             await loadAll()
         }
+    }
+
+    private var adminDetailCover: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button {
+                    adminDetail = nil
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                        .font(.provider(.body, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(ProviderAdminChrome.primaryText)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(ProviderAdminChrome.stoneBackground)
+            if let adminDetail {
+                adminDestination(adminDetail)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(ProviderAdminChrome.stoneBackground.ignoresSafeArea())
+    }
+
+    private var adminFiltersCover: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(adminFiltersTitle)
+                    .font(.provider(.headline, weight: .semibold))
+                    .foregroundStyle(ProviderAdminChrome.primaryText)
+                Spacer()
+                if adminFiltersCanReset {
+                    Button("Reset", action: resetAdminFilters)
+                        .foregroundStyle(ProviderAdminChrome.primaryText)
+                }
+                Button("Done", action: dismissAdminFilters)
+                    .fontWeight(.semibold)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            ScrollView {
+                adminFiltersBody
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(ProviderAdminChrome.stoneBackground.ignoresSafeArea())
+    }
+
+    private var adminFiltersTitle: String {
+        if showingUsersFilters { return "User filters" }
+        if showingOnboardingFilters { return "Onboarding filters" }
+        return "Filters"
+    }
+
+    private var adminFiltersCanReset: Bool {
+        if showingUsersFilters { return false }
+        if showingOnboardingFilters { return onboardingFiltersAreNonDefault }
+        return operatorsFiltersAreNonDefault
+    }
+
+    private func resetAdminFilters() {
+        if showingOnboardingFilters {
+            onboardingStripeFilter = .setup
+            onboardingFreeFilter = .all
+            onboardingKickbackFilter = .all
+        } else if showingOperatorsFilters {
+            barberVisibilityFilter = .visible
+            barberStripeFilter = .setup
+        }
+    }
+
+    private func dismissAdminFilters() {
+        showingOperatorsFilters = false
+        showingOnboardingFilters = false
+        showingUsersFilters = false
+    }
+
+    @ViewBuilder
+    private var adminFiltersBody: some View {
+        if showingUsersFilters {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Role")
+                    .font(.provider(.caption, weight: .semibold))
+                    .foregroundStyle(ProviderAdminChrome.secondaryText)
+                Picker("Role", selection: $userRoleFilter) {
+                    ForEach(UserRoleFilter.allCases) { filter in
+                        Text(filter.chipLabel).tag(filter)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+        } else if showingOnboardingFilters {
+            onboardingFiltersBody
+        } else {
+            currentBarbersFilterControls
+        }
+    }
+
+    @ViewBuilder
+    private var adminConfirmCover: some View {
+        if let pending = pendingReportResolution {
+            ProviderAdminInlineConfirm(
+                title: pendingReportResolutionTitle,
+                message: pendingReportResolutionMessage(for: pending),
+                confirmTitle: pending.action.displayLabel,
+                isDestructive: pending.action.bansUser,
+                onConfirm: {
+                    let captured = pending
+                    pendingReportResolution = nil
+                    Task { await applyReportResolution(captured) }
+                },
+                onCancel: { pendingReportResolution = nil }
+            )
+        } else if let target = pendingUnban {
+            ProviderAdminInlineConfirm(
+                title: pendingUnbanTitle,
+                message: "\(target.displayName) will be able to sign in, get discovered, and make bookings again. You can re-ban them later if needed.",
+                confirmTitle: "Unban",
+                onConfirm: {
+                    let captured = target
+                    pendingUnban = nil
+                    Task { await applyUnban(captured) }
+                },
+                onCancel: { pendingUnban = nil }
+            )
+        } else if let pending = pendingOnboardingBulk {
+            ProviderAdminInlineConfirm(
+                title: pendingOnboardingBulkTitle,
+                message: pendingOnboardingBulkMessage(for: pending),
+                confirmTitle: "Apply",
+                isDestructive: true,
+                onConfirm: {
+                    let captured = pending
+                    pendingOnboardingBulk = nil
+                    Task { await applyOnboardingBulk(captured) }
+                },
+                onCancel: { pendingOnboardingBulk = nil }
+            )
+        }
+    }
+
+    private func mountControlsSectionIfNeeded(_ section: ControlsSection) {
+        if section == .services { hasMountedServicesTab = true }
+        if section == .notifications { hasMountedNotifications = true }
     }
 
     private var adminScrollBody: some View {
@@ -513,14 +599,27 @@ struct ProviderAdminDashboardView: View {
                 adminSelectedTabContent
                     .frame(maxWidth: .infinity, alignment: .topLeading)
 
-                if hasMountedServicesTab {
-                    ProviderAdminServicesView(reloadToken: servicesReloadToken)
-                        .opacity(tab == .services ? 1 : 0)
-                        .allowsHitTesting(tab == .services)
-                        .accessibilityHidden(tab != .services)
+                if hasMountedNotifications {
+                    ProviderAdminNotificationControlsView()
+                        .opacity(showsNotificationsSection ? 1 : 0)
+                        .allowsHitTesting(showsNotificationsSection)
+                        .accessibilityHidden(!showsNotificationsSection)
                         .frame(
                             maxWidth: .infinity,
-                            maxHeight: tab == .services ? .infinity : 0,
+                            maxHeight: showsNotificationsSection ? .infinity : 0,
+                            alignment: .topLeading
+                        )
+                        .clipped()
+                }
+
+                if hasMountedServicesTab {
+                    ProviderAdminServicesView(reloadToken: servicesReloadToken)
+                        .opacity(showsServicesSection ? 1 : 0)
+                        .allowsHitTesting(showsServicesSection)
+                        .accessibilityHidden(!showsServicesSection)
+                        .frame(
+                            maxWidth: .infinity,
+                            maxHeight: showsServicesSection ? .infinity : 0,
                             alignment: .topLeading
                         )
                         .clipped()
@@ -538,22 +637,53 @@ struct ProviderAdminDashboardView: View {
             AnyView(barbersTab)
         case .users:
             AnyView(usersTab)
-        case .services:
-            // Placeholder until `hasMountedServicesTab` paints the real Services view above.
-            AnyView(Color.clear.frame(minHeight: hasMountedServicesTab ? 0 : 120))
         case .controls:
             AnyView(controlsTab)
+        case .data:
+            AnyView(ProviderAdminDataView(reloadToken: dataReloadToken))
         }
     }
 
+    private var showsNotificationsSection: Bool {
+        tab == .controls && controlsSection == .notifications
+    }
+
+    private var showsServicesSection: Bool {
+        tab == .controls && controlsSection == .services
+    }
+
     private var adminSheetHeader: some View {
-        Capsule()
-            .fill(ProviderAdminChrome.stoneBorder)
-            .frame(width: 36, height: 5)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
-            .frame(maxWidth: .infinity)
-            .background(ProviderAdminChrome.stoneBackground)
+        VStack(spacing: 0) {
+            Capsule()
+                .fill(ProviderAdminChrome.stoneBorder)
+                .frame(width: 36, height: 5)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+            ZStack {
+                Text("Admin")
+                    .font(.provider(.headline, weight: .semibold))
+                    .foregroundStyle(ProviderAdminChrome.primaryText)
+                HStack {
+                    Spacer()
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.provider(.body, weight: .semibold))
+                            .foregroundStyle(ProviderAdminChrome.secondaryText)
+                            .frame(width: 32, height: 32)
+                            .background(ProviderAdminChrome.stoneMutedFill, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 10)
+        }
+        .frame(maxWidth: .infinity)
+        .background(ProviderAdminChrome.stoneBackground)
+        .zIndex(1)
     }
 
     // MARK: - Metrics timeline (chart — parity with former Campus Manager overview)
@@ -2617,51 +2747,33 @@ struct ProviderAdminDashboardView: View {
         return false
     }
 
-    private var onboardingFiltersSheet: some View {
-        NavigationStack {
-            Form {
-                Section("Stripe") {
-                    Picker("Stripe", selection: $onboardingStripeFilter) {
-                        ForEach(BarberStripeFilter.allCases) { f in
-                            Text(f.segmentTitle).tag(f)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-                Section("Commission-free") {
-                    Picker("Free slots", selection: $onboardingFreeFilter) {
-                        ForEach(OnboardingFreeFilter.allCases) { f in
-                            Text(f.label).tag(f)
-                        }
+    private var onboardingFiltersBody: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            filterControlGroup(title: "Stripe") {
+                Picker("Stripe", selection: $onboardingStripeFilter) {
+                    ForEach(BarberStripeFilter.allCases) { f in
+                        Text(f.segmentTitle).tag(f)
                     }
                 }
-                Section("Kickback") {
-                    Picker("Kickback", selection: $onboardingKickbackFilter) {
-                        ForEach(OnboardingKickbackFilter.allCases) { f in
-                            Text(f.label).tag(f)
-                        }
-                    }
-                }
+                .pickerStyle(.segmented)
             }
-            .navigationTitle("Onboarding filters")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Reset") {
-                        onboardingStripeFilter = .setup
-                        onboardingFreeFilter = .all
-                        onboardingKickbackFilter = .all
+            filterControlGroup(title: "Commission-free") {
+                Picker("Free slots", selection: $onboardingFreeFilter) {
+                    ForEach(OnboardingFreeFilter.allCases) { f in
+                        Text(f.label).tag(f)
                     }
-                    .disabled(!onboardingFiltersAreNonDefault)
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { showingOnboardingFilters = false }
+                .pickerStyle(.segmented)
+            }
+            filterControlGroup(title: "Kickback") {
+                Picker("Kickback", selection: $onboardingKickbackFilter) {
+                    ForEach(OnboardingKickbackFilter.allCases) { f in
+                        Text(f.label).tag(f)
+                    }
                 }
+                .pickerStyle(.segmented)
             }
         }
-        .providerAdminDismissesKeyboardOnOutsideTap()
-        .presentationDetents([.medium])
-        .tint(.providerOlive)
     }
 
     @ViewBuilder
@@ -2734,38 +2846,6 @@ struct ProviderAdminDashboardView: View {
         .accessibilityValue(accessibilityValue)
     }
 
-    private var operatorsFiltersSheet: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                currentBarbersFilterControls
-                Spacer(minLength: 0)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(ProviderAdminChrome.stoneBackground.ignoresSafeArea())
-            .providerPageNavigationTitle("Filters")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Reset") {
-                        barberVisibilityFilter = .visible
-                        barberStripeFilter = .setup
-                    }
-                    .disabled(!operatorsFiltersAreNonDefault)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        showingOperatorsFilters = false
-                    }
-                    .fontWeight(.semibold)
-                }
-            }
-        }
-        .providerAdminDismissesKeyboardOnOutsideTap()
-        .presentationDetents([.medium])
-        .presentationDragIndicator(.visible)
-        .tint(.providerOlive)
-    }
-
     @ViewBuilder
     private var currentBarbersFilterControls: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -2805,7 +2885,7 @@ struct ProviderAdminDashboardView: View {
 
     private func barberRow(_ barber: AdminBarberDTO) -> some View {
         Button {
-            adminDetailPath.append(AdminDashboardDestination.barber(barber))
+            adminDetail = .barber(barber)
         } label: {
             HStack(spacing: 12) {
                 ProviderSquaredAvatarView(
@@ -2994,34 +3074,11 @@ struct ProviderAdminDashboardView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingUsersFilters) {
-            NavigationStack {
-                Form {
-                    Section("Role") {
-                        Picker("Role", selection: $userRoleFilter) {
-                            ForEach(UserRoleFilter.allCases) { filter in
-                                Text(filter.chipLabel).tag(filter)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                }
-                .navigationTitle("User filters")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { showingUsersFilters = false }
-                    }
-                }
-            }
-            .providerAdminDismissesKeyboardOnOutsideTap()
-            .presentationDetents([.medium])
-        }
     }
 
     private func userRow(_ user: AdminPlatformUserDTO) -> some View {
         Button {
-            adminDetailPath.append(AdminDashboardDestination.user(user))
+            adminDetail = .user(user)
         } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -3059,35 +3116,82 @@ struct ProviderAdminDashboardView: View {
 
     // MARK: - Controls tab
 
-    /// Runtime product toggles — Consumer Home, Platform Pricing, Notifications.
+    private var controlsSectionBar: some View {
+        HStack(spacing: 4) {
+            ForEach(ControlsSection.allCases) { item in
+                let isSelected = controlsSection == item
+                Button {
+                    controlsSection = item
+                } label: {
+                    Text(item.rawValue)
+                        .font(.provider(.caption2, weight: isSelected ? .semibold : .medium))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .foregroundStyle(
+                            isSelected
+                                ? ProviderAdminChrome.primaryText
+                                : ProviderAdminChrome.secondaryText
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(ProviderAdminChrome.cardBackground)
+                                    .shadow(color: Color.primary.opacity(0.06), radius: 2, y: 1)
+                            }
+                        }
+                        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+            }
+        }
+        .padding(4)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(ProviderAdminChrome.stoneMutedFill)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(ProviderAdminChrome.stoneBorder, lineWidth: 0.6)
+                )
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Controls")
+    }
+
+    /// One Controls section at a time. Notifications and Services render beside this tab so they stay loaded.
     private var controlsTab: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if let controlsError, !controlsError.isEmpty {
+            if let controlsError, !controlsError.isEmpty, controlsSection == .home || controlsSection == .pricing {
                 Text(controlsError)
                     .font(.provider(.footnote))
                     .foregroundStyle(.red)
             }
 
-            controlsSectionCard(title: "Consumer Home") {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(AdminConsumerHomeMode.allCases) { mode in
-                        consumerHomeRadioRow(mode)
-                    }
+            switch controlsSection {
+            case .home:
+                controlsSectionCard(title: "Consumer Home") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(AdminConsumerHomeMode.allCases) { mode in
+                            consumerHomeRadioRow(mode)
+                        }
 
-                    if isSavingConsumerHome || isLoadingControls {
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text(isSavingConsumerHome ? "Saving…" : "Loading…")
-                                .font(.provider(.caption))
-                                .foregroundStyle(ProviderAdminChrome.secondaryText)
+                        if isSavingConsumerHome || isLoadingControls {
+                            HStack(spacing: 8) {
+                                ProgressView().controlSize(.small)
+                                Text(isSavingConsumerHome ? "Saving…" : "Loading…")
+                                    .font(.provider(.caption))
+                                    .foregroundStyle(ProviderAdminChrome.secondaryText)
+                            }
                         }
                     }
                 }
+            case .pricing:
+                platformPricingCard
+            case .notifications, .services:
+                Color.clear.frame(minHeight: 1)
             }
-
-            platformPricingCard
-
-            ProviderAdminNotificationControlsView()
         }
     }
 
@@ -3884,6 +3988,7 @@ struct ProviderAdminDashboardView: View {
         await loadSafety(loadID: loadID)
         guard loadID == adminLoadGeneration else { return }
         servicesReloadToken &+= 1
+        dataReloadToken &+= 1
         if metricsDisplayMode == .list {
             await reloadMetricsListEvents(loadID: loadID)
         }

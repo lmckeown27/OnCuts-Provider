@@ -617,4 +617,51 @@ enum ProviderAdminService {
             jsonBody: [:]
         )
     }
+
+    /// `GET /admin/uploads?kind=&limit=` — profile pictures, portfolio, or chat files.
+    static func listUploadedMedia(kind: String, limit: Int) async throws -> AdminUploadedMediaBucket {
+        let data = try await OnCutsHTTPClient.requestDataThrowingSuccess(
+            path: "admin/uploads?kind=\(kind)&limit=\(limit)"
+        )
+        let dec = OnCutsHTTPClient.jsonDecoderSnake()
+        return try dec.decode(AdminUploadedMediaEnvelope.self, from: data).resolved
+    }
+}
+
+struct AdminUploadedMediaItem: Decodable, Identifiable, Hashable {
+    let id: String
+    let kind: String
+    let mediaType: String
+    let mediaUrl: String
+    let thumbnailUrl: String?
+    let caption: String?
+    let specialty: String?
+    let createdAt: String
+    let ownerName: String
+    let ownerEmail: String
+
+    var isVideo: Bool { mediaType.lowercased() == "video" }
+}
+
+struct AdminUploadedMediaBucket: Equatable {
+    var items: [AdminUploadedMediaItem]
+    var total: Int
+
+    static let empty = AdminUploadedMediaBucket(items: [], total: 0)
+}
+
+private struct AdminUploadedMediaEnvelope: Decodable {
+    let data: Payload?
+
+    struct Payload: Decodable {
+        let items: [AdminUploadedMediaItem]?
+        let total: Int?
+    }
+
+    var resolved: AdminUploadedMediaBucket {
+        AdminUploadedMediaBucket(
+            items: data?.items ?? [],
+            total: data?.total ?? data?.items?.count ?? 0
+        )
+    }
 }

@@ -111,21 +111,19 @@ struct ProviderAdminNotificationControlsView: View {
         .padding(16)
         .providerAdminCardBackground(cornerRadius: 16)
         .task { await load() }
-        .confirmationDialog(
-            "Remove this custom notification?",
-            isPresented: Binding(
-                get: { pendingRemove != nil },
-                set: { if !$0 { pendingRemove = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Remove", role: .destructive) {
-                if let row = pendingRemove {
-                    pendingRemove = nil
-                    Task { await removeCustom(row) }
-                }
+        .overlay {
+            if let row = pendingRemove {
+                ProviderAdminInlineConfirm(
+                    title: "Remove this custom notification?",
+                    confirmTitle: "Remove",
+                    isDestructive: true,
+                    onConfirm: {
+                        pendingRemove = nil
+                        Task { await removeCustom(row) }
+                    },
+                    onCancel: { pendingRemove = nil }
+                )
             }
-            Button("Cancel", role: .cancel) { pendingRemove = nil }
         }
     }
 

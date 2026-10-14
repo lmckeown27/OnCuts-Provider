@@ -115,26 +115,38 @@ struct ProviderBarberServicesView: View {
         let r = row.wrappedValue
         let isOffered = r.isOffered
 
+        ServiceOfferedPressableCard {
+            Task { await toggleOffered(slug: r.slug) }
+        } content: {
+            serviceLedgerRowContent(row: row, isOffered: isOffered)
+        }
+    }
+
+    @ViewBuilder
+    private func serviceLedgerRowContent(row: Binding<ServiceEditRow>, isOffered: Bool) -> some View {
+        let r = row.wrappedValue
+
         HStack(alignment: .center, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
-                Button {
-                    Task { await toggleOffered(slug: r.slug) }
-                } label: {
-                    Image(systemName: isOffered ? "checkmark.square.fill" : "square")
-                        .font(.provider(.title3))
-                        .foregroundStyle(isOffered ? Color.providerOlive : Color.lavaShellCream.opacity(0.55))
-                }
-                .buttonStyle(.plain)
-                .disabled(saving)
-                .accessibilityLabel(isOffered ? "\(r.name), offered" : "\(r.name), not offered")
+                Image(systemName: isOffered ? "checkmark.square.fill" : "square")
+                    .font(.provider(.title3))
+                    .foregroundStyle(isOffered ? Color.providerOlive : Color.lavaShellCream.opacity(0.55))
+                    .animation(.easeInOut(duration: 0.2), value: isOffered)
+                    .accessibilityLabel(isOffered ? "\(r.name), offered" : "\(r.name), not offered")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction {
+                        Task { await toggleOffered(slug: r.slug) }
+                    }
 
                 Text(r.name)
                     .font(.provider(.body, weight: .bold))
                     .foregroundStyle(Color.lavaShellCream)
                     .lineLimit(2)
                     .minimumScaleFactor(0.9)
+                    .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .allowsHitTesting(false)
 
             VStack(alignment: .leading, spacing: 8) {
                 priceInputSlot(row: row, isOffered: isOffered)
@@ -144,21 +156,6 @@ struct ProviderBarberServicesView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.providerOlive.opacity(0.14))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.providerOlive.opacity(0.72), lineWidth: 2)
-        )
-        .animation(.easeInOut(duration: 0.2), value: isOffered)
-        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .onTapGesture {
-            if !isOffered, !saving {
-                Task { await toggleOffered(slug: r.slug) }
-            }
-        }
     }
 
     @ViewBuilder
@@ -169,11 +166,13 @@ struct ProviderBarberServicesView: View {
                 .font(.provider(.caption, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCream.opacity(0.62))
                 .frame(width: ProviderServicesLedgerStyle.fieldLabelWidth, alignment: .trailing)
+                .allowsHitTesting(false)
 
             HStack(spacing: 4) {
                 Text("$")
                     .font(.provider(.subheadline, weight: .bold))
                     .foregroundStyle(Color.lavaShellCream.opacity(0.55))
+                    .allowsHitTesting(false)
 
                 TextField("0", text: row.priceText)
                     .keyboardType(.numberPad)
@@ -185,7 +184,7 @@ struct ProviderBarberServicesView: View {
                     .padding(.vertical, 6)
                     .background(serviceInputBackground(needsCommit: r.priceNeedsCommit))
                     .overlay(serviceInputBorder(needsCommit: r.priceNeedsCommit))
-                    .disabled(!isOffered || saving)
+                    .disabled(!isOffered)
                     .accessibilityLabel("Price for \(r.name)")
 
                 if isOffered, r.priceNeedsCommit {
@@ -208,6 +207,7 @@ struct ProviderBarberServicesView: View {
                 .font(.provider(.caption, weight: .semibold))
                 .foregroundStyle(Color.lavaShellCream.opacity(0.62))
                 .frame(width: ProviderServicesLedgerStyle.fieldLabelWidth, alignment: .trailing)
+                .allowsHitTesting(false)
 
             HStack(spacing: 4) {
                 TextField("0", text: row.durationText)
@@ -220,12 +220,13 @@ struct ProviderBarberServicesView: View {
                     .padding(.vertical, 6)
                     .background(serviceInputBackground(needsCommit: r.durationNeedsCommit))
                     .overlay(serviceInputBorder(needsCommit: r.durationNeedsCommit))
-                    .disabled(!isOffered || saving)
+                    .disabled(!isOffered)
                     .accessibilityLabel("Duration in minutes for \(r.name)")
 
                 Text("min")
                     .font(.provider(.caption, weight: .semibold))
                     .foregroundStyle(Color.lavaShellCream.opacity(0.55))
+                    .allowsHitTesting(false)
 
                 if isOffered, r.durationNeedsCommit {
                     serviceFieldCommitButtons(
@@ -266,7 +267,6 @@ struct ProviderBarberServicesView: View {
                 .foregroundStyle(Color.lavaShellCream, Color.providerOlive)
         }
         .buttonStyle(.plain)
-        .disabled(saving)
         .accessibilityLabel(confirmAccessibilityLabel)
 
         Button(action: onCancel) {
@@ -275,7 +275,6 @@ struct ProviderBarberServicesView: View {
                 .foregroundStyle(Color.lavaShellCream.opacity(0.45))
         }
         .buttonStyle(.plain)
-        .disabled(saving)
         .accessibilityLabel(cancelAccessibilityLabel)
     }
 
@@ -305,7 +304,7 @@ struct ProviderBarberServicesView: View {
     private var barberIdForAPI: String? { barberRecordIdForSave ?? session.barberProfile?.id }
 
     private func toggleOffered(slug: String) async {
-        guard let idx = rows.firstIndex(where: { $0.slug == slug }) else { return }
+        guard !saving, let idx = rows.firstIndex(where: { $0.slug == slug }) else { return }
         saving = true
         defer { saving = false }
 
@@ -332,7 +331,7 @@ struct ProviderBarberServicesView: View {
     }
 
     private func commitPrice(slug: String) async {
-        guard let idx = rows.firstIndex(where: { $0.slug == slug }) else { return }
+        guard !saving, let idx = rows.firstIndex(where: { $0.slug == slug }) else { return }
         saving = true
         defer { saving = false }
 
@@ -356,7 +355,7 @@ struct ProviderBarberServicesView: View {
     }
 
     private func commitDuration(slug: String) async {
-        guard let idx = rows.firstIndex(where: { $0.slug == slug }) else { return }
+        guard !saving, let idx = rows.firstIndex(where: { $0.slug == slug }) else { return }
         saving = true
         defer { saving = false }
 
@@ -488,6 +487,64 @@ struct ProviderBarberServicesView: View {
 
     private static func clampStatic(_ v: Int, min lo: Int, max hi: Int) -> Int {
         min(hi, max(lo, v))
+    }
+}
+
+private struct ServiceOfferedPressableCard<Content: View>: View {
+    var action: () -> Void
+    @ViewBuilder var content: () -> Content
+    @State private var fingerDown = false
+    @State private var pulsing = false
+    @State private var pulseID = 0
+
+    private var isPressed: Bool { fingerDown || pulsing }
+
+    var body: some View {
+        content()
+            .background {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.providerOlive.opacity(isPressed ? 0.24 : 0.14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(Color.providerOlive.opacity(0.72), lineWidth: 2)
+                    )
+                    .allowsHitTesting(false)
+            }
+            .scaleEffect(isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.1), value: isPressed)
+            .background {
+                Button {
+                    pulse()
+                    action()
+                } label: {
+                    Color.clear
+                        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(ServiceOfferedPressStyle(isPressed: $fingerDown))
+                .accessibilityHidden(true)
+            }
+    }
+
+    private func pulse() {
+        pulseID += 1
+        let id = pulseID
+        pulsing = true
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 140_000_000)
+            guard id == pulseID else { return }
+            pulsing = false
+        }
+    }
+}
+
+private struct ServiceOfferedPressStyle: ButtonStyle {
+    @Binding var isPressed: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .onChange(of: configuration.isPressed) { _, pressed in
+                isPressed = pressed
+            }
     }
 }
 

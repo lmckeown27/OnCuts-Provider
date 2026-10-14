@@ -457,53 +457,36 @@ struct ProviderScheduleDashboardView: View {
             }
 
             if shareDeviceLocation {
-                HStack(spacing: 6) {
-                    Text(discoveryLocationPlaceText)
-                        .lineLimit(1)
-                    if isTogglingDiscoveryLocation {
-                        ProgressView()
-                            .controlSize(.mini)
-                            .tint(Color.lavaShellCreamSecondary)
+                HStack(spacing: 10) {
+                    HStack(spacing: 6) {
+                        Text(discoveryLocationPlaceText)
+                            .lineLimit(1)
+                        if isTogglingDiscoveryLocation {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .tint(Color.lavaShellCreamSecondary)
+                        }
                     }
-                }
-                .font(.provider(.caption))
-                .foregroundStyle(Color.lavaShellCreamSecondary)
-                .frame(maxWidth: .infinity, alignment: .center)
-            } else {
-                manualDiscoveryPlaceSearch
-            }
-
-            ZStack {
-                Text(shareDeviceLocation
-                      ? "Toggle off to turn off device tracking"
-                      : "Toggle on to track your device")
                     .font(.provider(.caption))
                     .foregroundStyle(Color.lavaShellCreamSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                    .frame(maxWidth: .infinity)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 52)
-
-                HStack {
-                    Spacer(minLength: 0)
-                    Toggle("", isOn: $shareDeviceLocation)
-                        .labelsHidden()
-                        .tint(.providerOlive)
-                        .disabled(isTogglingDiscoveryLocation || isSavingManualPlace || discoveryLocationPin == nil)
+                    discoveryLocationToggle
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            } else {
+                HStack(alignment: .top, spacing: 10) {
+                    manualDiscoveryPlaceSearch
+                    discoveryLocationToggle
+                        .padding(.top, 6)
                 }
             }
-            .contentShape(Rectangle())
-            .simultaneousGesture(manualPlaceKeyboardDismissTap)
-            .onChange(of: shareDeviceLocation) { oldValue, newValue in
-                guard oldValue != newValue else { return }
-                guard !isTogglingDiscoveryLocation else { return }
-                // Server `web_only` is the inverse of sharing device location.
-                let expectedWebOnly = !newValue
-                guard discoveryLocationPin?.serviceLocationWebOnly != expectedWebOnly else { return }
-                Task { await setShareDeviceLocation(newValue) }
-            }
-            .padding(.horizontal, 8)
+        }
+        .onChange(of: shareDeviceLocation) { oldValue, newValue in
+            guard oldValue != newValue else { return }
+            guard !isTogglingDiscoveryLocation else { return }
+            // Server `web_only` is the inverse of sharing device location.
+            let expectedWebOnly = !newValue
+            guard discoveryLocationPin?.serviceLocationWebOnly != expectedWebOnly else { return }
+            Task { await setShareDeviceLocation(newValue) }
         }
         .task(id: session.barberProfile?.id) {
             await loadDiscoveryLocationStatus(seedManualField: true)
@@ -521,6 +504,14 @@ struct ProviderScheduleDashboardView: View {
                 isManualPlaceFieldFocused = true
             }
         }
+    }
+
+    private var discoveryLocationToggle: some View {
+        Toggle("", isOn: $shareDeviceLocation)
+            .labelsHidden()
+            .tint(.providerOlive)
+            .disabled(isTogglingDiscoveryLocation || isSavingManualPlace || discoveryLocationPin == nil)
+            .accessibilityLabel(shareDeviceLocation ? "Device tracking on" : "Device tracking off")
     }
 
     private var manualDiscoveryPlaceSearch: some View {

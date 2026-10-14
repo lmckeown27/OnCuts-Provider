@@ -25,6 +25,50 @@ enum ProviderAdminChrome {
     static let panelCornerRadiusPad: CGFloat = 24
 }
 
+/// Confirm card drawn inside the Admin popup, under the persistent Admin title.
+struct ProviderAdminInlineConfirm: View {
+    var title: String
+    var message: String?
+    var confirmTitle: String
+    var isDestructive: Bool = false
+    var onConfirm: () -> Void
+    var onCancel: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onCancel)
+            VStack(alignment: .leading, spacing: 12) {
+                Text(title)
+                    .font(.provider(.headline, weight: .semibold))
+                    .foregroundStyle(ProviderAdminChrome.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let message, !message.isEmpty {
+                    Text(message)
+                        .font(.provider(.subheadline))
+                        .foregroundStyle(ProviderAdminChrome.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                HStack(spacing: 12) {
+                    Button("Cancel", action: onCancel)
+                        .font(.provider(.body, weight: .semibold))
+                        .foregroundStyle(ProviderAdminChrome.primaryText)
+                    Spacer(minLength: 8)
+                    Button(confirmTitle, action: onConfirm)
+                        .font(.provider(.body, weight: .semibold))
+                        .foregroundStyle(isDestructive ? ProviderAdminChrome.destructive : ProviderAdminChrome.accent)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: 420, alignment: .leading)
+            .providerAdminCardBackground(cornerRadius: 16)
+            .padding(24)
+        }
+        .accessibilityAddTraits(.isModal)
+    }
+}
+
 extension View {
     /// Adaptive card surface used throughout the Admin panel.
     func providerAdminCardBackground(cornerRadius: CGFloat = 12) -> some View {

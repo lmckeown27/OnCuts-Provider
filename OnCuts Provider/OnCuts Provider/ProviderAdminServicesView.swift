@@ -162,21 +162,20 @@ struct ProviderAdminServicesView: View {
             }
         }
         .task(id: "\(professionFilter.rawValue)-\(showDeletedServices)-\(reloadToken)") { await load() }
-        .confirmationDialog(
-            "Remove “\(servicePendingRemoval?.name ?? "")”? Operators will no longer be able to select this service until you add it back.",
-            isPresented: Binding(
-                get: { servicePendingRemoval != nil },
-                set: { if !$0 { servicePendingRemoval = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Remove", role: .destructive) {
-                if let row = servicePendingRemoval {
-                    Task { await setCatalogAvailability(row, available: false) }
-                }
-                servicePendingRemoval = nil
+        .overlay {
+            if let row = servicePendingRemoval {
+                ProviderAdminInlineConfirm(
+                    title: "Remove “\(row.name)”?",
+                    message: "Operators will no longer be able to select this service until you add it back.",
+                    confirmTitle: "Remove",
+                    isDestructive: true,
+                    onConfirm: {
+                        servicePendingRemoval = nil
+                        Task { await setCatalogAvailability(row, available: false) }
+                    },
+                    onCancel: { servicePendingRemoval = nil }
+                )
             }
-            Button("Cancel", role: .cancel) { servicePendingRemoval = nil }
         }
     }
 
