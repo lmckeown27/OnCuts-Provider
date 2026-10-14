@@ -22,6 +22,7 @@ struct ProviderPortfolioCameraPicker: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.sourceType = .camera
+        picker.allowsEditing = false
         picker.delegate = context.coordinator
         switch capture {
         case .photo:

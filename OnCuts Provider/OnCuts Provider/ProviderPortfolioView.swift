@@ -134,7 +134,7 @@ struct ProviderPortfolioView: View {
             ProviderPortfolioCameraPicker(
                 capture: capture,
                 onPhoto: { image in
-                    guard let target = uploadTarget, let data = image.jpegData(compressionQuality: 0.86) else { return }
+                    guard let target = uploadTarget, let data = image.jpegDataForChatUpload() else { return }
                     Task { await upload(data: data, fileName: "portfolio.jpg", mimeType: "image/jpeg", target: target) }
                 },
                 onVideo: { data, mime in
@@ -371,7 +371,7 @@ struct ProviderPortfolioView: View {
             specialtyTitle(specialty, font: .provider(.title3, weight: .semibold), centered: false)
             LazyVGrid(columns: columns, spacing: 10) {
                 ForEach(sectionItems) { item in
-                    ZStack(alignment: .topTrailing) {
+                    ZStack(alignment: .topLeading) {
                         Button {
                             tagSelection = item.primarySpecialtyId ?? specialty.id
                             taggingItem = item
@@ -380,13 +380,15 @@ struct ProviderPortfolioView: View {
                         }
                         .buttonStyle(.plain)
                         Button { Task { await deleteItem(item) } } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(.black)
-                                .frame(width: 24, height: 24)
-                                .background(Circle().fill(.white.opacity(0.92)))
+                            Image(systemName: "minus")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(Color.providerOnOliveFill)
+                                .frame(width: 22, height: 22)
+                                .background(Circle().fill(Color.providerOlive))
                         }
+                        .buttonStyle(.plain)
                         .padding(6)
+                        .accessibilityLabel("Remove upload")
                     }
                 }
                 Button {
@@ -1082,7 +1084,7 @@ struct ProviderPortfolioView: View {
             ProviderPortfolioCameraPicker(
                 capture: capture,
                 onPhoto: { image in
-                    guard let target = uploadTarget, let data = image.jpegData(compressionQuality: 0.86) else { return }
+                    guard let target = uploadTarget, let data = image.jpegDataForChatUpload() else { return }
                     Task { await upload(data: data, fileName: "portfolio.jpg", mimeType: "image/jpeg", target: target) }
                 },
                 onVideo: { data, mime in

@@ -10,7 +10,8 @@ private struct ChatImageUploadData: Decodable {
 }
 
 extension UIImage {
-    fileprivate func jpegDataForChatUpload(maxPixel: CGFloat = 1600, quality: CGFloat = 0.82) -> Data? {
+    /// Same camera-photo preparation used before a message image upload.
+    func jpegDataForChatUpload(maxPixel: CGFloat = 1600, quality: CGFloat = 0.82) -> Data? {
         let scaled = scaledToFit(maxPixel: maxPixel)
         return scaled.jpegData(compressionQuality: quality)
     }

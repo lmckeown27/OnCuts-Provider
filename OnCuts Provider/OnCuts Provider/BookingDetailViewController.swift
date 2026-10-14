@@ -284,18 +284,14 @@ final class BookingDetailViewController: UIViewController {
         Task { @MainActor in
             await Task.yield()
             await refreshBookingDetailsIfNeeded()
-            if current.tipDecidedAt == nil, current.statusUpper == "COMPLETED" {
-                if let fresh = try? await ProviderBookingsService.fetchBooking(id: current.id) {
-                    current = fresh
-                }
-            }
+            await refreshPaidStateIfNeeded()
             considerPortfolioPrompt()
         }
     }
 
-    /// After the tip is decided, ask once to add this booking’s service to the portfolio.
+    /// After payment is received, ask to add this service. Only "Not Now" dismisses it.
     private func considerPortfolioPrompt() {
-        guard current.tipDecidedAt != nil else { return }
+        guard current.paidAt != nil else { return }
         guard !ProviderPortfolioPromptMemory.wasDismissed(current.id) else { return }
         guard presentedViewController == nil else { return }
         guard let barberId = barberTableId ?? current.barberId,
@@ -321,12 +317,24 @@ final class BookingDetailViewController: UIViewController {
             }
             let host = UIHostingController(rootView: sheet)
             host.modalPresentationStyle = .formSheet
+            host.isModalInPresentation = true
             self.present(host, animated: true)
         }
     }
 
+    private func refreshPaidStateIfNeeded() async {
+        guard current.paidAt == nil else { return }
+        if let fresh = try? await ProviderBookingsService.fetchBooking(id: current.id) {
+            current = fresh
+        }
+    }
+
     @objc private func handleBookingsChangedNotification() {
-        Task { await refreshBookingDetailsIfNeeded() }
+        Task { @MainActor in
+            await refreshBookingDetailsIfNeeded()
+            await refreshPaidStateIfNeeded()
+            considerPortfolioPrompt()
+        }
     }
 
     /// Refreshes from `GET /bookings-simple/:id` when payment / tip / complete fields may
